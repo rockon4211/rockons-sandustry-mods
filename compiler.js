@@ -56,8 +56,35 @@ function compile(graph, cfg) {
     } else if (p.k === "touch" && matIds.has(p.t) || p.k === "touch" && !p.t.startsWith("m_")) {
       touches.push({ from: p.f, to: p.t, partner: p.partner || "water", lbl: p.lbl, note: p.note });
       report.ok.push(`touch: ${p.f} + ${p.partner || "water"} -> ${p.t} (partner consumed)`);
+    } else if (p.k === "mine") {
+      // handled by the terrain-swap pass below
     } else {
       report.skip.push(`${p.k}: ${p.f} -> ${p.t} (not compilable yet)`);
+    }
+  }
+  // --- terrain output swaps: mine procs from known terrains ---
+  const TERRAIN_MAP = { t_dune: "dune" };
+  const terrainSwaps = [];  // {terrain, output}
+  for (const p of procs) {
+    if (p.k !== "mine") continue;
+    if (TERRAIN_MAP[p.f]) {
+      terrainSwaps.push({ terrain: TERRAIN_MAP[p.f], output: p.t });
+      report.ok.push(`terrain swap: broken ${TERRAIN_MAP[p.f]} now drops ${p.t}`);
+    } else {
+      report.skip.push(`mine: ${p.f} -> ${p.t} (that terrain's game id is not mapped yet)`);
+    }
+  }
+  // --- vanilla element overrides (rename / recolor / redensity in place) ---
+  const overrides = [];   // {id, n?, c?, d?}
+  for (const [id, o] of Object.entries(graph.over || {})) {
+    const entry = { id };
+    if (o.n !== undefined) entry.n = o.n;
+    if (o.c !== undefined) entry.c = o.c;
+    if (o.d !== undefined) entry.d = o.d;
+    if (o.m !== undefined) report.warn.push(`override ${id}: matter-type changes are not compiled (risky mid-save); kept ${id} as-is`);
+    if (entry.n !== undefined || entry.c !== undefined || entry.d !== undefined) {
+      overrides.push(entry);
+      report.ok.push(`override: ${id}${entry.n ? ` renamed "${entry.n}"` : ""}${entry.c !== undefined ? " recolored" : ""}${entry.d !== undefined ? ` density ${entry.d}` : ""} - every existing grain changes at load`);
     }
   }
   // --- purge rules: hidden vanilla materials dry back into a stand-in ---
@@ -141,6 +168,8 @@ function compile(graph, cfg) {
   });
   touches.forEach(t => { ["from", "to", "partner"].forEach(k => { if (!isCustom(t[k])) vanillaRefs.add(t[k]); }); });
   purges.forEach(p => { ["from", "to"].forEach(k => { if (!isCustom(p[k])) vanillaRefs.add(p[k]); }); });
+  terrainSwaps.forEach(s => { if (!isCustom(s.output)) vanillaRefs.add(s.output); });
+  overrides.forEach(o => vanillaRefs.add(o.id));
   L.push(`for (const id of ${JSON.stringify([...vanillaRefs])}) {`);
   L.push(`\tconst t = safe(() => api.elements.getTypeFromId(id));`);
   L.push(`\tif (typeof t === "number") typeById.set(id, t);`);
@@ -169,6 +198,46 @@ function compile(graph, cfg) {
     for (const r of recipes) {
       L.push(`safe(() => api.elements.addInteractionInfo(${JSON.stringify(r.input)}, { kind: "custom", text: ${JSON.stringify(`${r.machine}: ${r.input} → ${r.output}`)} }));`);
     }
+  }
+  if (overrides.length) {
+    L.push(``);
+    L.push(`// -------------------------------------------- vanilla element makeovers --`);
+    L.push(`// updateDefinition on a LIVE element type Object.assigns into the engine's`);
+    L.push(`// definition table and broadcasts to every sim worker - all existing grains`);
+    L.push(`// change identity instantly. nameKey must be cleared or i18n wins the name.`);
+    L.push(`if (isEnabled()) {`);
+    for (const o of overrides) {
+      L.push(`\t{`);
+      L.push(`\t\tconst t = typeOf(${JSON.stringify(o.id)});`);
+      L.push(`\t\tif (typeof t === "number") {`);
+      const patch = [];
+      if (o.n !== undefined) patch.push(`nameKey: void 0, name: ${JSON.stringify(o.n)}`);
+      if (o.c !== undefined) patch.push(`metaColor: ${o.c}, colors: { variants: ${JSON.stringify([shade(o.c, 1), shade(o.c, 0.9), shade(o.c, 1.12), shade(o.c, 0.8)])} }`);
+      if (o.d !== undefined) patch.push(`density: ${o.d}`);
+      L.push(`\t\t\tsafe(() => api.elements.updateDefinition(t, { ${patch.join(", ")} }));`);
+      L.push(`\t\t\tconsole.log(\`[\${MOD_ID}] vanilla makeover applied: ${o.id}${o.n ? ` -> "${o.n}"` : ""}\`);`);
+      L.push(`\t\t}`);
+      L.push(`\t}`);
+    }
+    L.push(`}`);
+  }
+  if (terrainSwaps.length) {
+    L.push(``);
+    L.push(`// ---------------------------------------------- terrain output swaps --`);
+    L.push(`// The Glassworks v0.10 pattern: terrains.updateDefinition replaces what a`);
+    L.push(`// broken terrain cell spawns, live, across all sim threads.`);
+    L.push(`if (isEnabled()) {`);
+    for (const s of terrainSwaps) {
+      L.push(`\t{`);
+      L.push(`\t\tconst out = typeOf(${JSON.stringify(s.output)});`);
+      L.push(`\t\tif (typeof out === "number") {`);
+      L.push(`\t\t\tconst ok = safe(() => (api.terrains.updateDefinition(${JSON.stringify(s.terrain)}, { output: { elementType: out, chance: 1 } }), true));`);
+      L.push(`\t\t\tif (ok) console.log(\`[\${MOD_ID}] ${s.terrain} now drops ${s.output}\`);`);
+      L.push(`\t\t\telse console.error(\`[\${MOD_ID}] ${s.terrain} output swap failed\`);`);
+      L.push(`\t\t}`);
+      L.push(`\t}`);
+    }
+    L.push(`}`);
   }
   if (Object.keys(shakers).length) {
     L.push(``);
@@ -313,6 +382,10 @@ const graph = JSON.parse(fs.readFileSync(graphPath, "utf8"));
 const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
 const { files, report } = compile(graph, cfg);
 fs.mkdirSync(outDir, { recursive: true });
+// clear generated files a previous compile may have left behind
+for (const stale of ["modinfo.json", "main.js", "worker.js"]) {
+  if (!files[stale] && fs.existsSync(path.join(outDir, stale))) fs.unlinkSync(path.join(outDir, stale));
+}
 for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(outDir, name), content);
 console.log("== compiled ==");
 for (const k of ["ok", "warn", "skip"]) report[k].forEach(m => console.log(`${k.toUpperCase()}: ${m}`));

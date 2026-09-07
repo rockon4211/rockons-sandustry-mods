@@ -1,0 +1,20 @@
+{
+	"manifestVersion": 1,
+	"id": "brandon.glasssand",
+	"name": "Glass Sand",
+	"version": "0.3.0",
+	"apiVersion": 1,
+	"entry": "main.js",
+	"author": "Brandon",
+	"description": "Made with the Sandustry Material Studio.\n\nTHE SOIL WORLD\nEvery grain of sand in the world IS Soil now - renamed and recolored in place, so an existing save converts instantly. Soil still wets in water (Wet Soil) and Wet Soil still refines on the Shaker into gold and residue. Same physics, new identity.\n\nTHE GLASS DESERT\nBroken dunes no longer scatter sunsand - they drop GLASS SAND, a pale grain found only in the desert. Feed it to a powered Smelter and it converts 1:1 into glass, slightly lighter so it clears the machine.\n\nNote: dunes regrow from sunsand, and dunes no longer produce sunsand - so mined desert regrows more slowly (limestone still releases some sunsand). Mine responsibly.",
+	"dependencies": [],
+	"loadOrder": 0,
+	"configSchema": {
+		"enabled": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Mod enabled",
+			"descriptionKey": "Turn the mod off without unsubscribing. Recipes can only be withdrawn at load, so switching off leaves them until the next restart."
+		}
+	}
+}
