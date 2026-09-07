@@ -31,6 +31,11 @@ header h1 b{color:var(--accent);font-weight:700}
 .mat.sel{background:var(--panel);outline:1px solid var(--accent)}
 .sw{width:11px;height:11px;border-radius:2px;flex-shrink:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.5)}
 .mat .d{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+.mat .act{margin-left:auto;display:flex;gap:4px}
+.mat .act button{font:10px var(--mono);background:none;border:1px solid var(--line2);border-radius:3px;color:var(--dim);cursor:pointer;padding:1px 6px}
+.mat .act button:hover{color:var(--accent);border-color:var(--accent)}
+.mat .act button.x:hover{color:#ff8a8a;border-color:#ff8a8a}
+.mat.ghost{opacity:.6}
 #legend{border-top:1px solid var(--line);padding:10px 14px 12px;font-size:11px;color:var(--dim)}
 #legend .lg{display:flex;align-items:center;gap:8px;margin-top:5px}
 #legend .bar{width:22px;height:0;border-top:2px solid;flex-shrink:0}
@@ -114,7 +119,10 @@ button:focus-visible,.mat:focus-visible{outline:2px solid var(--accent)}
 <div id="app">
 <header>
   <h1>SANDUSTRY <b>MATERIAL STUDIO</b></h1>
-  <span class="phase">STEP 2 · EDITOR</span>
+  <span style="display:inline-flex;border:1px solid var(--line2);border-radius:6px;overflow:hidden">
+    <button class="tbtn" id="tabVan" style="border:none;border-radius:0">VANILLA</button>
+    <button class="tbtn on" id="tabMod" style="border:none;border-radius:0">MOD</button>
+  </span>
   <button class="tbtn" id="newMatBtn">+ MATERIAL</button>
   <button class="tbtn" id="linkBtn">⇢ DRAW PROCESS</button>
   <div class="stats"><span><b id="stEl">0</b> materials</span><span><b id="stPr">0</b> processes</span><span><b id="stM">0</b> machines</span></div>
@@ -210,9 +218,9 @@ const MACHINES = [
 const VPROCS = [
 {f:"wetSand",t:"gold",via:"m_shaker",k:"heat",conf:"v",lbl:"refine",note:"Wet Sand placed on a Shaker refines automatically; Gold drops downward out of it."},
 {f:"wetSand",t:"residue",via:"m_shaker",k:"heat",conf:"v",lbl:"byproduct",note:"Residue is thrown as the Shaker's waste stream."},
-{f:"sand",t:"wetSand",k:"touch",conf:"a",lbl:"+ water",note:"Sand wetted by water becomes Wet Sand."},
+{f:"sand",t:"wetSand",partner:"water",k:"touch",conf:"a",lbl:"+ water",note:"Sand wetted by water becomes Wet Sand."},
 {f:"gold",t:"m_collector",k:"heat",conf:"v",lbl:"deposit",note:"The Collector banks gold as currency."},
-{f:"residue",t:"burntResidue",k:"touch",conf:"a",lbl:"burns",note:"Residue exposed to fire chars into Burnt Residue."},
+{f:"residue",t:"burntResidue",partner:"fire",k:"touch",conf:"a",lbl:"burns",note:"Residue exposed to fire chars into Burnt Residue."},
 {f:"gold",t:"liquidGold",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe: gold → Liquid Gold (register pair found in code, 50% byproduct branch on one entry)."},
 {f:"copper",t:"liquidCopper",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe: copper → Liquid Copper."},
 {f:"liquidCopper",t:"m_mold",k:"heat",conf:"v",lbl:"fill 4×4",note:"A Copper Mold whose full 4×4 interior holds Liquid Copper (resting on terrain) sets and the structure transforms into a Power Brick. Verified in the transform code."},
@@ -224,14 +232,14 @@ const VPROCS = [
 {f:"t_sandiumSoil",t:"sandium",k:"mine",conf:"v",lbl:"dig",note:"Redsoil deposits release Redsand when dug (discovery map pairing)."},
 {f:"t_crystal",t:"moonhop",k:"mine",conf:"v",lbl:"mine",note:"Aura Crystal drops Moonhop; the discovery map also pairs voidjuice + voidhusk with the find."},
 {f:"t_iceSoil",t:"freezingIce",k:"mine",conf:"v",lbl:"dig"},
-{f:"seed",t:"wetSeed",k:"touch",conf:"a",lbl:"+ water"},
+{f:"seed",t:"wetSeed",partner:"water",k:"touch",conf:"a",lbl:"+ water"},
 {f:"wetSeed",t:"seedling",k:"cycle",conf:"a",lbl:"sprouts"},
 {f:"seedling",t:"petalium",k:"cycle",conf:"a",lbl:"grows",note:"The Planter Box tends the growth chain."},
 {f:"m_planter",t:"seedling",k:"cycle",conf:"v",lbl:"tends"},
 {f:"petalium",t:"dryPetalium",via:"m_dryer",k:"heat",conf:"v",lbl:"dry",note:"Steam Dryer recipe: Amethelis → Dry Amethelis, chance 1. Verified."},
-{f:"dryPetalium",t:"florin",k:"touch",conf:"v",lbl:"burns",note:"i18n: 'A lighter, dried version… that burns into Florin.'"},
+{f:"dryPetalium",t:"florin",partner:"fire",k:"touch",conf:"v",lbl:"burns",note:"i18n: 'A lighter, dried version… that burns into Florin.'"},
 {f:"florin",t:"florinol",k:"cycle",conf:"a",lbl:"condenses",note:"Florinol 'stores energy and can be transmuted into Aurixite' (i18n) — the battery chain."},
-{f:"lava",t:"basalt",k:"touch",conf:"a",lbl:"+ water",note:"Lava quenched by water sets into Cinder; steam boils off."},
+{f:"lava",t:"basalt",partner:"water",k:"touch",conf:"a",lbl:"+ water",note:"Lava quenched by water sets into Cinder; steam boils off."},
 {f:"fire",t:"flame",k:"touch",conf:"a",lbl:"ignites",note:"Fire spreads by planting Flame on burnables."},
 {f:"moonhop",t:"prismite",k:"mine",conf:"v",lbl:"crush",note:"i18n: 'A prismatic slush condensed from each mined Aura crystal.'"},
 {f:"prismite",t:"prismaline",k:"heat",conf:"v",lbl:"distills",note:"i18n: 'Spectral gas distilled from Prismite.'"},
@@ -251,8 +259,8 @@ m_collector:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSA
 const world=document.getElementById('world'), svg=document.getElementById('cv');
 // ---------- custom overlay (your edits, saved in this browser) ----------
 const MATTERS=['Solid','Liquid','Gas','Powder','Slushy','Wisp','Static'];
-let CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0};
-try{const c=JSON.parse(localStorage.getItem('sms.custom')||'null'); if(c)CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,...c};}catch(e){}
+let CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[]};
+try{const c=JSON.parse(localStorage.getItem('sms.custom')||'null'); if(c)CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],...c};}catch(e){}
 function saveCustom(){CUSTOM.ts=Date.now();try{localStorage.setItem('sms.custom',JSON.stringify(CUSTOM))}catch(e){} pushDb();}
 // ---------- cloud sync (so edits survive browser resets and Claude can read the graph) ----------
 let dbNS=null, syncT=null;
@@ -269,7 +277,7 @@ function pushDb(){
     const snap=await d.doc('studio/custom').get();
     const remote=snap&&snap.exists?snap.data():null;
     if(remote&&(remote.ts||0)>(CUSTOM.ts||0)){
-      CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,...remote};
+      CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],...remote};
       try{localStorage.setItem('sms.custom',JSON.stringify(CUSTOM))}catch(e){}
       migrateCustom(); rebuild();
     } else {
@@ -302,15 +310,18 @@ let posStore={}; try{posStore=JSON.parse(localStorage.getItem('sms.pos')||'{}')|
 function savePos(){ try{for(const id in nodes)posStore[id]={x:nodes[id].x,y:nodes[id].y}; localStorage.setItem('sms.pos',JSON.stringify(posStore))}catch(e){} }
 const nodes={};
 let PROCS=[];
+let view='mod'; try{view=localStorage.getItem('sms.view')==='vanilla'?'vanilla':'mod'}catch(e){}
 function rebuild(){
+  const modView=view==='mod';
   for(const id in nodes) delete nodes[id];
-  MATS.forEach(m=>{const o=CUSTOM.over[m.id]; nodes[m.id]={...m,...(o||{}),type:'mat',modded:!!o}});
+  MATS.forEach(m=>{if(modView&&(CUSTOM.hidden||[]).includes(m.id))return;
+    const o=modView?CUSTOM.over[m.id]:null; nodes[m.id]={...m,...(o||{}),type:'mat',modded:!!o}});
   TERRAINS.forEach(t=>nodes[t.id]={...t,type:'terrain'});
   MACHINES.forEach(m=>nodes[m.id]={...m,type:'machine'});
-  for(const id in CUSTOM.mats) nodes[id]={...CUSTOM.mats[id],type:'mat',custom:true};
+  if(modView) for(const id in CUSTOM.mats) nodes[id]={...CUSTOM.mats[id],type:'mat',custom:true};
   for(const id in posStore){ if(nodes[id]){nodes[id].x=posStore[id].x; nodes[id].y=posStore[id].y;} }
-  PROCS=VPROCS.map((p,i)=>({...p,key:'v'+i,src:'v',dis:CUSTOM.dis.includes('v'+i)}))
-    .concat(CUSTOM.procs.map(p=>({...p,src:'c',conf:'c'})));
+  PROCS=VPROCS.map((p,i)=>({...p,key:'v'+i,src:'v',dis:modView&&CUSTOM.dis.includes('v'+i)}));
+  if(modView) PROCS=PROCS.concat(CUSTOM.procs.map(p=>({...p,src:'c',conf:'c'})));
   document.getElementById('stEl').textContent=Object.values(nodes).filter(n=>n.type==='mat').length;
   document.getElementById('stPr').textContent=PROCS.filter(p=>!p.dis).length;
   document.getElementById('stM').textContent=MACHINES.length;
@@ -343,7 +354,7 @@ function draw(){
     path.dataset.pi=i;
     path.addEventListener('click',ev=>{ev.stopPropagation();selectProc(i)});
     world.appendChild(path);
-    const lb=el('text',{class:'elabel',x:g.lx,y:g.ly-4,'text-anchor':'middle'}); lb.textContent=p.lbl||(p.via&&nodes[p.via]?nodes[p.via].n:''); world.appendChild(lb);
+    const lb=el('text',{class:'elabel',x:g.lx,y:g.ly-4,'text-anchor':'middle'}); lb.textContent=p.lbl||(p.via&&nodes[p.via]?nodes[p.via].n:(p.partner&&nodes[p.partner]?'+ '+nodes[p.partner].n:'')); world.appendChild(lb);
     let vim=null, vl=null;
     if(p.via&&nodes[p.via]&&!p.dis){
       const m=nodes[p.via], md=dim(m);
@@ -429,8 +440,21 @@ function select(id){
   sel=id;applySel();
   const n=nodes[id]; if(!n)return;
   let h='';
-  if(n.type==='mat'){
-    h=`<h2><span class="sw" style="background:${hex(n.c)}"></span>${esc(n.n)}${n.custom?'<span class="tag">custom</span>':(n.modded?'<span class="tag">modified</span>':'')}</h2><div class="id">"${esc(n.id)}" · <span class="chip">${n.m}</span></div>`;
+  if(n.type==='mat'&&view==='mod'){
+    const ch=`onchange="saveMat('${esc(id)}',false)"`;
+    h=`<h2><span class="sw" style="background:${hex(n.c)}"></span>${esc(n.n)}${n.custom?'<span class="tag">custom</span>':(n.modded?'<span class="tag">modified</span>':'')}</h2>
+    <div class="id">"${esc(n.id)}" · changes apply as you make them</div><div class="frm">
+    <label>name</label><input type="text" id="f_n" value="${esc(n.n)}" ${ch}>
+    <div class="row2"><div><label>matter type</label><select id="f_m" ${ch}>${MATTERS.map(m=>`<option${m===n.m?' selected':''}>${m}</option>`).join('')}</select></div>
+    <div><label>density</label><input type="number" id="f_d" value="${n.d}" min="1" max="1000" ${ch}></div></div>
+    <label>color</label><input type="color" id="f_c" value="${hex(n.c)}" ${ch}>
+    <label>group</label><input type="text" id="f_g" value="${esc(n.g||'Custom')}" ${ch}>
+    <label class="chk"><input type="checkbox" id="f_gr" ${!(n.fl&&n.fl.grabbable===false)?'checked':''} ${ch}> grabbable (vacuum can suck it)</label>
+    <label class="chk"><input type="checkbox" id="f_tr" ${!(n.fl&&n.fl.transportable===false)?'checked':''} ${ch}> transportable (rides belts)</label>
+    </div>`;
+    if(n.dur)h+=`<div class="kv"><span>timer</span><span>${n.dur[0]}–${n.dur[1]}s</span></div>`;
+  } else if(n.type==='mat'){
+    h=`<h2><span class="sw" style="background:${hex(n.c)}"></span>${esc(n.n)}</h2><div class="id">"${esc(n.id)}" · <span class="chip">${n.m}</span></div>`;
     h+=`<div class="kv"><span>density</span><span>${n.d}</span></div>`;
     h+=`<div class="dbar"><i style="left:0;width:${Math.min(100,n.d/3.2)}%"></i></div><div class="dticks"><span>0</span><span>water 100</span><span>sand 150</span><span>gold 300</span></div>`;
     if(n.fl)h+=`<div class="kv"><span>grabbable</span><span>${n.fl.grabbable?'yes':'no'}</span></div><div class="kv"><span>transportable</span><span>${n.fl.transportable?'yes (belts)':'no'}</span></div>`;
@@ -449,11 +473,11 @@ function select(id){
   }
   if(out.length){h+=`<h3>Produces / feeds</h3>`+out.map(o=>`<div class="proc" onclick="selectProc(${o.i});event.stopPropagation()">→ ${esc(nodes[o.p.t].n)}${viaTx(o.p)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');}
   if(inn.length){h+=`<h3>Made from</h3>`+inn.map(o=>`<div class="proc" onclick="selectProc(${o.i});event.stopPropagation()">← ${esc(nodes[o.p.f].n)}${viaTx(o.p)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');}
-  if(n.type==='mat'){
-    h+=`<div class="btns"><button class="btn pri" onclick="editMat('${esc(id)}')">Edit</button>`;
-    if(n.custom)h+=`<button class="btn warn" onclick="delMat('${esc(id)}')">Delete</button>`;
-    else if(n.modded)h+=`<button class="btn" onclick="revertMat('${esc(id)}')">Revert to vanilla</button>`;
-    h+=`</div>`;
+  if(n.type==='mat'&&view==='mod'){
+    h+=`<div class="btns">`;
+    if(n.modded)h+=`<button class="btn" onclick="revertMat('${esc(id)}')">Revert to vanilla</button>`;
+    h+=`<button class="btn warn" onclick="removeMat('${esc(id)}')">Remove</button></div>`;
+    h+=`<div class="note" style="color:var(--faint)">Remove parks it in the Unused list (bottom of the sidebar) with its processes — restore it from there, or delete it for good.</div>`;
   }
   body.innerHTML=h; insp.classList.add('open');
 }
@@ -461,15 +485,17 @@ function selectProc(i){
   const p=PROCS[i]; sel=null; applySel();
   edgeEls.forEach(e=>e.path.classList.toggle('hl',e.p===p));
   let h=`<h2>${esc(nodes[p.f].n)} → ${esc(nodes[p.t].n)}${p.src==='c'?'<span class="tag">custom</span>':''}${p.dis?'<span class="tag" style="background:rgba(255,138,138,.12);color:#ff8a8a">disabled</span>':''}</h2>
-    <div class="id"><span class="chip" style="color:${KCOL[p.k]}">${{heat:'machine / heat',touch:'touch reaction',mine:'mining drop',cycle:'growth / cycle'}[p.k]}</span>${p.via&&nodes[p.via]?` <span class="chip">via ${esc(nodes[p.via].n)}</span>`:''}${p.src==='c'?'':confTag(p.conf)}</div>
+    <div class="id"><span class="chip" style="color:${KCOL[p.k]}">${{heat:'machine / heat',touch:'touch reaction',mine:'mining drop',cycle:'growth / cycle'}[p.k]}</span>${p.via&&nodes[p.via]?` <span class="chip">via ${esc(nodes[p.via].n)}</span>`:''}${p.partner&&nodes[p.partner]?` <span class="chip">+ ${esc(nodes[p.partner].n)}</span>`:''}${p.src==='c'?'':confTag(p.conf)}</div>
     <div class="kv"><span>step</span><span>${esc(p.lbl||'—')}</span></div>
     ${p.note?`<div class="note">${esc(p.note)}</div>`:''}`;
   const fa=nodes[p.f], fb=nodes[p.t];
   if(p.via&&fa&&fb&&fa.type==='mat'&&fb.type==='mat'&&fb.d>=fa.d)
     h+=`<div class="note" style="color:#ffb04d">⚠ The output (density ${fb.d}) is not lighter than the input (${fa.d}). The machine converts in place and displacement is pure density — an equal-or-heavier product tends to sit on the machine and jam it. Vanilla recipes always go lighter (gold 300 → 120, copper 200 → 150). Consider density ${Math.max(1,fa.d-10)} or less for ${esc(fb.n)}.</div>`;
-  if(p.src==='v')h+=`<div class="note" style="color:var(--faint)">${p.conf==='v'?'Read directly from the decompiled game code or its own text.':'Well-known behaviour, not yet pinned to a line of code.'}</div>
-    <div class="btns"><button class="btn${p.dis?' pri':''}" onclick="toggleProc(${i})">${p.dis?'Re-enable':'Disable'}</button></div>
+  if(p.src==='v'){
+    h+=`<div class="note" style="color:var(--faint)">${p.conf==='v'?'Read directly from the decompiled game code or its own text.':'Well-known behaviour, not yet pinned to a line of code.'}</div>`;
+    if(view==='mod')h+=`<div class="btns"><button class="btn${p.dis?' pri':''}" onclick="toggleProc(${i})">${p.dis?'Re-enable':'Disable'}</button></div>
     <div class="note" style="color:var(--faint)">Disabling marks a vanilla process for removal when the mod is exported.</div>`;
+  }
   else h+=`<div class="btns"><button class="btn pri" onclick="editProc(${i})">Edit</button><button class="btn warn" onclick="delProc(${i})">Delete</button></div>`;
   body.innerHTML=h; insp.classList.add('open');
 }
@@ -521,13 +547,36 @@ function saveMat(id,isNew){
   }
 }
 function revertMat(id){delete CUSTOM.over[id]; saveCustom(); rebuild(); select(id);}
-function delMat(id,silent){
-  if(!silent&&event&&event.target&&!event.target.dataset.armed){
-    event.target.dataset.armed='1'; event.target.textContent='Sure? Delete'; return;
+function removeMat(id){
+  const n=nodes[id]; if(!n||n.type!=='mat')return;
+  if(n.custom){
+    CUSTOM.trash=CUSTOM.trash||{};
+    CUSTOM.trash[id]={mat:CUSTOM.mats[id],procs:CUSTOM.procs.filter(p=>p.f===id||p.t===id||p.partner===id)};
+    delete CUSTOM.mats[id];
+    CUSTOM.procs=CUSTOM.procs.filter(p=>!(p.f===id||p.t===id||p.partner===id));
+  } else {
+    CUSTOM.hidden=CUSTOM.hidden||[];
+    if(!CUSTOM.hidden.includes(id))CUSTOM.hidden.push(id);
   }
-  delete CUSTOM.mats[id]; delete posStore[id];
-  CUSTOM.procs=CUSTOM.procs.filter(p=>p.f!==id&&p.t!==id);
-  saveCustom(); savePos(); sel=null; insp.classList.remove('open'); rebuild();
+  sel=null; insp.classList.remove('open');
+  saveCustom(); rebuild();
+}
+function restoreMat(id){
+  if(CUSTOM.trash&&CUSTOM.trash[id]){
+    CUSTOM.mats[id]=CUSTOM.trash[id].mat;
+    CUSTOM.procs=CUSTOM.procs.concat(CUSTOM.trash[id].procs||[]);
+    delete CUSTOM.trash[id];
+  }
+  CUSTOM.hidden=(CUSTOM.hidden||[]).filter(x=>x!==id);
+  saveCustom(); rebuild();
+}
+function destroyMat(id){
+  if(event&&event.target&&!event.target.dataset.armed){
+    event.target.dataset.armed='1'; event.target.textContent='sure?'; return;
+  }
+  if(CUSTOM.trash)delete CUSTOM.trash[id];
+  delete posStore[id];
+  saveCustom(); savePos(); rebuild();
 }
 let draftMat=null;
 function newMat(){
@@ -548,9 +597,13 @@ function procForm(f,t,p,idx){
   const kk=p?p.k:'heat';
   const viaRow=bothMats?`<div id="viaRow" ${kk==='heat'?'':'hidden'}><label>machine (which machine does this?)</label>
     <select id="p_v"><option value="">— none —</option>${MACHINES.map(m=>`<option value="${m.id}"${p&&p.via===m.id?' selected':''}>${esc(m.n)}</option>`).join('')}</select></div>`:'';
+  const allMats=Object.values(nodes).filter(n=>n.type==='mat').sort((a,b)=>a.n.localeCompare(b.n));
+  const cur=(p&&p.partner)||'water';
+  const partnerRow=bothMats?`<div id="partnerRow" ${kk==='touch'?'':'hidden'}><label>touching what? (the other material in the reaction)</label>
+    <select id="p_p">${allMats.map(m=>`<option value="${esc(m.id)}"${m.id===cur?' selected':''}>${esc(m.n)}</option>`).join('')}</select></div>`:'';
   return `<h2>${esc(nodes[f].n)} → ${esc(nodes[t].n)}</h2><div class="id">${p?'edit process':'new process'}</div><div class="frm">
-    <label>type</label><select id="p_k" onchange="var v=document.getElementById('viaRow');if(v)v.hidden=this.value!=='heat'">${kinds.map(k=>`<option value="${k[0]}"${kk===k[0]?' selected':''}>${k[1]}</option>`).join('')}</select>
-    ${viaRow}
+    <label>type</label><select id="p_k" onchange="var v=document.getElementById('viaRow');if(v)v.hidden=this.value!=='heat';var w=document.getElementById('partnerRow');if(w)w.hidden=this.value!=='touch'">${kinds.map(k=>`<option value="${k[0]}"${kk===k[0]?' selected':''}>${k[1]}</option>`).join('')}</select>
+    ${viaRow}${partnerRow}
     <label>label (shown on the arrow)</label><input type="text" id="p_l" value="${p?esc(p.lbl||''):''}" placeholder="e.g. smelt, + water, dig">
     <label>note</label><textarea id="p_n" placeholder="what happens, in your words">${p?esc(p.note||''):''}</textarea>
     <div class="btns"><button class="btn pri" onclick="saveProc('${esc(f)}','${esc(t)}',${idx===undefined?'null':idx})">Save</button><button class="btn" onclick="insp.classList.remove('open');setLinkMode(false)">Cancel</button></div>
@@ -560,8 +613,10 @@ function saveProc(f,t,idx){
   const k=document.getElementById('p_k').value, lbl=document.getElementById('p_l').value.trim(), note=document.getElementById('p_n').value.trim();
   const vEl=document.getElementById('p_v');
   const via=(k==='heat'&&vEl&&vEl.value)?vEl.value:undefined;
-  if(idx===null){CUSTOM.seq=(CUSTOM.seq||0)+1; const np={key:'c'+CUSTOM.seq,f,t,k,lbl,note}; if(via)np.via=via; CUSTOM.procs.push(np);}
-  else{const p=PROCS[idx], c=CUSTOM.procs.find(x=>x.key===p.key); if(c){c.k=k;c.lbl=lbl;c.note=note; if(via)c.via=via; else delete c.via;}}
+  const pEl=document.getElementById('p_p');
+  const partner=(k==='touch'&&pEl&&pEl.value)?pEl.value:undefined;
+  if(idx===null){CUSTOM.seq=(CUSTOM.seq||0)+1; const np={key:'c'+CUSTOM.seq,f,t,k,lbl,note}; if(via)np.via=via; if(partner)np.partner=partner; CUSTOM.procs.push(np);}
+  else{const p=PROCS[idx], c=CUSTOM.procs.find(x=>x.key===p.key); if(c){c.k=k;c.lbl=lbl;c.note=note; if(via)c.via=via; else delete c.via; if(partner)c.partner=partner; else delete c.partner;}}
   saveCustom(); setLinkMode(false); rebuild();
   const ni=PROCS.findIndex(p=>p.f===f&&p.t===t&&p.k===k&&p.lbl===lbl); if(ni>=0)selectProc(ni); else insp.classList.remove('open');
 }
@@ -570,7 +625,7 @@ function delProc(i){
   const p=PROCS[i]; CUSTOM.procs=CUSTOM.procs.filter(x=>x.key!==p.key);
   saveCustom(); insp.classList.remove('open'); rebuild();
 }
-window.editMat=editMat;window.saveMat=saveMat;window.delMat=delMat;window.revertMat=revertMat;
+window.editMat=editMat;window.saveMat=saveMat;window.removeMat=removeMat;window.restoreMat=restoreMat;window.destroyMat=destroyMat;window.revertMat=revertMat;
 window.toggleProc=toggleProc;window.saveProc=saveProc;window.editProc=editProc;window.delProc=delProc;window.select=select;
 // ---------- link mode ----------
 let linkMode=false, linkFrom=null;
@@ -589,6 +644,18 @@ function linkClick(id){
 }
 linkBtn.onclick=()=>setLinkMode(!linkMode);
 document.getElementById('newMatBtn').onclick=newMat;
+// ---------- vanilla / mod views ----------
+function setView(v){
+  view=v; try{localStorage.setItem('sms.view',v)}catch(e){}
+  document.getElementById('tabVan').classList.toggle('on',v==='vanilla');
+  document.getElementById('tabMod').classList.toggle('on',v==='mod');
+  document.getElementById('newMatBtn').hidden=v!=='mod';
+  document.getElementById('linkBtn').hidden=v!=='mod';
+  setLinkMode(false); sel=null; insp.classList.remove('open');
+  rebuild(); applySel();
+}
+document.getElementById('tabVan').onclick=()=>setView('vanilla');
+document.getElementById('tabMod').onclick=()=>setView('mod');
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){setLinkMode(false); sel=null; applySel(); insp.classList.remove('open');}});
 // ---------- sidebar ----------
 const list=document.getElementById('list');
@@ -606,6 +673,20 @@ function buildList(filter){
       list.appendChild(r);
     });
   }
+  if(view==='mod'){
+    const trash=CUSTOM.trash||{}, hidden=CUSTOM.hidden||[];
+    const items=Object.keys(trash).map(id=>({id,n:(trash[id].mat&&trash[id].mat.n)||id,c:(trash[id].mat&&trash[id].mat.c)||0x888888,custom:true}))
+      .concat(hidden.map(id=>{const m=MATS.find(x=>x.id===id);return {id,n:m?m.n:id,c:m?m.c:0x888888,custom:false}}));
+    if(items.length){
+      const gh=document.createElement('div');gh.className='grp';gh.textContent='Unused ('+items.length+')';list.appendChild(gh);
+      items.forEach(it=>{
+        const r=document.createElement('div');r.className='mat ghost';
+        r.innerHTML=`<span class="sw" style="background:${hex(it.c)}"></span><span style="text-decoration:line-through">${esc(it.n)}</span>
+          <span class="act"><button onclick="restoreMat('${esc(it.id)}')" title="put it back, with its processes">restore</button>${it.custom?`<button class="x" onclick="destroyMat('${esc(it.id)}')" title="delete forever">✕</button>`:''}</span>`;
+        list.appendChild(r);
+      });
+    }
+  }
 }
 function centerOn(id){
   const n=nodes[id],r=svg.getBoundingClientRect(),d=dim(n);
@@ -613,6 +694,6 @@ function centerOn(id){
 }
 document.getElementById('q').addEventListener('input',e=>buildList(e.target.value));
 // ---------- boot ----------
-migrateCustom(); rebuild(); applyView();
+migrateCustom(); setView(view); applyView();
 select('sunsand'); centerOn('sunsand');
 </script>

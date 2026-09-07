@@ -1,0 +1,21 @@
+{
+	"manifestVersion": 1,
+	"id": "brandon.glasssand",
+	"name": "Glass Sand",
+	"version": "0.2.0",
+	"apiVersion": 1,
+	"entry": "main.js",
+	"author": "Brandon",
+	"description": "Made with the Sandustry Material Studio.\n\nA reworked economy. Sand is glass feedstock now: drop it on a powered Smelter and it converts 1:1 into glass, a pale solid a touch lighter than sand.\n\nGold comes from SOIL instead. Wet Soil - made by touching Soil to water (the water is soaked up) - refines on the Shaker exactly like wet sand used to: gold drops out the bottom, residue is thrown out the top.\n\nWet Sand is stripped from the game: sand that gets wet instantly dries back into sand, so the old wet-sand gold path is gone.\n\nSoil has no natural source yet - spawn it with testing tools.",
+	"dependencies": [],
+	"loadOrder": 0,
+	"configSchema": {
+		"enabled": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Mod enabled",
+			"descriptionKey": "Turn the mod off without unsubscribing. Recipes can only be withdrawn at load, so switching off leaves them until the next restart."
+		}
+	},
+	"workerEntry": "worker.js"
+}

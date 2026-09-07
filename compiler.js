@@ -22,8 +22,10 @@ function shade(c, f) {
   return [r, g, b, 255];
 }
 
-// Structure ids in the real game for machines the studio knows.
-const MACHINE_STRUCT = { m_smelter: "smelter", m_dryer: "thermodryer" };
+// Recipe-registry ids in the real game for machines the studio knows.
+// (Verified against the engine's dispatcher: planterBox, shaker, kineticPress,
+// condenser, steamDryer, synthesizer, snowmaker, smelter.)
+const MACHINE_STRUCT = { m_smelter: "smelter", m_dryer: "steamDryer" };
 const MACHINE_NAME = {
   m_smelter: "Smelter", m_shaker: "Shaker", m_dryer: "Steam Dryer",
   m_mold: "Copper Mold", m_planter: "Planter Box", m_collector: "Collector",
@@ -37,21 +39,33 @@ function compile(graph, cfg) {
   const isCustom = id => matIds.has(id);
 
   // --- classify processes ---
-  const recipes = [];   // {structure, input, output, lbl}
-  const touches = [];   // {a, b, product, consumeB}  a+b -> product (a is replaced)
+  const recipes = [];   // {structure, input, output, lbl}  (smelter / steamDryer)
+  const shakers = {};   // input -> {below:[], above:[]}
+  const touches = [];   // {from, partner, to}  from + partner -> to, partner consumed
   for (const p of procs) {
-    if (p.k === "heat" && p.via && MACHINE_STRUCT[p.via]) {
+    if (p.k === "heat" && p.via === "m_shaker") {
+      const s = shakers[p.f] = shakers[p.f] || { below: [], above: [] };
+      // vanilla semantics: the valuable product drops below, waste is thrown above
+      (p.t === "residue" ? s.above : s.below).push(p.t);
+      report.ok.push(`shaker recipe: ${p.f} -> ${p.t} (${p.t === "residue" ? "thrown above" : "dropped below"})`);
+    } else if (p.k === "heat" && p.via && MACHINE_STRUCT[p.via]) {
       recipes.push({ structure: MACHINE_STRUCT[p.via], input: p.f, output: p.t, lbl: p.lbl, machine: MACHINE_NAME[p.via] });
       report.ok.push(`recipe: ${p.f} -> ${p.t} via ${MACHINE_NAME[p.via]}`);
     } else if (p.k === "heat" && p.via) {
-      report.skip.push(`heat via ${MACHINE_NAME[p.via] || p.via}: that machine's recipes are engine-hardcoded; not compilable yet (${p.f} -> ${p.t})`);
-    } else if (p.k === "touch") {
-      // convention: note may name the partner; default partner is water
+      report.skip.push(`heat via ${MACHINE_NAME[p.via] || p.via}: no mod recipe registry found for that machine yet (${p.f} -> ${p.t})`);
+    } else if (p.k === "touch" && matIds.has(p.t) || p.k === "touch" && !p.t.startsWith("m_")) {
       touches.push({ from: p.f, to: p.t, partner: p.partner || "water", lbl: p.lbl, note: p.note });
-      report.warn.push(`touch: ${p.f} -> ${p.t} compiled as "touching water converts" (the studio does not record the partner material yet)`);
+      report.ok.push(`touch: ${p.f} + ${p.partner || "water"} -> ${p.t} (partner consumed)`);
     } else {
       report.skip.push(`${p.k}: ${p.f} -> ${p.t} (not compilable yet)`);
     }
+  }
+  // --- purge rules: hidden vanilla materials dry back into a stand-in ---
+  const purges = [];    // {from, to}
+  for (const id of (graph.hidden || [])) {
+    const to = (cfg.purgeMap || {})[id];
+    if (to) { purges.push({ from: id, to }); report.ok.push(`purge: ${id} converts instantly to ${to} (stripped from the game)`); }
+    else report.warn.push(`hidden: ${id} - no stand-in configured, grains of it will still exist if the engine creates them`);
   }
 
   // --- density sanity along machine chains ---
@@ -78,7 +92,7 @@ function compile(graph, cfg) {
       enabled: { type: "boolean", default: true, labelKey: "Mod enabled", descriptionKey: "Turn the mod off without unsubscribing. Recipes can only be withdrawn at load, so switching off leaves them until the next restart." },
     },
   };
-  const needWorker = touches.length > 0;
+  const needWorker = touches.length > 0 || purges.length > 0;
   if (needWorker) modinfo.workerEntry = "worker.js";
 
   // --- main.js ---
@@ -121,7 +135,12 @@ function compile(graph, cfg) {
   L.push(`// Vanilla element types the recipes and reactions reference.`);
   const vanillaRefs = new Set();
   recipes.forEach(r => { if (!isCustom(r.input)) vanillaRefs.add(r.input); if (!isCustom(r.output)) vanillaRefs.add(r.output); });
+  Object.keys(shakers).forEach(inp => {
+    if (!isCustom(inp)) vanillaRefs.add(inp);
+    shakers[inp].below.concat(shakers[inp].above).forEach(o => { if (!isCustom(o)) vanillaRefs.add(o); });
+  });
   touches.forEach(t => { ["from", "to", "partner"].forEach(k => { if (!isCustom(t[k])) vanillaRefs.add(t[k]); }); });
+  purges.forEach(p => { ["from", "to"].forEach(k => { if (!isCustom(p[k])) vanillaRefs.add(p[k]); }); });
   L.push(`for (const id of ${JSON.stringify([...vanillaRefs])}) {`);
   L.push(`\tconst t = safe(() => api.elements.getTypeFromId(id));`);
   L.push(`\tif (typeof t === "number") typeById.set(id, t);`);
@@ -151,11 +170,38 @@ function compile(graph, cfg) {
       L.push(`safe(() => api.elements.addInteractionInfo(${JSON.stringify(r.input)}, { kind: "custom", text: ${JSON.stringify(`${r.machine}: ${r.input} → ${r.output}`)} }));`);
     }
   }
+  if (Object.keys(shakers).length) {
+    L.push(``);
+    L.push(`// ------------------------------------------------------ shaker recipes --`);
+    L.push(`// Engine shape: one recipe per input; outputsBelow drop out the bottom`);
+    L.push(`// (vanilla: gold), outputsAbove are thrown out the top (vanilla: residue).`);
+    L.push(`if (isEnabled()) {`);
+    for (const inp of Object.keys(shakers)) {
+      const s = shakers[inp];
+      L.push(`\t{`);
+      L.push(`\t\tconst input = typeOf(${JSON.stringify(inp)});`);
+      const belowIds = s.below, aboveIds = s.above;
+      L.push(`\t\tconst below = ${JSON.stringify(belowIds)}.map(typeOf), above = ${JSON.stringify(aboveIds)}.map(typeOf);`);
+      L.push(`\t\tif (input !== undefined && below.concat(above).every(t => t !== undefined)) {`);
+      L.push(`\t\t\ttry {`);
+      L.push(`\t\t\t\tapi.structures.recipes.register("shaker", {`);
+      L.push(`\t\t\t\t\tinput,`);
+      L.push(`\t\t\t\t\toutputsBelow: below.map(t => ({ elementType: t, chance: ${belowIds.length ? +(0.5 / belowIds.length).toFixed(3) : 0} })),`);
+      L.push(`\t\t\t\t\toutputsAbove: above.map(t => ({ elementType: t, chance: ${aboveIds.length ? +(0.5 / aboveIds.length).toFixed(3) : 0} })),`);
+      L.push(`\t\t\t\t});`);
+      L.push(`\t\t\t\tconsole.log(\`[\${MOD_ID}] shaker recipe: ${inp} -> ${belowIds.join("+") || "-"} below / ${aboveIds.join("+") || "-"} above\`);`);
+      L.push(`\t\t\t} catch (e) { console.error(\`[\${MOD_ID}] shaker recipe ${inp} failed:\`, e); }`);
+      L.push(`\t\t}`);
+      L.push(`\t}`);
+    }
+    L.push(`}`);
+  }
   if (needWorker) {
+    const T = touches.length, P0 = 8 + T * 3;
     L.push(``);
     L.push(`// ------------------------------------------- shared state for the worker --`);
     L.push(`let shared = null;`);
-    L.push(`try { shared = api.shared.buffers.create("state", { type: "uint32", length: ${8 + touches.length * 3} }); } catch (e) { console.error(\`[\${MOD_ID}] shared buffer failed:\`, e); }`);
+    L.push(`try { shared = api.shared.buffers.create("state", { type: "uint32", length: ${P0 + purges.length * 2} }); } catch (e) { console.error(\`[\${MOD_ID}] shared buffer failed:\`, e); }`);
     L.push(`function publish() {`);
     L.push(`\tif (!shared) return;`);
     L.push(`\tshared[0] = isEnabled() ? 1 : 0;`);
@@ -163,6 +209,10 @@ function compile(graph, cfg) {
       L.push(`\tshared[${8 + i * 3}] = typeOf(${JSON.stringify(t.from)}) || 0;`);
       L.push(`\tshared[${9 + i * 3}] = typeOf(${JSON.stringify(t.partner)}) || 0;`);
       L.push(`\tshared[${10 + i * 3}] = typeOf(${JSON.stringify(t.to)}) || 0;`);
+    });
+    purges.forEach((p, i) => {
+      L.push(`\tshared[${P0 + i * 2}] = typeOf(${JSON.stringify(p.from)}) || 0;`);
+      L.push(`\tshared[${P0 + i * 2 + 1}] = typeOf(${JSON.stringify(p.to)}) || 0;`);
     });
     L.push(`}`);
     L.push(`publish(); setInterval(publish, 1000);`);
@@ -173,22 +223,25 @@ function compile(graph, cfg) {
   const files = { "modinfo.json": JSON.stringify(modinfo, null, "\t") + "\n", "main.js": L.join("\n") + "\n" };
 
   if (needWorker) {
-    files["worker.js"] = buildWorker(cfg, touches);
+    files["worker.js"] = buildWorker(cfg, touches, purges);
   }
   return { files, report };
 }
 
-function buildWorker(cfg, touches) {
-  // Generalized Glassworks quench: for each touch rule i,
-  // shared[8+3i]=from, [9+3i]=partner, [10+3i]=to.
-  return `// ${cfg.name} - worker entry (generated). Touch reactions live here because
-// only this thread sees particles move.
+function buildWorker(cfg, touches, purges) {
+  // Generalized Glassworks quench: touch rule i lives at shared[8+3i..10+3i]
+  // (from, partner, to; the partner cell is consumed, like water in wetting).
+  // Purge rule j lives after the touches, 2 slots each (from, to): any grain
+  // of a stripped vanilla material converts the moment it moves.
+  const T = touches.length, P0 = 8 + T * 3, P = purges.length;
+  return `// ${cfg.name} - worker entry (generated). Touch reactions and purge rules
+// live here because only this thread sees particles move.
 const api = sandkit.api;
 const MOD_ID = ${JSON.stringify(cfg.id)};
 let shared = null;
-try { shared = api.shared.buffers.require("state", { type: "uint32", length: ${8 + touches.length * 3} }); }
+try { shared = api.shared.buffers.require("state", { type: "uint32", length: ${P0 + P * 2} }); }
 catch (e) { console.error(\`[\${MOD_ID}] worker cannot read shared state:\`, e); }
-const N = ${touches.length};
+const T = ${T}, P0 = ${P0}, P = ${P};
 const active = () => shared && shared[0] === 1;
 function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
 function readType(x, y) { return safe(() => api.elements.getResolvedTypeAtCell(x, y)); }
@@ -205,29 +258,44 @@ function setCell(x, y, t) {
 \t}
 \treturn false;
 }
+function clearCell(x, y) { safe(() => api.elements.removeAtCell(x, y)); }
 const NB = [[0, -1], [0, 1], [-1, 0], [1, 0]];
 function scan(x, y) {
 \tif (!active() || !shared) return;
 \tconst here = readType(x, y);
-\tfor (let i = 0; i < N; i++) {
+\tfor (let j = 0; j < P; j++) {
+\t\tconst from = shared[P0 + j * 2], to = shared[P0 + j * 2 + 1];
+\t\tif (from && to && here === from) { if (setCell(x, y, to)) return; }
+\t}
+\tfor (let i = 0; i < T; i++) {
 \t\tconst from = shared[8 + i * 3], partner = shared[9 + i * 3], to = shared[10 + i * 3];
 \t\tif (!from || !partner || !to) continue;
 \t\tif (here !== from && here !== partner) continue;
 \t\tfor (const [dx, dy] of NB) {
 \t\t\tconst nx = x + dx, ny = y + dy, n = readType(nx, ny);
-\t\t\tif (here === from && n === partner) { if (setCell(x, y, to)) return; }
-\t\t\telse if (here === partner && n === from) { if (setCell(nx, ny, to)) return; }
+\t\t\tif (here === from && n === partner) {
+\t\t\t\t// Confirm right before writing - the event can be a tick stale.
+\t\t\t\tif (readType(x, y) !== from) return;
+\t\t\t\tif (setCell(x, y, to)) { clearCell(nx, ny); return; }
+\t\t\t} else if (here === partner && n === from) {
+\t\t\t\tif (readType(nx, ny) !== from) return;
+\t\t\t\tif (setCell(nx, ny, to)) { clearCell(x, y); return; }
+\t\t\t}
 \t\t}
 \t}
 }
 function register() {
-\tif (!shared || !shared[8]) {
+\tlet ready = false;
+\tfor (let i = 0; i < T; i++) if (shared && shared[8 + i * 3]) ready = true;
+\tfor (let j = 0; j < P; j++) if (shared && shared[P0 + j * 2]) ready = true;
+\tif (!shared || !ready) {
 \t\tif (typeof setTimeout === "function") setTimeout(register, 500);
 \t\treturn;
 \t}
 \ttry {
 \t\tconst types = new Set();
-\t\tfor (let i = 0; i < N; i++) { types.add(shared[8 + i * 3]); types.add(shared[9 + i * 3]); }
+\t\tfor (let i = 0; i < T; i++) { types.add(shared[8 + i * 3]); types.add(shared[9 + i * 3]); }
+\t\tfor (let j = 0; j < P; j++) types.add(shared[P0 + j * 2]);
 \t\tfor (const t of types) {
 \t\t\tif (!t) continue;
 \t\t\tapi.events.on("element:moved", (p) => { const d = p && p.destination; if (d) scan(d.x, d.y); }, { guard: { elementType: t } });
