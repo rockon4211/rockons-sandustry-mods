@@ -1,0 +1,20 @@
+{
+	"manifestVersion": 1,
+	"id": "brandon.glasssand",
+	"name": "Glass Sand",
+	"version": "0.1.0",
+	"apiVersion": 1,
+	"entry": "main.js",
+	"author": "Brandon",
+	"description": "Made with the Sandustry Material Studio.\n\nAdds Glass Sand, a pale solid grain, and glass. Drop Glass Sand on a powered Smelter and it converts 1:1 into glass, which is slightly lighter so it clears the machine instead of jamming it.\n\nGlass Sand has no natural source yet - spawn it with testing tools (e.g. the Matter Gun) or a future update.",
+	"dependencies": [],
+	"loadOrder": 0,
+	"configSchema": {
+		"enabled": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Mod enabled",
+			"descriptionKey": "Turn the mod off without unsubscribing. Recipes can only be withdrawn at load, so switching off leaves them until the next restart."
+		}
+	}
+}

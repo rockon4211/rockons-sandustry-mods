@@ -1,0 +1,618 @@
+<title>Sandustry Material Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#101318; --panel:#1a1f27; --panel2:#151a21; --line:#2e3642; --line2:#3d4756;
+  --text:#d7dde6; --dim:#8a94a3; --faint:#5b6472; --accent:#ffd75e;
+  --heat:#ff9a3d; --touch:#6fc3ff; --mine:#c9964a; --cycle:#8fe08f;
+  --disp:"Chakra Petch","IBM Plex Sans",sans-serif;
+  --body:"IBM Plex Sans",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--ground);color:var(--text);font:14px/1.5 var(--body);overflow:hidden}
+#app{display:grid;grid-template-rows:52px 1fr;height:100vh}
+header{display:flex;align-items:center;gap:16px;padding:0 18px;background:var(--panel2);border-bottom:1px solid var(--line)}
+header h1{font:600 17px var(--disp);letter-spacing:.04em;margin:0;color:var(--text)}
+header h1 b{color:var(--accent);font-weight:700}
+.phase{font:500 10px var(--mono);color:var(--ground);background:var(--accent);padding:2px 8px;border-radius:3px;letter-spacing:.08em}
+.stats{margin-left:auto;display:flex;gap:18px;font:12px var(--mono);color:var(--dim)}
+.stats b{color:var(--text)}
+#main{display:grid;grid-template-columns:236px 1fr;min-height:0}
+/* ---------- sidebar ---------- */
+#side{background:var(--panel2);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#side input{margin:10px;padding:7px 10px;background:var(--ground);border:1px solid var(--line);border-radius:4px;color:var(--text);font:12px var(--mono)}
+#side input:focus{outline:none;border-color:var(--accent)}
+#list{overflow-y:auto;flex:1;padding:0 6px 10px}
+.grp{font:600 10px var(--disp);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:12px 8px 4px}
+.mat{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12.5px}
+.mat:hover{background:var(--panel)}
+.mat.sel{background:var(--panel);outline:1px solid var(--accent)}
+.sw{width:11px;height:11px;border-radius:2px;flex-shrink:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.5)}
+.mat .d{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+#legend{border-top:1px solid var(--line);padding:10px 14px 12px;font-size:11px;color:var(--dim)}
+#legend .lg{display:flex;align-items:center;gap:8px;margin-top:5px}
+#legend .bar{width:22px;height:0;border-top:2px solid;flex-shrink:0}
+#legend .dash{border-top-style:dashed}
+/* ---------- canvas ---------- */
+#wrap{position:relative;min-width:0;min-height:0;background:
+  radial-gradient(circle at 30% 20%, #131822 0%, var(--ground) 55%)}
+#wrap::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:radial-gradient(rgba(255,255,255,.045) 1px, transparent 1px);
+  background-size:26px 26px}
+svg{width:100%;height:100%;display:block;cursor:grab}
+svg.panning{cursor:grabbing}
+.edge{fill:none;stroke-width:1.6;opacity:.75}
+.edge.approx{stroke-dasharray:5 4;opacity:.55}
+.edge.hl{opacity:1;stroke-width:2.4}
+.elabel{font:500 9.5px var(--mono);fill:var(--dim);pointer-events:none}
+.node{cursor:pointer}
+.node rect.box{fill:var(--panel);stroke:var(--line2);stroke-width:1;rx:5}
+.node.sel rect.box{stroke:var(--accent);stroke-width:1.6}
+.node text.nm{font:600 11.5px var(--disp);fill:var(--text);pointer-events:none}
+.node text.mt{font:9px var(--mono);fill:var(--dim);pointer-events:none}
+.node.terrain rect.box{fill:#171a15;stroke:#4a4433;rx:1}
+.node.machine rect.box{fill:#20242e;stroke:#4a5568;rx:10}
+.node.machine text.nm{fill:var(--accent)}
+/* ---------- inspector ---------- */
+#insp{position:absolute;top:14px;right:14px;width:264px;max-height:calc(100% - 28px);overflow-y:auto;
+  background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:14px 16px;display:none;
+  box-shadow:0 8px 30px rgba(0,0,0,.5)}
+#insp.open{display:block}
+#insp h2{font:700 15px var(--disp);margin:0 0 2px;display:flex;align-items:center;gap:8px}
+#insp .id{font:11px var(--mono);color:var(--faint);margin-bottom:10px}
+.chip{display:inline-block;font:500 10px var(--mono);padding:1px 7px;border-radius:9px;border:1px solid var(--line2);color:var(--dim)}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--panel2);font-size:12.5px}
+.kv span:first-child{color:var(--dim)}
+.kv span:last-child{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.dbar{position:relative;height:6px;background:var(--ground);border-radius:3px;margin:8px 0 2px}
+.dbar i{position:absolute;top:0;bottom:0;border-radius:3px;background:var(--accent)}
+.dticks{display:flex;justify-content:space-between;font:9px var(--mono);color:var(--faint)}
+#insp h3{font:600 10px var(--disp);letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin:14px 0 4px}
+.proc{font-size:12px;padding:5px 0;border-bottom:1px solid var(--panel2);cursor:pointer}
+.proc:hover{color:var(--accent)}
+.proc .via{font:10px var(--mono);color:var(--dim)}
+.conf{font:500 9px var(--mono);padding:1px 5px;border-radius:3px;margin-left:5px}
+.conf.v{background:rgba(143,224,143,.14);color:var(--cycle)}
+.conf.a{background:rgba(255,215,94,.1);color:var(--accent)}
+.note{font-size:12px;color:var(--dim);line-height:1.55;margin-top:6px}
+#insp .close{position:absolute;top:8px;right:10px;background:none;border:none;color:var(--faint);cursor:pointer;font:14px var(--mono)}
+#insp .close:hover{color:var(--text)}
+#hint{position:absolute;left:14px;bottom:12px;font:11px var(--mono);color:var(--faint);pointer-events:none}
+button:focus-visible,.mat:focus-visible{outline:2px solid var(--accent)}
+/* ---------- editor ---------- */
+.tbtn{font:600 11px var(--disp);letter-spacing:.06em;background:var(--panel);border:1px solid var(--line2);
+  color:var(--text);border-radius:5px;padding:6px 12px;cursor:pointer}
+.tbtn:hover{border-color:var(--accent);color:var(--accent)}
+.tbtn.on{background:var(--accent);color:var(--ground);border-color:var(--accent)}
+.edge.dis{opacity:.15;stroke-dasharray:2 5}
+.vlink{fill:none;stroke:#4a5568;stroke-width:1;stroke-dasharray:3 4;opacity:.3;pointer-events:none}
+.vlink.hl{opacity:.95;stroke:var(--accent);stroke-width:1.4}
+.edge.custom{stroke-width:2}
+.node.linksrc rect.box{stroke:var(--touch);stroke-width:2}
+.frm label{display:block;font:600 9.5px var(--disp);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:10px 0 3px}
+.frm input[type=text],.frm input[type=number],.frm select,.frm textarea{width:100%;padding:6px 8px;background:var(--ground);
+  border:1px solid var(--line);border-radius:4px;color:var(--text);font:12px var(--mono)}
+.frm input:focus,.frm select:focus,.frm textarea:focus{outline:none;border-color:var(--accent)}
+.frm textarea{resize:vertical;min-height:44px;font-family:var(--body)}
+.frm input[type=color]{width:100%;height:30px;padding:2px;background:var(--ground);border:1px solid var(--line);border-radius:4px;cursor:pointer}
+.frm .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.frm .chk{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);margin-top:8px;cursor:pointer}
+.btns{display:flex;gap:8px;margin-top:14px}
+.btn{flex:1;font:600 11px var(--disp);letter-spacing:.05em;padding:7px 0;border-radius:5px;cursor:pointer;border:1px solid var(--line2);background:var(--panel2);color:var(--text)}
+.btn:hover{border-color:var(--accent)}
+.btn.pri{background:var(--accent);color:var(--ground);border-color:var(--accent)}
+.btn.warn{color:#ff8a8a}
+.btn.warn:hover{border-color:#ff8a8a}
+.conf.c{background:rgba(111,195,255,.12);color:var(--touch)}
+.tag{display:inline-block;font:500 9px var(--mono);padding:1px 6px;border-radius:3px;margin-left:6px;background:rgba(255,215,94,.12);color:var(--accent)}
+@media (prefers-reduced-motion: no-preference){
+  .node{transition:opacity .15s}
+}
+</style>
+<div id="app">
+<header>
+  <h1>SANDUSTRY <b>MATERIAL STUDIO</b></h1>
+  <span class="phase">STEP 2 · EDITOR</span>
+  <button class="tbtn" id="newMatBtn">+ MATERIAL</button>
+  <button class="tbtn" id="linkBtn">⇢ DRAW PROCESS</button>
+  <div class="stats"><span><b id="stEl">0</b> materials</span><span><b id="stPr">0</b> processes</span><span><b id="stM">0</b> machines</span></div>
+</header>
+<div id="main">
+  <div id="side">
+    <input id="q" type="text" placeholder="search materials…" spellcheck="false">
+    <div id="list"></div>
+    <div id="legend">
+      <div style="font:600 10px var(--disp);letter-spacing:.13em;color:var(--faint)">PROCESS TYPES</div>
+      <div class="lg"><span class="bar" style="border-color:var(--heat)"></span>machine / heat</div>
+      <div class="lg"><span class="bar" style="border-color:var(--touch)"></span>touch reaction</div>
+      <div class="lg"><span class="bar" style="border-color:var(--mine)"></span>mining drop</div>
+      <div class="lg"><span class="bar" style="border-color:var(--cycle)"></span>growth / cycle</div>
+      <div class="lg"><span class="bar dash" style="border-color:var(--dim)"></span>dashed = approximate</div>
+    </div>
+  </div>
+  <div id="wrap">
+    <svg id="cv"><defs>
+      <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z" fill="context-stroke"/></marker>
+    </defs><g id="world"></g></svg>
+    <div id="insp"><button class="close" id="inspClose">✕</button><div id="inspBody"></div></div>
+    <div id="hint">drag nodes · drag background to pan · scroll to zoom · click for details</div>
+  </div>
+</div>
+</div>
+<script>
+// ============ DATA — extracted from the decompiled game (v0.5.2) ============
+const MATS = [
+// core industry
+{id:"sand",n:"Sand",m:"Solid",d:150,c:0xF4A860,g:"Core industry",x:120,y:120},
+{id:"wetSand",n:"Wet Sand",m:"Slushy",d:150,c:0xCD853F,g:"Core industry",x:120,y:230},
+{id:"gold",n:"Gold",m:"Solid",d:300,c:0xFFD700,g:"Core industry",x:420,y:290},
+{id:"residue",n:"Residue",m:"Slushy",d:50,c:0xCCCCCC,g:"Core industry",x:420,y:180},
+{id:"burntResidue",n:"Burnt Residue",m:"Solid",d:50,c:0x808080,g:"Core industry",x:620,y:180},
+{id:"liquidGold",n:"Liquid Gold",m:"Liquid",d:120,c:0xFFD700,g:"Core industry",x:620,y:330},
+// water cycle
+{id:"water",n:"Water",m:"Liquid",d:100,c:0x1E90FF,g:"Water cycle",x:150,y:480},
+{id:"steam",n:"Steam",m:"Gas",d:25,c:0xF7F7F7,g:"Water cycle",x:340,y:480},
+// copper & power
+{id:"copper",n:"Copper",m:"Solid",d:200,c:0xB87333,g:"Copper & power",x:820,y:120},
+{id:"liquidCopper",n:"Liquid Copper",m:"Liquid",d:150,c:0xB87333,g:"Copper & power",x:1030,y:120},
+{id:"coolant",n:"Coolant",m:"Liquid",d:300,c:0x0033AA,g:"Copper & power",x:820,y:330},
+{id:"irradiatedCrystal",n:"Irradiated Crystal",m:"Solid",d:300,c:0xFF69B4,g:"Copper & power",x:1030,y:330},
+{id:"oil",n:"Oil",m:"Liquid",d:80,c:0x1A1410,g:"Copper & power",x:820,y:430},
+{id:"pyronol",n:"Pyronol",m:"Liquid",d:90,c:0x305148,g:"Copper & power",x:1030,y:430},
+// desert
+{id:"sunsand",n:"Sunsand",m:"Solid",d:200,c:0xF0D25A,g:"Desert",x:1320,y:150,fl:{grabbable:false,transportable:false},dur:[0.1,0.5]},
+{id:"sandium",n:"Redsand",m:"Solid",d:160,c:0xA04040,g:"Desert",x:1320,y:340},
+// plants & florinol
+{id:"seed",n:"Seed",m:"Solid",d:150,c:0x7FFF00,g:"Plants",x:120,y:660},
+{id:"wetSeed",n:"Wet Seed",m:"Slushy",d:100,c:0x66CC66,g:"Plants",x:310,y:660},
+{id:"seedling",n:"Seedling",m:"Static",d:100,c:0x1B5E20,g:"Plants",x:490,y:660},
+{id:"petalium",n:"Amethelis",m:"Wisp",d:40,c:0xCC55DB,g:"Plants",x:670,y:660},
+{id:"dryPetalium",n:"Dry Amethelis",m:"Wisp",d:39,c:0xFFB859,g:"Plants",x:880,y:660},
+{id:"florin",n:"Florin",m:"Gas",d:20,c:0xC9A5FF,g:"Plants",x:1080,y:660},
+{id:"florinol",n:"Florinol",m:"Liquid",d:30,c:0x9B4FE0,g:"Plants",x:1080,y:770},
+// fire & ice
+{id:"fire",n:"Fire",m:"Gas",d:25,c:0xFF4500,g:"Fire & ice",x:620,y:480},
+{id:"flame",n:"Flame",m:"Solid",d:50,c:0xFFA500,g:"Fire & ice",x:820,y:540},
+{id:"lava",n:"Lava",m:"Liquid",d:75,c:0xFF3300,g:"Fire & ice",x:400,y:590},
+{id:"basalt",n:"Cinder",m:"Solid",d:50,c:0x8B0000,g:"Fire & ice",x:590,y:590},
+{id:"freezingIce",n:"Snow",m:"Powder",d:150,c:0xE0F7FF,g:"Fire & ice",x:150,y:590},
+{id:"caulk",n:"Caulk",m:"Solid",d:200,c:0xFF8C00,g:"Fire & ice",x:620,y:60},
+// void
+{id:"gloom",n:"Voidbloom",m:"Slushy",d:30,c:0x7A00A8,g:"Void",x:1320,y:500},
+{id:"moonhop",n:"Moonhop",m:"Solid",d:80,c:0xE0BBE8,g:"Void",x:1320,y:610},
+{id:"prismite",n:"Prismite",m:"Slushy",d:30,c:0xFF66CC,g:"Void",x:1530,y:610},
+{id:"prismaline",n:"Prismaline",m:"Gas",d:24,c:0xFF99CC,g:"Void",x:1720,y:610},
+{id:"voidjuice",n:"Voidjuice",m:"Liquid",d:55,c:0x9B59CF,g:"Void",x:1530,y:720},
+{id:"voidhusk",n:"Voidhusk",m:"Slushy",d:45,c:0xB14FE5,g:"Void",x:1320,y:720},
+{id:"voidSeeds",n:"Void Seeds",m:"Slushy",d:30,c:0x9932CC,g:"Void",x:1530,y:830},
+{id:"growingVoidSeed",n:"Growing Void Seed",m:"Static",d:100,c:0x5B2E8C,g:"Void",x:1720,y:830,dur:[0.1,0.5]},
+{id:"voidPetal",n:"Void Petal",m:"Wisp",d:40,c:0x00CED1,g:"Void",x:1720,y:720},
+{id:"auralite",n:"Auralite",m:"Powder",d:100,c:0xFF69B3,g:"Void",x:1530,y:500},
+];
+const TERRAINS = [
+{id:"t_dune",n:"Dune",g:"Desert",hp:1,x:1530,y:150},
+{id:"t_limestone",n:"Limestone",g:"Desert",hp:40,x:1530,y:260},
+{id:"t_sandiumSoil",n:"Redsoil deposit",g:"Desert",hp:null,x:1530,y:340},
+{id:"t_crystal",n:"Aura Crystal",g:"Void",hp:null,x:1320,y:390},
+{id:"t_iceSoil",n:"Snow soil",g:"Fire & ice",hp:null,x:150,y:700},
+];
+const MACHINES = [
+{id:"m_smelter",n:"Smelter",x:820,y:230},
+{id:"m_shaker",n:"Shaker",x:280,y:230},
+{id:"m_dryer",n:"Steam Dryer",x:775,y:590},
+{id:"m_mold",n:"Copper Mold",x:1240,y:60},
+{id:"m_planter",n:"Planter Box",x:400,y:730},
+{id:"m_collector",n:"Collector",x:420,y:60},
+];
+// kind: heat | touch | mine | cycle ; conf: v(erified in code) | a(pprox)
+const VPROCS = [
+{f:"wetSand",t:"gold",via:"m_shaker",k:"heat",conf:"v",lbl:"refine",note:"Wet Sand placed on a Shaker refines automatically; Gold drops downward out of it."},
+{f:"wetSand",t:"residue",via:"m_shaker",k:"heat",conf:"v",lbl:"byproduct",note:"Residue is thrown as the Shaker's waste stream."},
+{f:"sand",t:"wetSand",k:"touch",conf:"a",lbl:"+ water",note:"Sand wetted by water becomes Wet Sand."},
+{f:"gold",t:"m_collector",k:"heat",conf:"v",lbl:"deposit",note:"The Collector banks gold as currency."},
+{f:"residue",t:"burntResidue",k:"touch",conf:"a",lbl:"burns",note:"Residue exposed to fire chars into Burnt Residue."},
+{f:"gold",t:"liquidGold",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe: gold → Liquid Gold (register pair found in code, 50% byproduct branch on one entry)."},
+{f:"copper",t:"liquidCopper",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe: copper → Liquid Copper."},
+{f:"liquidCopper",t:"m_mold",k:"heat",conf:"v",lbl:"fill 4×4",note:"A Copper Mold whose full 4×4 interior holds Liquid Copper (resting on terrain) sets and the structure transforms into a Power Brick. Verified in the transform code."},
+{f:"water",t:"steam",k:"touch",conf:"a",lbl:"boils",note:"Heat boils water to steam; Glassworks' quench used exactly this 1:1."},
+{f:"steam",t:"water",k:"cycle",conf:"v",lbl:"sky rain",note:"i18n: 'Turns into rain when it reaches the sky'. Steam also condenses back when energy-depleted."},
+{f:"t_dune",t:"sunsand",k:"mine",conf:"v",lbl:"break, 100%",note:"Dune terrain is registered with output {sunsand, chance 1} — every broken cell drops one grain. hp 1."},
+{f:"t_limestone",t:"sunsand",k:"mine",conf:"v",lbl:"break",note:"Limestone shares the sunsand output. hp 40, needs indestructible-tier."},
+{f:"sunsand",t:"t_dune",k:"cycle",conf:"v",lbl:"hardens 0.1–0.5s",note:"On timer expiry, resting against terrain, with no player within 30 cells, a sunsand grain becomes dune terrain. Verified interceptor."},
+{f:"t_sandiumSoil",t:"sandium",k:"mine",conf:"v",lbl:"dig",note:"Redsoil deposits release Redsand when dug (discovery map pairing)."},
+{f:"t_crystal",t:"moonhop",k:"mine",conf:"v",lbl:"mine",note:"Aura Crystal drops Moonhop; the discovery map also pairs voidjuice + voidhusk with the find."},
+{f:"t_iceSoil",t:"freezingIce",k:"mine",conf:"v",lbl:"dig"},
+{f:"seed",t:"wetSeed",k:"touch",conf:"a",lbl:"+ water"},
+{f:"wetSeed",t:"seedling",k:"cycle",conf:"a",lbl:"sprouts"},
+{f:"seedling",t:"petalium",k:"cycle",conf:"a",lbl:"grows",note:"The Planter Box tends the growth chain."},
+{f:"m_planter",t:"seedling",k:"cycle",conf:"v",lbl:"tends"},
+{f:"petalium",t:"dryPetalium",via:"m_dryer",k:"heat",conf:"v",lbl:"dry",note:"Steam Dryer recipe: Amethelis → Dry Amethelis, chance 1. Verified."},
+{f:"dryPetalium",t:"florin",k:"touch",conf:"v",lbl:"burns",note:"i18n: 'A lighter, dried version… that burns into Florin.'"},
+{f:"florin",t:"florinol",k:"cycle",conf:"a",lbl:"condenses",note:"Florinol 'stores energy and can be transmuted into Aurixite' (i18n) — the battery chain."},
+{f:"lava",t:"basalt",k:"touch",conf:"a",lbl:"+ water",note:"Lava quenched by water sets into Cinder; steam boils off."},
+{f:"fire",t:"flame",k:"touch",conf:"a",lbl:"ignites",note:"Fire spreads by planting Flame on burnables."},
+{f:"moonhop",t:"prismite",k:"mine",conf:"v",lbl:"crush",note:"i18n: 'A prismatic slush condensed from each mined Aura crystal.'"},
+{f:"prismite",t:"prismaline",k:"heat",conf:"v",lbl:"distills",note:"i18n: 'Spectral gas distilled from Prismite.'"},
+{f:"voidSeeds",t:"growingVoidSeed",k:"cycle",conf:"v",lbl:"planted",note:"i18n: 'A void seed that has been planted and is growing into a void flower.'"},
+];
+// ============ RENDER ============
+const NW=132, NH=46, MW=134, MH=36;
+// In-game structure sprites, pulled straight out of the game's asset archive.
+const SPRITES={
+m_smelter:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAANxJREFUOI1jrO5f+Z+BEhCZlPefgYGBLByZlPefBWZQdf9KkixuLQxn+PjhIwPLsyePGRgYGBi+fHxPlg/gLqCqASvndWFVHJ5UhsLnF+BnYOHm4cPqgr+rZRkYuBgZGF7/ZWBgYGBgTniKoebZk8cEvPDgDwODGDMDw6u/WNVw8/DhMeDrP4hmJIDNEpavXz5B1H/C4oKv/yC0AgtONSxSMrKYGhkgfiYEvn75xMDy8cNHDAkNdSOCmmGAiWiVtDBASkaWgYVfgJ+BgYGB4cbNc2QZwqihY0JRdgYA40JfFRyL7AQAAAAASUVORK5CYII=",
+m_shaker:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAAWCAYAAACosj4+AAAAAXNSR0IArs4c6QAAAJRJREFUSIntlbsNwCAMRI8oC9DALEzGDEzGLNAwQtLGCpKR85ELX3eWOD1sCxyAA4q0A0BKiRRDCMR774mPMRJfSgEA5JxJvbVG/BiD+N478bVWbEvYP8qAODloXOqL3MKZlQuIc9SNzIA4GRAnA+KkDkjdS62uQ+qAVv6cmWZjlmTdcqQdkl6EzXkysk+gnu7Q61AnBTUWL3BalWAAAAAASUVORK5CYII=",
+m_dryer:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAARxJREFUOI2lkrFtwzAQRZ8ET6A6fTiICpW3gBq1RjKCC+6gCTiAVF6hCbRA1Lk3Aa1wLhIxlmMJgf0BggR59+/ffWb2ifECDryXr+STwbYCa3/Js+PwMCYXEZqmQUT+st8lLYTOuRW5iYj9KDFVTWu5s7Y051w6A+acM2tLywH6vkdVUVWqqiLGSIwRVd2VD5ADqCoxRsZxxHtPXdecz+dV4DRNWFuSHQecc3x9vJEdBw63QafTaZVUVVVStYfUr/c+9Q1YCCG9bc3gcFtpHEcAvPe7FVdYHFBVCyFYCGHlxq1L99WBbwUiklQsQ136FhGKotgUkAHWNA3zPNP3/b06iqJgnmemaXrsxN5X/g9ygK7reHq/XC4G2LP7Fc7X7yelGpUYAAAAAElFTkSuQmCC",
+m_mold:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAANNJREFUOI2lkyEPgkAYhp9zFBPBzcZmp1qIVGfwV5AYv4bEryDQiRSNdB0kNwKJ4nYGkSFwB8x3u3L73vd77t1OAJI/ZABEUURRFKuMlmXheR4AMggC2ZIsPl+PMQgWCwG6Z28WDit7mguQoWNrB3QBMj4f8bO8TzLSsIMfs3HYk/gnXvcnZdXgZ7kc9jRFIEPHpqwa7rdHd9mSjEqeIhDtJgDi3ZZLcp00qwi64dCxtWZdgBa7L1WJs0ZVwOqPJQDpui6maa4y1nVNmqafgLVb+3oDDi9NCweV7FIAAAAASUVORK5CYII=",
+m_planter:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAAXNSR0IArs4c6QAAAMFJREFUOI21kz0KAjEQhb8sERG1ECxU2NJreIQFW29h4yFsvIXtgkfwGpYWWggW2sfCDZtEY9YYH4RhMjNv3uRHAIoEkADbJVzvMOjB4QTTce1ruD7UuYsNZDpJ22Hf9l2rF9i5EuBy80v2xdx9CU95v0KQ8rBn6xEA+9VZkzeBMuskQLvbilJh1kmAzuRz58q+KDXrskBTVZQ5RZmbhG8RImoMGYiL3fzoHe0boiCBxl9Hi3qgFlF1O1FINlqyv/YAJns38iqsJSUAAAAASUVORK5CYII=",
+m_collector:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAeUExURdH/AAAAAJD/VIHtR23dMP//JtvbCcjIALm5AP///yv3FJsAAAABdFJOU9DGNQqyAAAAAWJLR0QJ8dml7AAAAAd0SU1FB+oJBwMIGDI/ZIsAAABCSURBVAjXYxCEAgYBBjBgZBBgBAsAGUJKQKAIYhgDgSGI4QiTcoQqxmSIJsIZUMVi5UBQCGSIdwBBI7IVMEthzgAA+wsMUPDxhfsAAAAASUVORK5CYII="
+};
+const world=document.getElementById('world'), svg=document.getElementById('cv');
+// ---------- custom overlay (your edits, saved in this browser) ----------
+const MATTERS=['Solid','Liquid','Gas','Powder','Slushy','Wisp','Static'];
+let CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0};
+try{const c=JSON.parse(localStorage.getItem('sms.custom')||'null'); if(c)CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,...c};}catch(e){}
+function saveCustom(){CUSTOM.ts=Date.now();try{localStorage.setItem('sms.custom',JSON.stringify(CUSTOM))}catch(e){} pushDb();}
+// ---------- cloud sync (so edits survive browser resets and Claude can read the graph) ----------
+let dbNS=null, syncT=null;
+function pushDb(){
+  if(!dbNS)return;
+  clearTimeout(syncT);
+  syncT=setTimeout(()=>{try{dbNS.doc('studio/custom').set(JSON.parse(JSON.stringify(CUSTOM))).catch(()=>{})}catch(e){}},500);
+}
+(async()=>{
+  try{
+    if(!(window.claude&&claude.use))return;
+    const d=await claude.use('db'); if(!d)return;
+    dbNS=d;
+    const snap=await d.doc('studio/custom').get();
+    const remote=snap&&snap.exists?snap.data():null;
+    if(remote&&(remote.ts||0)>(CUSTOM.ts||0)){
+      CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,...remote};
+      try{localStorage.setItem('sms.custom',JSON.stringify(CUSTOM))}catch(e){}
+      migrateCustom(); rebuild();
+    } else {
+      const hasLocal=Object.keys(CUSTOM.mats).length||CUSTOM.procs.length||Object.keys(CUSTOM.over).length||CUSTOM.dis.length;
+      if((!remote&&hasLocal)||(CUSTOM.ts||0)>((remote&&remote.ts)||0)) pushDb();
+    }
+  }catch(e){}
+})();
+// Older saves drew machine recipes as two arrows (in + out) — merge them into one via-edge.
+function migrateCustom(){
+  const machineIds=new Set(MACHINES.map(m=>m.id));
+  const ins=CUSTOM.procs.filter(p=>machineIds.has(p.t)&&p.k==='heat');
+  let changed=false;
+  for(const a of ins){
+    const b=CUSTOM.procs.find(o=>o.f===a.t&&o.k==='heat'&&machineIds.has(o.f));
+    if(!b)continue;
+    CUSTOM.seq=(CUSTOM.seq||0)+1;
+    CUSTOM.procs.push({key:'c'+CUSTOM.seq,f:a.f,t:b.t,k:'heat',via:a.t,lbl:a.lbl||b.lbl||'',note:a.note||b.note||''});
+    CUSTOM.procs=CUSTOM.procs.filter(p=>p!==a&&p!==b);
+    changed=true;
+  }
+  // Prune untouched "New Material" phantoms left by the old create-first flow.
+  for(const id in CUSTOM.mats){
+    const m=CUSTOM.mats[id];
+    if(m.n==='New Material'&&!CUSTOM.procs.some(p=>p.f===id||p.t===id)){delete CUSTOM.mats[id];changed=true;}
+  }
+  if(changed)saveCustom();
+}
+let posStore={}; try{posStore=JSON.parse(localStorage.getItem('sms.pos')||'{}')||{}}catch(e){}
+function savePos(){ try{for(const id in nodes)posStore[id]={x:nodes[id].x,y:nodes[id].y}; localStorage.setItem('sms.pos',JSON.stringify(posStore))}catch(e){} }
+const nodes={};
+let PROCS=[];
+function rebuild(){
+  for(const id in nodes) delete nodes[id];
+  MATS.forEach(m=>{const o=CUSTOM.over[m.id]; nodes[m.id]={...m,...(o||{}),type:'mat',modded:!!o}});
+  TERRAINS.forEach(t=>nodes[t.id]={...t,type:'terrain'});
+  MACHINES.forEach(m=>nodes[m.id]={...m,type:'machine'});
+  for(const id in CUSTOM.mats) nodes[id]={...CUSTOM.mats[id],type:'mat',custom:true};
+  for(const id in posStore){ if(nodes[id]){nodes[id].x=posStore[id].x; nodes[id].y=posStore[id].y;} }
+  PROCS=VPROCS.map((p,i)=>({...p,key:'v'+i,src:'v',dis:CUSTOM.dis.includes('v'+i)}))
+    .concat(CUSTOM.procs.map(p=>({...p,src:'c',conf:'c'})));
+  document.getElementById('stEl').textContent=Object.values(nodes).filter(n=>n.type==='mat').length;
+  document.getElementById('stPr').textContent=PROCS.filter(p=>!p.dis).length;
+  document.getElementById('stM').textContent=MACHINES.length;
+  buildList(document.getElementById('q').value||'');
+  draw();
+}
+const KCOL={heat:'var(--heat)',touch:'var(--touch)',mine:'var(--mine)',cycle:'var(--cycle)'};
+function hex(c){return '#'+c.toString(16).padStart(6,'0')}
+function dim(n){return n.type==='machine'?{w:MW,h:MH}:{w:NW,h:NH}}
+const NS='http://www.w3.org/2000/svg';
+function el(t,a){const e=document.createElementNS(NS,t); for(const k in a)e.setAttribute(k,a[k]); return e;}
+let edgeEls=[], nodeEls={};
+function edgePath(p){
+  const a=nodes[p.f], b=nodes[p.t]; if(!a||!b) return null;
+  const da=dim(a), db=dim(b);
+  const ax=a.x+da.w/2, ay=a.y+da.h/2, bx=b.x+db.w/2, by=b.y+db.h/2;
+  const dx=bx-ax, dy=by-ay, len=Math.max(1,Math.hypot(dx,dy));
+  const ux=dx/len, uy=dy/len;
+  const sx=ax+ux*(da.w/2+4)*(Math.abs(ux)>Math.abs(uy)?1:Math.abs(uy/Math.max(.01,Math.abs(ux)+Math.abs(uy)))), sy=ay+uy*(da.h/2+4);
+  const ex=bx-ux*(db.w/2+8), ey=by-uy*(db.h/2+8);
+  const mx=(sx+ex)/2, my=(sy+ey)/2, bend=Math.min(40,len*.15);
+  const cx=mx-uy*bend, cy=my+ux*bend;
+  return {d:`M${sx} ${sy}Q${cx} ${cy} ${ex} ${ey}`,lx:(sx+2*cx+ex)/4,ly:(sy+2*cy+ey)/4};
+}
+function draw(){
+  world.innerHTML=''; edgeEls=[]; nodeEls={};
+  PROCS.forEach((p,i)=>{
+    const g=edgePath(p); if(!g)return;
+    const path=el('path',{class:'edge'+(p.conf==='a'?' approx':'')+(p.dis?' dis':'')+(p.src==='c'?' custom':''),d:g.d,stroke:KCOL[p.k],'marker-end':'url(#ah)'});
+    path.dataset.pi=i;
+    path.addEventListener('click',ev=>{ev.stopPropagation();selectProc(i)});
+    world.appendChild(path);
+    const lb=el('text',{class:'elabel',x:g.lx,y:g.ly-4,'text-anchor':'middle'}); lb.textContent=p.lbl||(p.via&&nodes[p.via]?nodes[p.via].n:''); world.appendChild(lb);
+    let vim=null, vl=null;
+    if(p.via&&nodes[p.via]&&!p.dis){
+      const m=nodes[p.via], md=dim(m);
+      vl=el('path',{class:'vlink',d:`M${m.x+md.w/2} ${m.y+md.h/2}L${g.lx} ${g.ly+9}`});
+      world.insertBefore(vl,path);
+      if(SPRITES[p.via]){
+        vim=el('image',{x:g.lx-8,y:g.ly+1,width:16,height:16,preserveAspectRatio:'xMidYMid meet','pointer-events':'none'});
+        vim.setAttribute('href',SPRITES[p.via]); vim.style.imageRendering='pixelated';
+        world.appendChild(vim);
+      }
+    }
+    edgeEls.push({path,lb,vim,vl,p});
+  });
+  for(const id in nodes){
+    const n=nodes[id], d=dim(n);
+    const g=el('g',{class:'node '+n.type,transform:`translate(${n.x},${n.y})`});
+    g.appendChild(el('rect',{class:'box',width:d.w,height:d.h,rx:n.type==='machine'?10:(n.type==='terrain'?1:5)}));
+    if(n.type==='mat'){
+      g.appendChild(el('rect',{x:9,y:9,width:13,height:13,rx:2,fill:hex(n.c),stroke:'rgba(0,0,0,.55)'}));
+      const t=el('text',{class:'nm',x:29,y:20}); t.textContent=n.n; g.appendChild(t);
+      const m=el('text',{class:'mt',x:29,y:34}); m.textContent=n.m+' · '+n.d; g.appendChild(m);
+    } else if(n.type==='terrain'){
+      g.appendChild(el('rect',{x:9,y:9,width:13,height:13,fill:'none',stroke:'#8a7a4a','stroke-dasharray':'2 2'}));
+      const t=el('text',{class:'nm',x:29,y:20}); t.textContent=n.n; g.appendChild(t);
+      const m=el('text',{class:'mt',x:29,y:34}); m.textContent='terrain'+(n.hp?` · hp ${n.hp}`:''); g.appendChild(m);
+    } else {
+      const s=SPRITES[n.id];
+      if(s){
+        const img=el('image',{x:7,y:(d.h-24)/2,width:24,height:24,preserveAspectRatio:'xMidYMid meet'});
+        img.setAttribute('href',s); img.style.imageRendering='pixelated';
+        g.appendChild(img);
+        const t=el('text',{class:'nm',x:38,y:d.h/2+4}); t.textContent=n.n; g.appendChild(t);
+      } else {
+        const t=el('text',{class:'nm',x:d.w/2,y:d.h/2+4,'text-anchor':'middle'}); t.textContent=n.n; g.appendChild(t);
+      }
+    }
+    if(n.custom||n.modded) g.appendChild(el('circle',{cx:d.w-6,cy:6,r:3.2,fill:'var(--accent)',stroke:'rgba(0,0,0,.5)'}));
+    g.addEventListener('mousedown',ev=>startDragNode(ev,id));
+    g.addEventListener('click',ev=>{ev.stopPropagation(); if(dragMoved)return; if(linkMode){linkClick(id)}else select(id)});
+    world.appendChild(g); nodeEls[id]=g;
+  }
+  applySel();
+  if(linkFrom&&nodeEls[linkFrom])nodeEls[linkFrom].classList.add('linksrc');
+}
+function redrawEdges(){
+  edgeEls.forEach(e=>{const g=edgePath(e.p); if(g){e.path.setAttribute('d',g.d); e.lb.setAttribute('x',g.lx); e.lb.setAttribute('y',g.ly-4);
+    if(e.vim){e.vim.setAttribute('x',g.lx-8); e.vim.setAttribute('y',g.ly+1);}
+    if(e.vl&&nodes[e.p.via]){const m=nodes[e.p.via],md=dim(m); e.vl.setAttribute('d',`M${m.x+md.w/2} ${m.y+md.h/2}L${g.lx} ${g.ly+9}`);}}});
+}
+// ---------- pan/zoom ----------
+let vx=40,vy=10,vs=0.86;
+function applyView(){world.setAttribute('transform',`translate(${vx},${vy}) scale(${vs})`)}
+let panning=false,px=0,py=0;
+svg.addEventListener('mousedown',ev=>{if(ev.target===svg||ev.target.id==='world'){panning=true;px=ev.clientX;py=ev.clientY;svg.classList.add('panning')}});
+window.addEventListener('mousemove',ev=>{
+  if(panning){vx+=ev.clientX-px;vy+=ev.clientY-py;px=ev.clientX;py=ev.clientY;applyView()}
+  if(dragId){const n=nodes[dragId];n.x=dsx+(ev.clientX-dmx)/vs;n.y=dsy+(ev.clientY-dmy)/vs;
+    if(Math.abs(ev.clientX-dmx)+Math.abs(ev.clientY-dmy)>3)dragMoved=true;
+    nodeEls[dragId].setAttribute('transform',`translate(${n.x},${n.y})`);redrawEdges()}
+});
+window.addEventListener('mouseup',()=>{if(dragId){savePos()}panning=false;dragId=null;svg.classList.remove('panning')});
+svg.addEventListener('wheel',ev=>{ev.preventDefault();
+  const r=svg.getBoundingClientRect(),mx=ev.clientX-r.left,my=ev.clientY-r.top;
+  const f=ev.deltaY<0?1.1:0.9,ns=Math.min(2.2,Math.max(0.3,vs*f));
+  vx=mx-(mx-vx)*(ns/vs); vy=my-(my-vy)*(ns/vs); vs=ns; applyView();
+},{passive:false});
+let dragId=null,dmx=0,dmy=0,dsx=0,dsy=0,dragMoved=false;
+function startDragNode(ev,id){ev.stopPropagation();dragId=id;dragMoved=false;dmx=ev.clientX;dmy=ev.clientY;dsx=nodes[id].x;dsy=nodes[id].y}
+// ---------- selection & inspector ----------
+let sel=null;
+const insp=document.getElementById('insp'), body=document.getElementById('inspBody');
+document.getElementById('inspClose').onclick=()=>{sel=null;applySel();insp.classList.remove('open')};
+svg.addEventListener('click',()=>{sel=null;applySel();insp.classList.remove('open')});
+function applySel(){
+  for(const id in nodeEls)nodeEls[id].classList.toggle('sel',id===sel);
+  document.querySelectorAll('.mat').forEach(e=>e.classList.toggle('sel',e.dataset.id===sel));
+  edgeEls.forEach(e=>{e.path.classList.toggle('hl',sel&&(e.p.f===sel||e.p.t===sel||e.p.via===sel));
+    if(e.vl)e.vl.classList.toggle('hl',sel===e.p.via);});
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function confTag(c){return `<span class="conf ${c}">${c==='v'?'verified':'approx'}</span>`}
+function select(id){
+  sel=id;applySel();
+  const n=nodes[id]; if(!n)return;
+  let h='';
+  if(n.type==='mat'){
+    h=`<h2><span class="sw" style="background:${hex(n.c)}"></span>${esc(n.n)}${n.custom?'<span class="tag">custom</span>':(n.modded?'<span class="tag">modified</span>':'')}</h2><div class="id">"${esc(n.id)}" · <span class="chip">${n.m}</span></div>`;
+    h+=`<div class="kv"><span>density</span><span>${n.d}</span></div>`;
+    h+=`<div class="dbar"><i style="left:0;width:${Math.min(100,n.d/3.2)}%"></i></div><div class="dticks"><span>0</span><span>water 100</span><span>sand 150</span><span>gold 300</span></div>`;
+    if(n.fl)h+=`<div class="kv"><span>grabbable</span><span>${n.fl.grabbable?'yes':'no'}</span></div><div class="kv"><span>transportable</span><span>${n.fl.transportable?'yes (belts)':'no'}</span></div>`;
+    if(n.dur)h+=`<div class="kv"><span>timer</span><span>${n.dur[0]}–${n.dur[1]}s</span></div>`;
+  } else if(n.type==='terrain'){
+    h=`<h2>${esc(n.n)}</h2><div class="id">terrain${n.hp?` · hp ${n.hp}`:''}</div>`;
+  } else {
+    const s=SPRITES[id];
+    h=`<h2 style="display:flex;align-items:center;gap:10px">${s?`<img src="${s}" alt="" style="width:44px;height:44px;object-fit:contain;image-rendering:pixelated">`:''}${esc(n.n)}</h2><div class="id">machine · in-game sprite</div>`;
+  }
+  const viaTx=p=>p.via&&nodes[p.via]?` via ${esc(nodes[p.via].n)}`:'';
+  const inn=PROCS.map((p,i)=>({p,i})).filter(o=>o.p.t===id&&nodes[o.p.f]), out=PROCS.map((p,i)=>({p,i})).filter(o=>o.p.f===id&&nodes[o.p.t]);
+  if(n.type==='machine'){
+    const rec=PROCS.map((p,i)=>({p,i})).filter(o=>o.p.via===id&&nodes[o.p.f]&&nodes[o.p.t]);
+    if(rec.length)h+=`<h3>Recipes</h3>`+rec.map(o=>`<div class="proc" onclick="selectProc(${o.i});event.stopPropagation()">${esc(nodes[o.p.f].n)} → ${esc(nodes[o.p.t].n)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');
+  }
+  if(out.length){h+=`<h3>Produces / feeds</h3>`+out.map(o=>`<div class="proc" onclick="selectProc(${o.i});event.stopPropagation()">→ ${esc(nodes[o.p.t].n)}${viaTx(o.p)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');}
+  if(inn.length){h+=`<h3>Made from</h3>`+inn.map(o=>`<div class="proc" onclick="selectProc(${o.i});event.stopPropagation()">← ${esc(nodes[o.p.f].n)}${viaTx(o.p)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');}
+  if(n.type==='mat'){
+    h+=`<div class="btns"><button class="btn pri" onclick="editMat('${esc(id)}')">Edit</button>`;
+    if(n.custom)h+=`<button class="btn warn" onclick="delMat('${esc(id)}')">Delete</button>`;
+    else if(n.modded)h+=`<button class="btn" onclick="revertMat('${esc(id)}')">Revert to vanilla</button>`;
+    h+=`</div>`;
+  }
+  body.innerHTML=h; insp.classList.add('open');
+}
+function selectProc(i){
+  const p=PROCS[i]; sel=null; applySel();
+  edgeEls.forEach(e=>e.path.classList.toggle('hl',e.p===p));
+  let h=`<h2>${esc(nodes[p.f].n)} → ${esc(nodes[p.t].n)}${p.src==='c'?'<span class="tag">custom</span>':''}${p.dis?'<span class="tag" style="background:rgba(255,138,138,.12);color:#ff8a8a">disabled</span>':''}</h2>
+    <div class="id"><span class="chip" style="color:${KCOL[p.k]}">${{heat:'machine / heat',touch:'touch reaction',mine:'mining drop',cycle:'growth / cycle'}[p.k]}</span>${p.via&&nodes[p.via]?` <span class="chip">via ${esc(nodes[p.via].n)}</span>`:''}${p.src==='c'?'':confTag(p.conf)}</div>
+    <div class="kv"><span>step</span><span>${esc(p.lbl||'—')}</span></div>
+    ${p.note?`<div class="note">${esc(p.note)}</div>`:''}`;
+  const fa=nodes[p.f], fb=nodes[p.t];
+  if(p.via&&fa&&fb&&fa.type==='mat'&&fb.type==='mat'&&fb.d>=fa.d)
+    h+=`<div class="note" style="color:#ffb04d">⚠ The output (density ${fb.d}) is not lighter than the input (${fa.d}). The machine converts in place and displacement is pure density — an equal-or-heavier product tends to sit on the machine and jam it. Vanilla recipes always go lighter (gold 300 → 120, copper 200 → 150). Consider density ${Math.max(1,fa.d-10)} or less for ${esc(fb.n)}.</div>`;
+  if(p.src==='v')h+=`<div class="note" style="color:var(--faint)">${p.conf==='v'?'Read directly from the decompiled game code or its own text.':'Well-known behaviour, not yet pinned to a line of code.'}</div>
+    <div class="btns"><button class="btn${p.dis?' pri':''}" onclick="toggleProc(${i})">${p.dis?'Re-enable':'Disable'}</button></div>
+    <div class="note" style="color:var(--faint)">Disabling marks a vanilla process for removal when the mod is exported.</div>`;
+  else h+=`<div class="btns"><button class="btn pri" onclick="editProc(${i})">Edit</button><button class="btn warn" onclick="delProc(${i})">Delete</button></div>`;
+  body.innerHTML=h; insp.classList.add('open');
+}
+window.selectProc=selectProc;
+// ---------- editing ----------
+function matForm(n,isNew){
+  const idRow=n.custom?`<label>id (used in the exported mod)</label><input type="text" id="f_id" value="${esc(n.id)}" ${isNew?'':'readonly style="opacity:.6"'}>`:'';
+  return `<h2>${isNew?'New material':'Edit '+esc(n.n)}</h2><div class="frm">
+    ${idRow}
+    <label>name</label><input type="text" id="f_n" value="${esc(n.n)}">
+    <div class="row2"><div><label>matter type</label><select id="f_m">${MATTERS.map(m=>`<option${m===n.m?' selected':''}>${m}</option>`).join('')}</select></div>
+    <div><label>density</label><input type="number" id="f_d" value="${n.d}" min="1" max="1000"></div></div>
+    <label>color</label><input type="color" id="f_c" value="${hex(n.c)}">
+    <label>group</label><input type="text" id="f_g" value="${esc(n.g||'Custom')}">
+    <label class="chk"><input type="checkbox" id="f_gr" ${!(n.fl&&n.fl.grabbable===false)?'checked':''}> grabbable (vacuum can suck it)</label>
+    <label class="chk"><input type="checkbox" id="f_tr" ${!(n.fl&&n.fl.transportable===false)?'checked':''}> transportable (rides belts)</label>
+    <div class="btns"><button class="btn pri" onclick="saveMat('${esc(n.id)}',${isNew?'true':'false'})">${isNew?'Create':'Save'}</button><button class="btn" onclick="${isNew?`insp.classList.remove('open')`:`select('${esc(n.id)}')`}">Cancel</button></div>
+  </div>`;
+}
+function editMat(id){const n=nodes[id]; if(!n)return; body.innerHTML=matForm(n,false); insp.classList.add('open');}
+function saveMat(id,isNew){
+  const g=x=>document.getElementById(x);
+  const v={n:g('f_n').value.trim()||'Unnamed',m:g('f_m').value,d:Math.max(1,+g('f_d').value||150),
+    c:parseInt(g('f_c').value.slice(1),16),g:g('f_g').value.trim()||'Custom'};
+  const fl={grabbable:g('f_gr').checked,transportable:g('f_tr').checked};
+  if(!(fl.grabbable&&fl.transportable))v.fl=fl;
+  if(isNew){
+    let nid=(g('f_id').value.trim()||id).replace(/[^a-zA-Z0-9_]/g,'')||('custom'+((CUSTOM.seq||0)+1));
+    if(nodes[nid]){g('f_id').style.borderColor='#ff8a8a';g('f_id').value=nid+'_2';return;}
+    CUSTOM.seq=(CUSTOM.seq||0)+1;
+    CUSTOM.mats[nid]={...v,id:nid,x:draftMat?draftMat.x:100,y:draftMat?draftMat.y:100};
+    draftMat=null;
+    saveCustom(); rebuild(); select(nid);
+    return;
+  }
+  const n=nodes[id];
+  if(n.custom){
+    CUSTOM.mats[id]={...CUSTOM.mats[id],...v,id,x:n.x,y:n.y};
+    if(!v.fl)delete CUSTOM.mats[id].fl;
+    saveCustom(); rebuild(); select(id);
+  } else {
+    // vanilla override — store only fields that differ
+    const base=MATS.find(m=>m.id===id), o={};
+    for(const k of ['n','m','d','c','g'])if(v[k]!==base[k])o[k]=v[k];
+    const baseFl=base.fl||{grabbable:true,transportable:true};
+    if(fl.grabbable!==(baseFl.grabbable!==false)||fl.transportable!==(baseFl.transportable!==false))o.fl=fl;
+    if(Object.keys(o).length)CUSTOM.over[id]=o; else delete CUSTOM.over[id];
+    saveCustom(); rebuild(); select(id);
+  }
+}
+function revertMat(id){delete CUSTOM.over[id]; saveCustom(); rebuild(); select(id);}
+function delMat(id,silent){
+  if(!silent&&event&&event.target&&!event.target.dataset.armed){
+    event.target.dataset.armed='1'; event.target.textContent='Sure? Delete'; return;
+  }
+  delete CUSTOM.mats[id]; delete posStore[id];
+  CUSTOM.procs=CUSTOM.procs.filter(p=>p.f!==id&&p.t!==id);
+  saveCustom(); savePos(); sel=null; insp.classList.remove('open'); rebuild();
+}
+let draftMat=null;
+function newMat(){
+  const r=svg.getBoundingClientRect();
+  draftMat={id:'custom'+((CUSTOM.seq||0)+1),n:'New Material',m:'Solid',d:150,c:0xffd75e,g:'Custom',custom:true,
+    x:Math.round((r.width/2-vx)/vs-NW/2),y:Math.round((r.height/2-vy)/vs-NH/2)};
+  sel=null; applySel();
+  body.innerHTML=matForm(draftMat,true); insp.classList.add('open');
+}
+function toggleProc(i){
+  const p=PROCS[i];
+  if(p.dis)CUSTOM.dis=CUSTOM.dis.filter(k=>k!==p.key); else CUSTOM.dis.push(p.key);
+  saveCustom(); rebuild(); selectProc(i);
+}
+function procForm(f,t,p,idx){
+  const kinds=[['heat','machine / heat'],['touch','touch reaction'],['mine','mining drop'],['cycle','growth / cycle']];
+  const bothMats=nodes[f]&&nodes[t]&&nodes[f].type!=='machine'&&nodes[t].type!=='machine';
+  const kk=p?p.k:'heat';
+  const viaRow=bothMats?`<div id="viaRow" ${kk==='heat'?'':'hidden'}><label>machine (which machine does this?)</label>
+    <select id="p_v"><option value="">— none —</option>${MACHINES.map(m=>`<option value="${m.id}"${p&&p.via===m.id?' selected':''}>${esc(m.n)}</option>`).join('')}</select></div>`:'';
+  return `<h2>${esc(nodes[f].n)} → ${esc(nodes[t].n)}</h2><div class="id">${p?'edit process':'new process'}</div><div class="frm">
+    <label>type</label><select id="p_k" onchange="var v=document.getElementById('viaRow');if(v)v.hidden=this.value!=='heat'">${kinds.map(k=>`<option value="${k[0]}"${kk===k[0]?' selected':''}>${k[1]}</option>`).join('')}</select>
+    ${viaRow}
+    <label>label (shown on the arrow)</label><input type="text" id="p_l" value="${p?esc(p.lbl||''):''}" placeholder="e.g. smelt, + water, dig">
+    <label>note</label><textarea id="p_n" placeholder="what happens, in your words">${p?esc(p.note||''):''}</textarea>
+    <div class="btns"><button class="btn pri" onclick="saveProc('${esc(f)}','${esc(t)}',${idx===undefined?'null':idx})">Save</button><button class="btn" onclick="insp.classList.remove('open');setLinkMode(false)">Cancel</button></div>
+  </div>`;
+}
+function saveProc(f,t,idx){
+  const k=document.getElementById('p_k').value, lbl=document.getElementById('p_l').value.trim(), note=document.getElementById('p_n').value.trim();
+  const vEl=document.getElementById('p_v');
+  const via=(k==='heat'&&vEl&&vEl.value)?vEl.value:undefined;
+  if(idx===null){CUSTOM.seq=(CUSTOM.seq||0)+1; const np={key:'c'+CUSTOM.seq,f,t,k,lbl,note}; if(via)np.via=via; CUSTOM.procs.push(np);}
+  else{const p=PROCS[idx], c=CUSTOM.procs.find(x=>x.key===p.key); if(c){c.k=k;c.lbl=lbl;c.note=note; if(via)c.via=via; else delete c.via;}}
+  saveCustom(); setLinkMode(false); rebuild();
+  const ni=PROCS.findIndex(p=>p.f===f&&p.t===t&&p.k===k&&p.lbl===lbl); if(ni>=0)selectProc(ni); else insp.classList.remove('open');
+}
+function editProc(i){const p=PROCS[i]; body.innerHTML=procForm(p.f,p.t,p,i); insp.classList.add('open');}
+function delProc(i){
+  const p=PROCS[i]; CUSTOM.procs=CUSTOM.procs.filter(x=>x.key!==p.key);
+  saveCustom(); insp.classList.remove('open'); rebuild();
+}
+window.editMat=editMat;window.saveMat=saveMat;window.delMat=delMat;window.revertMat=revertMat;
+window.toggleProc=toggleProc;window.saveProc=saveProc;window.editProc=editProc;window.delProc=delProc;window.select=select;
+// ---------- link mode ----------
+let linkMode=false, linkFrom=null;
+const linkBtn=document.getElementById('linkBtn'), hintEl=document.getElementById('hint');
+const HINT='drag nodes · drag background to pan · scroll to zoom · click for details';
+function setLinkMode(on){
+  linkMode=on; linkFrom=null;
+  linkBtn.classList.toggle('on',on);
+  hintEl.textContent=on?'DRAW: click the SOURCE node, then the TARGET node · Esc to cancel':HINT;
+  for(const id in nodeEls)nodeEls[id].classList.remove('linksrc');
+}
+function linkClick(id){
+  if(!linkFrom){linkFrom=id; nodeEls[id].classList.add('linksrc'); hintEl.textContent='DRAW: now click the TARGET node · Esc to cancel'; return;}
+  if(id===linkFrom)return;
+  body.innerHTML=procForm(linkFrom,id,null,undefined); insp.classList.add('open');
+}
+linkBtn.onclick=()=>setLinkMode(!linkMode);
+document.getElementById('newMatBtn').onclick=newMat;
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){setLinkMode(false); sel=null; applySel(); insp.classList.remove('open');}});
+// ---------- sidebar ----------
+const list=document.getElementById('list');
+function buildList(filter){
+  const f=(filter||'').toLowerCase(); list.innerHTML='';
+  const groups={};
+  Object.values(nodes).filter(n=>n.type==='mat').forEach(m=>{if(f&&!m.n.toLowerCase().includes(f)&&!m.id.toLowerCase().includes(f))return;(groups[m.g]=groups[m.g]||[]).push(m)});
+  for(const g in groups){
+    const gh=document.createElement('div');gh.className='grp';gh.textContent=g;list.appendChild(gh);
+    groups[g].forEach(m=>{
+      const r=document.createElement('div');r.className='mat';r.dataset.id=m.id;r.tabIndex=0;
+      r.innerHTML=`<span class="sw" style="background:${hex(m.c)}"></span>${esc(m.n)}${m.custom||m.modded?' <span style="color:var(--accent)">•</span>':''}<span class="d">${m.d}</span>`;
+      r.onclick=()=>{select(m.id);centerOn(m.id)};
+      r.onkeydown=e=>{if(e.key==='Enter')r.onclick()};
+      list.appendChild(r);
+    });
+  }
+}
+function centerOn(id){
+  const n=nodes[id],r=svg.getBoundingClientRect(),d=dim(n);
+  vx=r.width/2-(n.x+d.w/2)*vs; vy=r.height/2-(n.y+d.h/2)*vs; applyView();
+}
+document.getElementById('q').addEventListener('input',e=>buildList(e.target.value));
+// ---------- boot ----------
+migrateCustom(); rebuild(); applyView();
+select('sunsand'); centerOn('sunsand');
+</script>
