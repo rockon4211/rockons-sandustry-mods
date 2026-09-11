@@ -300,6 +300,21 @@ function compile(graph, cfg) {
     L.push(`publish(); setInterval(publish, 1000);`);
   }
   L.push(``);
+  L.push(`// Version banner: toast once when the player is actually in the world -`);
+  L.push(`// the visible proof of exactly which build is running.`);
+  L.push(`{`);
+  L.push(`\tlet bannered = false;`);
+  L.push(`\tconst bannerTimer = setInterval(() => {`);
+  L.push(`\t\tif (bannered) return clearInterval(bannerTimer);`);
+  L.push(`\t\tconst active = safe(() => api.scene.getActive());`);
+  L.push(`\t\tconst Scene = safe(() => sandkit.enums.Scene) || {};`);
+  L.push(`\t\tconst menus = [Scene.MainMenu, Scene.Intro].filter(v => typeof v === "number");`);
+  L.push(`\t\tconst inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);`);
+  L.push(`\t\tif (!inWorld) return;`);
+  L.push(`\t\tbannered = true;`);
+  L.push(`\t\tsafe(() => api.ui.toast(${JSON.stringify(cfg.name + " v" + (cfg.version || "?") + " running")}));`);
+  L.push(`\t}, 800);`);
+  L.push(`}`);
   L.push(`console.log(\`[\${MOD_ID}] loaded\`);`);
 
   // hand-written bolt-ons appended verbatim to the generated entry
@@ -323,6 +338,41 @@ function compile(graph, cfg) {
   if (files["worker.js"]) for (const p of (cfg.appendWorker || [])) {
     files["worker.js"] += "\n" + fs.readFileSync(p, "utf8");
     report.ok.push(`worker bolt-on appended: ${path.basename(p)}`);
+  }
+  // --- hot-load wrapping (cfg.hotload = file:// base URL of the mod folder) ---
+  // The game reads mod files once at app launch and caches them; a window
+  // reload re-runs the cached copy. Wrapping each entry as a loader stub that
+  // fetches "<name>.real.js?ts=now" fresh from disk defeats the cache: push a
+  // new .real.js and F10 picks it up. If the fetch is blocked, the stub falls
+  // back to the baked copy of the same code - never worse than the old way.
+  if (cfg.hotload) {
+    const wrap = (name, code) => {
+      files[name.replace(".js", ".real.js")] = code;
+      return [
+        `// ${cfg.name} - hot-load stub. The real code lives in ${name.replace(".js", ".real.js")},`,
+        `// fetched fresh on every boot so F10 quick reload picks up new builds.`,
+        `async function __baked(sandkit) {`,
+        code,
+        `}`,
+        `(async () => {`,
+        `\tlet ran = false;`,
+        `\ttry {`,
+        `\t\tconst r = await fetch(${JSON.stringify(cfg.hotload + name.replace(".js", ".real.js"))} + "?ts=" + Date.now());`,
+        `\t\tif (r.ok) {`,
+        `\t\t\tconst src = await r.text();`,
+        `\t\t\tconst A = Object.getPrototypeOf(async function () {}).constructor;`,
+        `\t\t\tawait new A("sandkit", src)(sandkit);`,
+        `\t\t\tran = true;`,
+        `\t\t\tconsole.log("[${cfg.id}] hot-loaded ${name.replace(".js", ".real.js")} fresh from disk");`,
+        `\t\t}`,
+        `\t} catch (e) { console.warn("[${cfg.id}] hot-load failed, using baked code:", e); }`,
+        `\tif (!ran) await __baked(sandkit);`,
+        `})();`,
+      ].join("\n") + "\n";
+    };
+    files["main.js"] = wrap("main.js", files["main.js"]);
+    if (files["worker.js"]) files["worker.js"] = wrap("worker.js", files["worker.js"]);
+    report.ok.push("hot-load stubs: main.js" + (files["worker.real.js"] ? " + worker.js" : "") + " fetch their .real.js fresh each boot");
   }
   return { files, report };
 }
@@ -430,7 +480,7 @@ const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
 const { files, report } = compile(graph, cfg);
 fs.mkdirSync(outDir, { recursive: true });
 // clear generated files a previous compile may have left behind
-for (const stale of ["modinfo.json", "main.js", "worker.js"]) {
+for (const stale of ["modinfo.json", "main.js", "worker.js", "main.real.js", "worker.real.js"]) {
   if (!files[stale] && fs.existsSync(path.join(outDir, stale))) fs.unlinkSync(path.join(outDir, stale));
 }
 for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(outDir, name), content);
