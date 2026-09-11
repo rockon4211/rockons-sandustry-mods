@@ -123,7 +123,7 @@ function compile(graph, cfg) {
       enabled: { type: "boolean", default: true, labelKey: "Mod enabled", descriptionKey: "Turn the mod off without unsubscribing. Recipes can only be withdrawn at load, so switching off leaves them until the next restart." },
     },
   };
-  const needWorker = touches.length > 0 || purges.length > 0;
+  const needWorker = touches.length > 0 || purges.length > 0 || overrides.length > 0;
   if (needWorker) modinfo.workerEntry = "worker.js";
 
   // --- main.js ---
@@ -207,9 +207,14 @@ function compile(graph, cfg) {
     L.push(``);
     L.push(`// -------------------------------------------- vanilla element makeovers --`);
     L.push(`// updateDefinition on a LIVE element type Object.assigns into the engine's`);
-    L.push(`// definition table and broadcasts to every sim worker - all existing grains`);
-    L.push(`// change identity instantly. nameKey must be cleared or i18n wins the name.`);
-    L.push(`if (isEnabled()) {`);
+    L.push(`// definition table and broadcasts to every sim/render worker. The catch:`);
+    L.push(`// at mod-load time the worker pool does not exist yet, so a single early`);
+    L.push(`// call updates only the main thread (names, tooltips) and the COLOR change`);
+    L.push(`// never reaches the renderer. Re-applying on a schedule catches the workers`);
+    L.push(`// once they spawn - the call is idempotent, and the renderer reads the`);
+    L.push(`// scheme live, so every existing grain recolors the moment it lands.`);
+    L.push(`function applyMakeovers() {`);
+    L.push(`\tif (!isEnabled()) return;`);
     for (const o of overrides) {
       L.push(`\t{`);
       L.push(`\t\tconst t = typeOf(${JSON.stringify(o.id)});`);
@@ -219,11 +224,15 @@ function compile(graph, cfg) {
       if (o.c !== undefined) patch.push(`metaColor: ${o.c}, colors: { variants: ${JSON.stringify([shade(o.c, 1), shade(o.c, 0.9), shade(o.c, 1.12), shade(o.c, 0.8)])} }`);
       if (o.d !== undefined) patch.push(`density: ${o.d}`);
       L.push(`\t\t\tsafe(() => api.elements.updateDefinition(t, { ${patch.join(", ")} }));`);
-      L.push(`\t\t\tconsole.log(\`[\${MOD_ID}] vanilla makeover applied: ${o.id}${o.n ? ` -> "${o.n}"` : ""}\`);`);
       L.push(`\t\t}`);
       L.push(`\t}`);
     }
+    L.push(`\tconsole.log(\`[\${MOD_ID}] vanilla makeovers applied (${overrides.map(o => o.id).join(", ")})\`);`);
     L.push(`}`);
+    L.push(`applyMakeovers();`);
+    L.push(`// The color scheme is rebuilt when a world loads, wiping earlier patches -`);
+    L.push(`// keep re-applying so the makeover always wins. Idempotent and tiny.`);
+    L.push(`setInterval(applyMakeovers, 2000);`);
   }
   if (terrainSwaps.length) {
     L.push(``);
@@ -302,12 +311,23 @@ function compile(graph, cfg) {
   const files = { "modinfo.json": JSON.stringify(modinfo, null, "\t") + "\n", "main.js": L.join("\n") + "\n" };
 
   if (needWorker) {
-    files["worker.js"] = buildWorker(cfg, touches, purges);
+    files["worker.js"] = buildWorker(cfg, touches, purges, overrides.map(o => {
+      const patch = {};
+      if (o.n !== undefined) { patch.nameKey = null; patch.name = o.n; }
+      if (o.c !== undefined) { patch.metaColor = o.c; patch.colors = { variants: [shade(o.c, 1), shade(o.c, 0.9), shade(o.c, 1.12), shade(o.c, 0.8)] }; }
+      if (o.d !== undefined) patch.density = o.d;
+      return { id: o.id, patch };
+    }));
+  }
+  // hand-written bolt-ons appended to the generated worker entry
+  if (files["worker.js"]) for (const p of (cfg.appendWorker || [])) {
+    files["worker.js"] += "\n" + fs.readFileSync(p, "utf8");
+    report.ok.push(`worker bolt-on appended: ${path.basename(p)}`);
   }
   return { files, report };
 }
 
-function buildWorker(cfg, touches, purges) {
+function buildWorker(cfg, touches, purges, overrides) {
   // Generalized Glassworks quench: touch rule i lives at shared[8+3i..10+3i]
   // (from, partner, to; the partner cell is consumed, like water in wetting).
   // Purge rule j lives after the touches, 2 slots each (from, to): any grain
@@ -363,6 +383,23 @@ function scan(x, y) {
 \t\t}
 \t}
 }
+// Vanilla makeovers, applied IN THIS THREAD: the world renderer reads this
+// worker's own color scheme, and the main thread's update broadcast does not
+// reliably reach it - so the worker re-applies the same patches directly.
+// (nameKey: null clears the i18n key so the custom name wins on this side too.)
+const MAKEOVERS = ${JSON.stringify(overrides || [])};
+function applyMakeovers() {
+\tfor (const m of MAKEOVERS) {
+\t\tlet t = safe(() => api.elements.getTypeFromId(m.id));
+\t\tif (typeof t !== "number") continue;
+\t\tconst patch = Object.assign({}, m.patch);
+\t\tif (patch.nameKey === null) patch.nameKey = void 0;
+\t\tsafe(() => api.elements.updateDefinition(t, patch));
+\t}
+\tif (MAKEOVERS.length) console.log(\`[\${MOD_ID}] worker makeovers applied (\${MAKEOVERS.map(m => m.id).join(", ")})\`);
+}
+applyMakeovers();
+if (typeof setInterval === "function") setInterval(applyMakeovers, 2000);
 function register() {
 \tlet ready = false;
 \tfor (let i = 0; i < T; i++) if (shared && shared[8 + i * 3]) ready = true;
