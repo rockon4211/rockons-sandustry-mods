@@ -1,7 +1,10 @@
+// Manufacturing - hot-load stub. The real code lives in worker.real.js,
+// fetched fresh on every boot so F10 quick reload picks up new builds.
+async function __baked(sandkit) {
 // Manufacturing - worker entry (generated). Touch reactions and purge rules
 // live here because only this thread sees particles move.
 const api = sandkit.api;
-const MOD_ID = "brandon.glasssand";
+const MOD_ID = "brandon.manufacturing";
 let shared = null;
 try { shared = api.shared.buffers.require("state", { type: "uint32", length: 10 }); }
 catch (e) { console.error(`[${MOD_ID}] worker cannot read shared state:`, e); }
@@ -85,3 +88,19 @@ function register() {
 	} catch (e) { console.error(`[${MOD_ID}] worker subscribe failed:`, e); }
 }
 register();
+
+}
+(async () => {
+	let ran = false;
+	try {
+		const r = await fetch("file:///C:/Users/Brand/AppData/Roaming/sandustry/mods/manufacturing/worker.real.js" + "?ts=" + Date.now());
+		if (r.ok) {
+			const src = await r.text();
+			const A = Object.getPrototypeOf(async function () {}).constructor;
+			await new A("sandkit", src)(sandkit);
+			ran = true;
+			console.log("[brandon.manufacturing] hot-loaded worker.real.js fresh from disk");
+		}
+	} catch (e) { console.warn("[brandon.manufacturing] hot-load failed, using baked code:", e); }
+	if (!ran) await __baked(sandkit);
+})();
