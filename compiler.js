@@ -289,6 +289,12 @@ function compile(graph, cfg) {
   L.push(``);
   L.push(`console.log(\`[\${MOD_ID}] loaded\`);`);
 
+  // hand-written bolt-ons appended verbatim to the generated entry
+  for (const p of (cfg.append || [])) {
+    L.push("");
+    L.push(fs.readFileSync(p, "utf8"));
+    report.ok.push(`bolt-on appended: ${path.basename(p)}`);
+  }
   const files = { "modinfo.json": JSON.stringify(modinfo, null, "\t") + "\n", "main.js": L.join("\n") + "\n" };
 
   if (needWorker) {
