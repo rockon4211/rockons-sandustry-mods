@@ -49,6 +49,10 @@ function compile(graph, cfg) {
       (p.t === "residue" ? s.above : s.below).push(p.t);
       report.ok.push(`shaker recipe: ${p.f} -> ${p.t} (${p.t === "residue" ? "thrown above" : "dropped below"})`);
     } else if (p.k === "heat" && p.via && MACHINE_STRUCT[p.via]) {
+      if ((cfg.skipRecipes || []).includes(p.f)) {
+        report.ok.push(`recipe: ${p.f} -> ${p.t} via ${MACHINE_NAME[p.via]} - registration left to a bolt-on (tech-gated)`);
+        continue;
+      }
       recipes.push({ structure: MACHINE_STRUCT[p.via], input: p.f, output: p.t, lbl: p.lbl, machine: MACHINE_NAME[p.via] });
       report.ok.push(`recipe: ${p.f} -> ${p.t} via ${MACHINE_NAME[p.via]}`);
     } else if (p.k === "heat" && p.via) {
