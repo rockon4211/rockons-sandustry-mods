@@ -112,6 +112,8 @@ button:focus-visible,.mat:focus-visible{outline:2px solid var(--accent)}
 .btn.warn:hover{border-color:#ff8a8a}
 .conf.c{background:rgba(111,195,255,.12);color:var(--touch)}
 .tag{display:inline-block;font:500 9px var(--mono);padding:1px 6px;border-radius:3px;margin-left:6px;background:rgba(255,215,94,.12);color:var(--accent)}
+.savedflash{color:var(--cycle);font:600 10px var(--mono);margin-left:8px;animation:sfade 1.8s forwards}
+@keyframes sfade{0%{opacity:1}70%{opacity:1}100%{opacity:0}}
 @media (prefers-reduced-motion: no-preference){
   .node{transition:opacity .15s}
 }
@@ -202,9 +204,10 @@ const MATS = [
 const TERRAINS = [
 {id:"t_dune",n:"Dune",g:"Desert",hp:1,x:1530,y:150},
 {id:"t_limestone",n:"Limestone",g:"Desert",hp:40,x:1530,y:260},
-{id:"t_sandiumSoil",n:"Redsoil deposit",g:"Desert",hp:null,x:1530,y:340},
+{id:"t_sandiumSoil",n:"Redsoil deposit",g:"Desert",hp:20,x:1530,y:340},
 {id:"t_crystal",n:"Aura Crystal",g:"Void",hp:null,x:1320,y:390},
 {id:"t_iceSoil",n:"Snow soil",g:"Fire & ice",hp:null,x:150,y:700},
+{id:"t_scoria",n:"Scoria",g:"Fire & ice",hp:10,x:590,y:660},
 ];
 const MACHINES = [
 {id:"m_smelter",n:"Smelter",x:820,y:230},
@@ -213,37 +216,43 @@ const MACHINES = [
 {id:"m_mold",n:"Copper Mold",x:1240,y:60},
 {id:"m_planter",n:"Planter Box",x:400,y:730},
 {id:"m_collector",n:"Collector",x:420,y:60},
+{id:"m_condenser",n:"Condenser",x:1290,y:770},
+{id:"m_snowmaker",n:"Snowmaker",x:300,y:545},
 ];
 // kind: heat | touch | mine | cycle ; conf: v(erified in code) | a(pprox)
 const VPROCS = [
 {f:"wetSand",t:"gold",via:"m_shaker",k:"heat",conf:"v",lbl:"refine",note:"Wet Sand placed on a Shaker refines automatically; Gold drops downward out of it."},
 {f:"wetSand",t:"residue",via:"m_shaker",k:"heat",conf:"v",lbl:"byproduct",note:"Residue is thrown as the Shaker's waste stream."},
-{f:"sand",t:"wetSand",partner:"water",k:"touch",conf:"a",lbl:"+ water",note:"Sand wetted by water becomes Wet Sand."},
+{f:"sand",t:"wetSand",partner:"water",k:"touch",conf:"v",lbl:"+ water",note:"Hardcoded wetting table: [Water, Sand, WetSand]. The water is consumed."},
 {f:"gold",t:"m_collector",k:"heat",conf:"v",lbl:"deposit",note:"The Collector banks gold as currency."},
 {f:"residue",t:"burntResidue",partner:"fire",k:"touch",conf:"a",lbl:"burns",note:"Residue exposed to fire chars into Burnt Residue."},
 {f:"gold",t:"liquidGold",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe: gold → Liquid Gold (register pair found in code, 50% byproduct branch on one entry)."},
 {f:"copper",t:"liquidCopper",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe: copper → Liquid Copper."},
 {f:"liquidCopper",t:"m_mold",k:"heat",conf:"v",lbl:"fill 4×4",note:"A Copper Mold whose full 4×4 interior holds Liquid Copper (resting on terrain) sets and the structure transforms into a Power Brick. Verified in the transform code."},
-{f:"water",t:"steam",k:"touch",conf:"a",lbl:"boils",note:"Heat boils water to steam; Glassworks' quench used exactly this 1:1."},
+{f:"water",t:"steam",partner:"lava",k:"touch",conf:"v",lbl:"boils",note:"Hardcoded table: water touching Lava or Flame boils to steam."},
 {f:"steam",t:"water",k:"cycle",conf:"v",lbl:"sky rain",note:"i18n: 'Turns into rain when it reaches the sky'. Steam also condenses back when energy-depleted."},
 {f:"t_dune",t:"sunsand",k:"mine",conf:"v",lbl:"break, 100%",note:"Dune terrain is registered with output {sunsand, chance 1} — every broken cell drops one grain. hp 1."},
 {f:"t_limestone",t:"sunsand",k:"mine",conf:"v",lbl:"break",note:"Limestone shares the sunsand output. hp 40, needs indestructible-tier."},
 {f:"sunsand",t:"t_dune",k:"cycle",conf:"v",lbl:"hardens 0.1–0.5s",note:"On timer expiry, resting against terrain, with no player within 30 cells, a sunsand grain becomes dune terrain. Verified interceptor."},
-{f:"t_sandiumSoil",t:"sandium",k:"mine",conf:"v",lbl:"dig",note:"Redsoil deposits release Redsand when dug (discovery map pairing)."},
+{f:"t_sandiumSoil",t:"sandium",k:"mine",conf:"v",lbl:"dig, 50%",note:"Redsoil: hp 20, output {Redsand, chance 0.5} straight from the terrain table."},
 {f:"t_crystal",t:"moonhop",k:"mine",conf:"v",lbl:"mine",note:"Aura Crystal drops Moonhop; the discovery map also pairs voidjuice + voidhusk with the find."},
 {f:"t_iceSoil",t:"freezingIce",k:"mine",conf:"v",lbl:"dig"},
-{f:"seed",t:"wetSeed",partner:"water",k:"touch",conf:"a",lbl:"+ water"},
+{f:"seed",t:"wetSeed",partner:"water",k:"touch",conf:"v",lbl:"+ water",note:"Hardcoded wetting table: [Water, Seed, WetSeed]."},
 {f:"wetSeed",t:"seedling",k:"cycle",conf:"a",lbl:"sprouts"},
 {f:"seedling",t:"petalium",k:"cycle",conf:"a",lbl:"grows",note:"The Planter Box tends the growth chain."},
 {f:"m_planter",t:"seedling",k:"cycle",conf:"v",lbl:"tends"},
 {f:"petalium",t:"dryPetalium",via:"m_dryer",k:"heat",conf:"v",lbl:"dry",note:"Steam Dryer recipe: Amethelis → Dry Amethelis, chance 1. Verified."},
 {f:"dryPetalium",t:"florin",partner:"fire",k:"touch",conf:"v",lbl:"burns",note:"i18n: 'A lighter, dried version… that burns into Florin.'"},
-{f:"florin",t:"florinol",k:"cycle",conf:"a",lbl:"condenses",note:"Florinol 'stores energy and can be transmuted into Aurixite' (i18n) — the battery chain."},
-{f:"lava",t:"basalt",partner:"water",k:"touch",conf:"a",lbl:"+ water",note:"Lava quenched by water sets into Cinder; steam boils off."},
+{f:"florin",t:"florinol",via:"m_condenser",k:"heat",conf:"v",lbl:"50%",note:"Condenser recipe, verified: florin → 50% Florinol, 50% Gold."},
+{f:"florin",t:"gold",via:"m_condenser",k:"heat",conf:"v",lbl:"50% gold",note:"The Condenser's other branch — half the florin condenses into Gold."},
+{f:"lava",t:"basalt",partner:"water",k:"touch",conf:"v",lbl:"+ water",note:"Water side verified (boils to steam); the lava sets via its element data fields."},
 {f:"fire",t:"flame",k:"touch",conf:"a",lbl:"ignites",note:"Fire spreads by planting Flame on burnables."},
 {f:"moonhop",t:"prismite",k:"mine",conf:"v",lbl:"crush",note:"i18n: 'A prismatic slush condensed from each mined Aura crystal.'"},
 {f:"prismite",t:"prismaline",k:"heat",conf:"v",lbl:"distills",note:"i18n: 'Spectral gas distilled from Prismite.'"},
 {f:"voidSeeds",t:"growingVoidSeed",k:"cycle",conf:"v",lbl:"planted",note:"i18n: 'A void seed that has been planted and is growing into a void flower.'"},
+{f:"t_scoria",t:"basalt",k:"mine",conf:"v",lbl:"break, 100%",note:"Scoria terrain: hp 10, output {Cinder, chance 1}. The main Cinder source."},
+{f:"steam",t:"water",via:"m_condenser",k:"heat",conf:"v",lbl:"condense",note:"Condenser recipe, verified: steam → water, chance 1."},
+{f:"water",t:"freezingIce",via:"m_snowmaker",k:"heat",conf:"v",lbl:"freeze",note:"Snowmaker recipe, verified: water → Snow, chance 1."},
 ];
 // ============ RENDER ============
 const NW=132, NH=46, MW=134, MH=36;
@@ -254,6 +263,7 @@ m_shaker:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAAWCAYAAACosj4+AAAA
 m_dryer:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAARxJREFUOI2lkrFtwzAQRZ8ET6A6fTiICpW3gBq1RjKCC+6gCTiAVF6hCbRA1Lk3Aa1wLhIxlmMJgf0BggR59+/ffWb2ifECDryXr+STwbYCa3/Js+PwMCYXEZqmQUT+st8lLYTOuRW5iYj9KDFVTWu5s7Y051w6A+acM2tLywH6vkdVUVWqqiLGSIwRVd2VD5ADqCoxRsZxxHtPXdecz+dV4DRNWFuSHQecc3x9vJEdBw63QafTaZVUVVVStYfUr/c+9Q1YCCG9bc3gcFtpHEcAvPe7FVdYHFBVCyFYCGHlxq1L99WBbwUiklQsQ136FhGKotgUkAHWNA3zPNP3/b06iqJgnmemaXrsxN5X/g9ygK7reHq/XC4G2LP7Fc7X7yelGpUYAAAAAElFTkSuQmCC",
 m_mold:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAANNJREFUOI2lkyEPgkAYhp9zFBPBzcZmp1qIVGfwV5AYv4bEryDQiRSNdB0kNwKJ4nYGkSFwB8x3u3L73vd77t1OAJI/ZABEUURRFKuMlmXheR4AMggC2ZIsPl+PMQgWCwG6Z28WDit7mguQoWNrB3QBMj4f8bO8TzLSsIMfs3HYk/gnXvcnZdXgZ7kc9jRFIEPHpqwa7rdHd9mSjEqeIhDtJgDi3ZZLcp00qwi64dCxtWZdgBa7L1WJs0ZVwOqPJQDpui6maa4y1nVNmqafgLVb+3oDDi9NCweV7FIAAAAASUVORK5CYII=",
 m_planter:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAAXNSR0IArs4c6QAAAMFJREFUOI21kz0KAjEQhb8sERG1ECxU2NJreIQFW29h4yFsvIXtgkfwGpYWWggW2sfCDZtEY9YYH4RhMjNv3uRHAIoEkADbJVzvMOjB4QTTce1ruD7UuYsNZDpJ22Hf9l2rF9i5EuBy80v2xdx9CU95v0KQ8rBn6xEA+9VZkzeBMuskQLvbilJh1kmAzuRz58q+KDXrskBTVZQ5RZmbhG8RImoMGYiL3fzoHe0boiCBxl9Hi3qgFlF1O1FINlqyv/YAJns38iqsJSUAAAAASUVORK5CYII=",
+m_snowmaker:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAM1JREFUOI2lkbENgzAQRR+RRcFGaULFAjTMeENkAkagcQESQgpJ5dZpYmKMDUH5kiV07//z+cjqfrIAj3kGQL2e3G9X6n7CV4pngOUPKWMMAMMwAKC1pqoqXN0pxS8+TGmPK78zsLn9iCt/LCAZTnF19s0hzwAbQmdIhf0G6szCQq61/v7GcGx+XKhq23Zzi1sYQIzneU5ZlogIahxHmqbZmIwxFEWxGJ1iXvtZpA2//Zp/gno80HVdNBDxRrvuTrPyisgqICLLOWouIvYNLggVikg9T+0AAAAASUVORK5CYII=",
 m_collector:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAeUExURdH/AAAAAJD/VIHtR23dMP//JtvbCcjIALm5AP///yv3FJsAAAABdFJOU9DGNQqyAAAAAWJLR0QJ8dml7AAAAAd0SU1FB+oJBwMIGDI/ZIsAAABCSURBVAjXYxCEAgYBBjBgZBBgBAsAGUJKQKAIYhgDgSGI4QiTcoQqxmSIJsIZUMVi5UBQCGSIdwBBI7IVMEthzgAA+wsMUPDxhfsAAAAASUVORK5CYII="
 };
 const world=document.getElementById('world'), svg=document.getElementById('cv');
@@ -436,14 +446,14 @@ function applySel(){
 }
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function confTag(c){return `<span class="conf ${c}">${c==='v'?'verified':'approx'}</span>`}
-function select(id){
+function select(id,savedFlash){
   sel=id;applySel();
   const n=nodes[id]; if(!n)return;
   let h='';
   if(n.type==='mat'&&view==='mod'){
-    const ch=`onchange="saveMat('${esc(id)}',false)"`;
+    const ch=`onchange="saveMat('${esc(id)}',false)" onkeydown="if(event.key==='Enter')saveMat('${esc(id)}',false)"`;
     h=`<h2><span class="sw" style="background:${hex(n.c)}"></span>${esc(n.n)}${n.custom?'<span class="tag">custom</span>':(n.modded?'<span class="tag">modified</span>':'')}</h2>
-    <div class="id">"${esc(n.id)}" · changes apply as you make them</div><div class="frm">
+    <div class="id">"${esc(n.id)}"${savedFlash?'<span class="savedflash">✓ saved</span>':''}</div><div class="frm">
     <label>name</label><input type="text" id="f_n" value="${esc(n.n)}" ${ch}>
     <div class="row2"><div><label>matter type</label><select id="f_m" ${ch}>${MATTERS.map(m=>`<option${m===n.m?' selected':''}>${m}</option>`).join('')}</select></div>
     <div><label>density</label><input type="number" id="f_d" value="${n.d}" min="1" max="1000" ${ch}></div></div>
@@ -451,6 +461,7 @@ function select(id){
     <label>group</label><input type="text" id="f_g" value="${esc(n.g||'Custom')}" ${ch}>
     <label class="chk"><input type="checkbox" id="f_gr" ${!(n.fl&&n.fl.grabbable===false)?'checked':''} ${ch}> grabbable (vacuum can suck it)</label>
     <label class="chk"><input type="checkbox" id="f_tr" ${!(n.fl&&n.fl.transportable===false)?'checked':''} ${ch}> transportable (rides belts)</label>
+    <div class="btns"><button class="btn pri" onmousedown="saveMat('${esc(id)}',false)">Save</button></div>
     </div>`;
     if(n.dur)h+=`<div class="kv"><span>timer</span><span>${n.dur[0]}–${n.dur[1]}s</span></div>`;
   } else if(n.type==='mat'){
@@ -469,14 +480,14 @@ function select(id){
   const inn=PROCS.map((p,i)=>({p,i})).filter(o=>o.p.t===id&&nodes[o.p.f]), out=PROCS.map((p,i)=>({p,i})).filter(o=>o.p.f===id&&nodes[o.p.t]);
   if(n.type==='machine'){
     const rec=PROCS.map((p,i)=>({p,i})).filter(o=>o.p.via===id&&nodes[o.p.f]&&nodes[o.p.t]);
-    if(rec.length)h+=`<h3>Recipes</h3>`+rec.map(o=>`<div class="proc" onclick="selectProc(${o.i});event.stopPropagation()">${esc(nodes[o.p.f].n)} → ${esc(nodes[o.p.t].n)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');
+    if(rec.length)h+=`<h3>Recipes</h3>`+rec.map(o=>`<div class="proc" onmousedown="selectProc(${o.i});event.stopPropagation()">${esc(nodes[o.p.f].n)} → ${esc(nodes[o.p.t].n)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');
   }
-  if(out.length){h+=`<h3>Produces / feeds</h3>`+out.map(o=>`<div class="proc" onclick="selectProc(${o.i});event.stopPropagation()">→ ${esc(nodes[o.p.t].n)}${viaTx(o.p)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');}
-  if(inn.length){h+=`<h3>Made from</h3>`+inn.map(o=>`<div class="proc" onclick="selectProc(${o.i});event.stopPropagation()">← ${esc(nodes[o.p.f].n)}${viaTx(o.p)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');}
+  if(out.length){h+=`<h3>Produces / feeds</h3>`+out.map(o=>`<div class="proc" onmousedown="selectProc(${o.i});event.stopPropagation()">→ ${esc(nodes[o.p.t].n)}${viaTx(o.p)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');}
+  if(inn.length){h+=`<h3>Made from</h3>`+inn.map(o=>`<div class="proc" onmousedown="selectProc(${o.i});event.stopPropagation()">← ${esc(nodes[o.p.f].n)}${viaTx(o.p)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');}
   if(n.type==='mat'&&view==='mod'){
     h+=`<div class="btns">`;
-    if(n.modded)h+=`<button class="btn" onclick="revertMat('${esc(id)}')">Revert to vanilla</button>`;
-    h+=`<button class="btn warn" onclick="removeMat('${esc(id)}')">Remove</button></div>`;
+    if(n.modded)h+=`<button class="btn" onmousedown="revertMat('${esc(id)}')">Revert to vanilla</button>`;
+    h+=`<button class="btn warn" onmousedown="removeMat('${esc(id)}')">Remove</button></div>`;
     h+=`<div class="note" style="color:var(--faint)">Remove parks it in the Unused list (bottom of the sidebar) with its processes — restore it from there, or delete it for good.</div>`;
   }
   body.innerHTML=h; insp.classList.add('open');
@@ -528,14 +539,15 @@ function saveMat(id,isNew){
     CUSTOM.seq=(CUSTOM.seq||0)+1;
     CUSTOM.mats[nid]={...v,id:nid,x:draftMat?draftMat.x:100,y:draftMat?draftMat.y:100};
     draftMat=null;
-    saveCustom(); rebuild(); select(nid);
+    saveCustom(); rebuild(); select(nid,true);
     return;
   }
   const n=nodes[id];
+  if(!n)return; // the material was removed between the edit and this blur
   if(n.custom){
     CUSTOM.mats[id]={...CUSTOM.mats[id],...v,id,x:n.x,y:n.y};
     if(!v.fl)delete CUSTOM.mats[id].fl;
-    saveCustom(); rebuild(); select(id);
+    saveCustom(); rebuild(); select(id,true);
   } else {
     // vanilla override — store only fields that differ
     const base=MATS.find(m=>m.id===id), o={};
@@ -543,7 +555,7 @@ function saveMat(id,isNew){
     const baseFl=base.fl||{grabbable:true,transportable:true};
     if(fl.grabbable!==(baseFl.grabbable!==false)||fl.transportable!==(baseFl.transportable!==false))o.fl=fl;
     if(Object.keys(o).length)CUSTOM.over[id]=o; else delete CUSTOM.over[id];
-    saveCustom(); rebuild(); select(id);
+    saveCustom(); rebuild(); select(id,true);
   }
 }
 function revertMat(id){delete CUSTOM.over[id]; saveCustom(); rebuild(); select(id);}
