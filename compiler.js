@@ -156,8 +156,12 @@ function compile(graph, cfg) {
   L.push(`\tif (typeof matterType !== "number") { console.error(\`[\${MOD_ID}] unknown matter type "\${e.matter}" for "\${e.id}"\`); continue; }`);
   L.push(`\ttry {`);
   L.push(`\t\tconst def = { id: e.id, name: e.name, matterType, density: e.density, metaColor: e.metaColor, colors: { variants: e.colors } };`);
+  L.push(`\t\t// The game's own mod elements ALWAYS declare these explicitly - paths`);
+  L.push(`\t\t// like the grabber's release branch on them, and undefined lands wrong`);
+  L.push(`\t\t// (held grains render red, released grains never rejoin the sim).`);
+  L.push(`\t\tdef.isGrabbable = !(e.fl && e.fl.grabbable === false);`);
+  L.push(`\t\tdef.isTransportable = !(e.fl && e.fl.transportable === false);`);
   L.push(`\t\tif (e.fl && e.fl.grabbable === false) def.grabbable = false;`);
-  L.push(`\t\tif (e.fl && e.fl.transportable === false) def.isTransportable = false;`);
   L.push(`\t\tconst r = api.elements.register(def);`);
   L.push(`\t\tif (r && typeof r.elementType === "number") typeById.set(e.id, r.elementType);`);
   L.push(`\t\tconsole.log(\`[\${MOD_ID}] element registered: \${e.id} -> type \${r && r.elementType}\`);`);
@@ -230,9 +234,11 @@ function compile(graph, cfg) {
     L.push(`\tconsole.log(\`[\${MOD_ID}] vanilla makeovers applied (${overrides.map(o => o.id).join(", ")})\`);`);
     L.push(`}`);
     L.push(`applyMakeovers();`);
-    L.push(`// The color scheme is rebuilt when a world loads, wiping earlier patches -`);
-    L.push(`// keep re-applying so the makeover always wins. Idempotent and tiny.`);
-    L.push(`setInterval(applyMakeovers, 2000);`);
+    L.push(`// Event-driven, not polled: the game emits "game:ready" when a world`);
+    L.push(`// session is fully initialized (its own internal mods hook the same`);
+    L.push(`// event for world-init work). Apply once there, plus one safety pass.`);
+    L.push(`safe(() => api.events.on("game:ready", () => safe(applyMakeovers)));`);
+    L.push(`setTimeout(applyMakeovers, 4000);`);
   }
   if (terrainSwaps.length) {
     L.push(``);
@@ -283,7 +289,8 @@ function compile(graph, cfg) {
     L.push(``);
     L.push(`// ------------------------------------------- shared state for the worker --`);
     L.push(`let shared = null;`);
-    L.push(`try { shared = api.shared.buffers.create("state", { type: "uint32", length: ${P0 + purges.length * 2} }); } catch (e) { console.error(\`[\${MOD_ID}] shared buffer failed:\`, e); }`);
+    L.push(`const PROBE_BASE = ${P0 + purges.length * 2};`);
+    L.push(`try { shared = api.shared.buffers.create("state", { type: "uint32", length: ${P0 + purges.length * 2 + 10} }); } catch (e) { console.error(\`[\${MOD_ID}] shared buffer failed:\`, e); }`);
     L.push(`function publish() {`);
     L.push(`\tif (!shared) return;`);
     L.push(`\tshared[0] = isEnabled() ? 1 : 0;`);
@@ -346,6 +353,37 @@ function compile(graph, cfg) {
   // new .real.js and F10 picks it up. If the fetch is blocked, the stub falls
   // back to the baked copy of the same code - never worse than the old way.
   if (cfg.hotload) {
+    // Worker entries are evaluated WITHOUT async support (top-level await is a
+    // silent syntax error there - learned the hard way: the worker was dead
+    // from v0.6.12 to v0.7.5). The worker stub must be fully synchronous.
+    const wrapWorker = (name, code) => {
+      files[name.replace(".js", ".real.js")] = code;
+      return [
+        `// ${cfg.name} - hot-load stub (sync; worker entries cannot use await).`,
+        `function __baked(sandkit) {`,
+        code,
+        `}`,
+        `(function () {`,
+        `\tvar ran = false;`,
+        `\ttry {`,
+        `\t\tfetch(${JSON.stringify(cfg.hotload + name.replace(".js", ".real.js"))} + "?ts=" + Date.now()).then(function (r) {`,
+        `\t\t\tif (!r.ok) throw new Error("HTTP " + r.status);`,
+        `\t\t\treturn r.text();`,
+        `\t\t}).then(function (src) {`,
+        `\t\t\tnew Function("sandkit", src)(sandkit);`,
+        `\t\t\tran = true;`,
+        `\t\t\tconsole.log("[${cfg.id}] worker hot-loaded ${name.replace(".js", ".real.js")} fresh from disk");`,
+        `\t\t}).catch(function (e) {`,
+        `\t\t\tconsole.warn("[${cfg.id}] worker hot-load failed, using baked code:", e && e.message);`,
+        `\t\t\tif (!ran) __baked(sandkit);`,
+        `\t\t});`,
+        `\t} catch (e) {`,
+        `\t\tconsole.warn("[${cfg.id}] worker hot-load unavailable, using baked code");`,
+        `\t\t__baked(sandkit);`,
+        `\t}`,
+        `})();`,
+      ].join("\n") + "\n";
+    };
     const wrap = (name, code) => {
       files[name.replace(".js", ".real.js")] = code;
       return [
@@ -371,7 +409,7 @@ function compile(graph, cfg) {
       ].join("\n") + "\n";
     };
     files["main.js"] = wrap("main.js", files["main.js"]);
-    if (files["worker.js"]) files["worker.js"] = wrap("worker.js", files["worker.js"]);
+    if (files["worker.js"]) files["worker.js"] = wrapWorker("worker.js", files["worker.js"]);
     report.ok.push("hot-load stubs: main.js" + (files["worker.real.js"] ? " + worker.js" : "") + " fetch their .real.js fresh each boot");
   }
   return { files, report };
@@ -388,7 +426,8 @@ function buildWorker(cfg, touches, purges, overrides) {
 const api = sandkit.api;
 const MOD_ID = ${JSON.stringify(cfg.id)};
 let shared = null;
-try { shared = api.shared.buffers.require("state", { type: "uint32", length: ${P0 + P * 2} }); }
+const PROBE_BASE = ${P0 + P * 2};
+try { shared = api.shared.buffers.require("state", { type: "uint32", length: ${P0 + P * 2 + 10} }); }
 catch (e) { console.error(\`[\${MOD_ID}] worker cannot read shared state:\`, e); }
 const T = ${T}, P0 = ${P0}, P = ${P};
 const active = () => shared && shared[0] === 1;
@@ -449,7 +488,26 @@ function applyMakeovers() {
 \tif (MAKEOVERS.length) console.log(\`[\${MOD_ID}] worker makeovers applied (\${MAKEOVERS.map(m => m.id).join(", ")})\`);
 }
 applyMakeovers();
-if (typeof setInterval === "function") setInterval(applyMakeovers, 2000);
+if (typeof setTimeout === "function") for (const d of [2000, 6000]) setTimeout(applyMakeovers, d);
+// Probe responder: main writes a cell request (F8), this worker answers with
+// ITS OWN view of that cell - type, def presence, matter, density. Comparing
+// the two sides pins down cross-thread desyncs.
+let probeSeen = 0;
+if (typeof setInterval === "function") setInterval(() => {
+\tif (!shared) return;
+\tshared[PROBE_BASE + 8] = (shared[PROBE_BASE + 8] + 1) >>> 0; // heartbeat
+\tconst seq = shared[PROBE_BASE + 2];
+\tif (!seq || seq === probeSeen) return;
+\tprobeSeen = seq;
+\tconst x = shared[PROBE_BASE], y = shared[PROBE_BASE + 1];
+\tconst t = readType(x, y) || 0;
+\tconst def = t ? safe(() => api.elements.getDefinitionByType(t)) : null;
+\tshared[PROBE_BASE + 3] = t;
+\tshared[PROBE_BASE + 4] = def ? 1 : 0;
+\tshared[PROBE_BASE + 5] = def && typeof def.matterType === "number" ? def.matterType : 255;
+\tshared[PROBE_BASE + 6] = def && typeof def.density === "number" ? def.density : 0;
+\tshared[PROBE_BASE + 7] = seq;
+}, 200);
 function register() {
 \tlet ready = false;
 \tfor (let i = 0; i < T; i++) if (shared && shared[8 + i * 3]) ready = true;
