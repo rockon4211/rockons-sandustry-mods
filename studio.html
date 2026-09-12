@@ -701,6 +701,7 @@ const MYTECH=[
  {id:"brandonModTools",n:"Mod Tools",parent:"Shaker",r:0,c:5,cost:0},
  {id:"brandonManufacturing",n:"Manufacturing",parent:"Smelter",r:13,c:0,cost:250},
  {id:"brandonGlassTech",n:"Glass",parent:"brandonManufacturing",r:14,c:0,cost:500},
+ {id:"brandonOilTech",n:"Oil",parent:"brandonManufacturing",r:13,c:-1,cost:250},
 ];
 const TCW=118,TCH=96,TNW=96,TNH=64;
 function myTech(){
@@ -721,8 +722,8 @@ function techDraw(){
  const all={}; TECHDATA.nodes.forEach(n=>all[n.id]=n); mine.forEach(m=>all[m.id]=m);
  const cx=n=>n.c*TCW+TNW/2, cy=n=>n.r*TCH+TNH/2;
  // the grid itself: one slot outline per possible node position
- const MAXR=31,MAXC=10;
- for(let r=0;r<MAXR;r++)for(let c=0;c<MAXC;c++){
+ const MAXR=31,MINC=-1,MAXC=10;
+ for(let r=0;r<MAXR;r++)for(let c=MINC;c<MAXC;c++){
    const occ=techOccupied(r,c,null);
    const free=!occ&&!!techCarry;
    const cell=el('rect',{class:'slot'+(free?' free':''),x:c*TCW,y:r*TCH,width:TNW,height:TNH,rx:8});
