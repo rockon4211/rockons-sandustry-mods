@@ -284,6 +284,14 @@ function omniSuck() {
 }
 safe(() => requestAnimationFrame(omniSuck));
 
+// --- F6: open real DevTools (Steam hijacks F12) ---------------------------
+safe(() => window.addEventListener("keydown", (e) => {
+	if (e.key !== "F6") return;
+	let opened = false;
+	try { if (window.electron && window.electron.openDevTools) { window.electron.openDevTools(); opened = true; } } catch (_) {}
+	safe(() => api.ui.toast(opened ? "DevTools opened - check the Console tab" : "DevTools opener not available"));
+}));
+
 // --- F8: grain probe (diagnostics) ----------------------------------------
 // Hover any grain and press F8: a toast reports what the engine thinks it is
 // - type number, name, whether a definition exists, matter type, density.

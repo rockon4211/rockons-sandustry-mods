@@ -6,7 +6,7 @@ const api = sandkit.api;
 const MOD_ID = "brandon.manufacturing";
 // Out-of-band "the worker JS executed" ping, independent of the shared buffer,
 // so main can tell "worker ran but no buffer" from "worker never ran".
-try { api.main && api.main.emitEvent && api.main.emitEvent("mfg:workerAlive", { v: "0.7.8" }); } catch (e) {}
+try { api.main && api.main.emitEvent && api.main.emitEvent("mfg:workerAlive", { v: "0.7.9" }); } catch (e) {}
 let shared = null;
 const PROBE_BASE = 10;
 const BUFLEN = 20;

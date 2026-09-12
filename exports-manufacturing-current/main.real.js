@@ -178,7 +178,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.7.8 running"));
+		safe(() => api.ui.toast("Manufacturing v0.7.9 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -468,6 +468,14 @@ function omniSuck() {
 	if (collected > 0) refreshHotbar();
 }
 safe(() => requestAnimationFrame(omniSuck));
+
+// --- F6: open real DevTools (Steam hijacks F12) ---------------------------
+safe(() => window.addEventListener("keydown", (e) => {
+	if (e.key !== "F6") return;
+	let opened = false;
+	try { if (window.electron && window.electron.openDevTools) { window.electron.openDevTools(); opened = true; } } catch (_) {}
+	safe(() => api.ui.toast(opened ? "DevTools opened - check the Console tab" : "DevTools opener not available"));
+}));
 
 // --- F8: grain probe (diagnostics) ----------------------------------------
 // Hover any grain and press F8: a toast reports what the engine thinks it is
