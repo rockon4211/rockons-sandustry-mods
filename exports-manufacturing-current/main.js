@@ -181,7 +181,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.7.6 running"));
+		safe(() => api.ui.toast("Manufacturing v0.7.7 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -476,6 +476,10 @@ safe(() => requestAnimationFrame(omniSuck));
 // Hover any grain and press F8: a toast reports what the engine thinks it is
 // - type number, name, whether a definition exists, matter type, density.
 // Probe a misbehaving grain and a healthy one and compare.
+// The worker emits "mfg:workerAlive" when its JS actually executes - listen so
+// the probe can tell "worker ran" from "worker never loaded".
+let workerAlive = false;
+safe(() => api.events.on("mfg:workerAlive", () => { workerAlive = true; }));
 safe(() => window.addEventListener("keydown", (e) => {
 	if (e.key !== "F8") return;
 	const cell = safe(() => api.input.getMouseCellPosition());
@@ -501,8 +505,11 @@ safe(() => window.addEventListener("keydown", (e) => {
 		const hb0 = shared[PROBE_BASE + 8];
 		setTimeout(() => {
 			if (shared[PROBE_BASE + 7] !== seq) {
-				const alive = shared[PROBE_BASE + 8] !== hb0;
-				safe(() => api.ui.toast(alive ? "worker probe: alive but no answer" : "worker probe: WORKER CODE NOT RUNNING"));
+				const beating = shared[PROBE_BASE + 8] !== hb0;
+				const status = beating ? "buffer OK but no answer"
+					: workerAlive ? "worker JS ran but no shared buffer (race)"
+					: "worker JS NEVER executed";
+				safe(() => api.ui.toast("worker probe: " + status));
 				return;
 			}
 			const wt = shared[PROBE_BASE + 3], wd = shared[PROBE_BASE + 4], wm = shared[PROBE_BASE + 5], wden = shared[PROBE_BASE + 6];

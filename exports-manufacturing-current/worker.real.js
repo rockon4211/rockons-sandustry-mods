@@ -2,10 +2,25 @@
 // live here because only this thread sees particles move.
 const api = sandkit.api;
 const MOD_ID = "brandon.manufacturing";
+// Out-of-band "the worker JS executed" ping, independent of the shared buffer,
+// so main can tell "worker ran but no buffer" from "worker never ran".
+try { api.main && api.main.emitEvent && api.main.emitEvent("mfg:workerAlive", { v: "0.7.7" }); } catch (e) {}
 let shared = null;
 const PROBE_BASE = 10;
-try { shared = api.shared.buffers.require("state", { type: "uint32", length: 20 }); }
-catch (e) { console.error(`[${MOD_ID}] worker cannot read shared state:`, e); }
+const BUFLEN = 20;
+function safe0(fn) { try { return fn(); } catch (e) { return undefined; } }
+// The main entry is async (hot-load stub fetches main.real.js), so its shared
+// buffer is created LATE - after this worker loads. In 0.5.6 shared.require
+// THROWS hard when the buffer is not there yet, which used to kill the worker
+// on the first try. So retry until main has created it; the probe/handlers
+// below all re-check `shared` and come alive the moment it lands.
+(function acquire(n) {
+	if (shared) return;
+	shared = safe0(() => api.shared.buffers.require("state", { type: "uint32", length: BUFLEN })) || null;
+	if (shared) { console.log(`[${MOD_ID}] worker attached to shared state (try ${n})`); return; }
+	if (n < 400 && typeof setTimeout === "function") setTimeout(() => acquire(n + 1), 100);
+	else console.error(`[${MOD_ID}] worker never got shared state - main entry did not create it`);
+})(0);
 const T = 0, P0 = 8, P = 1;
 const active = () => shared && shared[0] === 1;
 function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
