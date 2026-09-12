@@ -158,8 +158,7 @@ if (isEnabled()) {
 
 // ------------------------------------------- shared state for the worker --
 let shared = null;
-const PROBE_BASE = 10;
-try { shared = api.shared.buffers.create("state", { type: "uint32", length: 20 }); } catch (e) { console.error(`[${MOD_ID}] shared buffer failed:`, e); }
+try { shared = api.shared.buffers.create("state", { type: "uint32", length: 10 }); } catch (e) { console.error(`[${MOD_ID}] shared buffer failed:`, e); }
 function publish() {
 	if (!shared) return;
 	shared[0] = isEnabled() ? 1 : 0;
@@ -180,7 +179,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.7.9 running"));
+		safe(() => api.ui.toast("Manufacturing v0.8.0 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -470,63 +469,6 @@ function omniSuck() {
 	if (collected > 0) refreshHotbar();
 }
 safe(() => requestAnimationFrame(omniSuck));
-
-// --- F6: open real DevTools (Steam hijacks F12) ---------------------------
-safe(() => window.addEventListener("keydown", (e) => {
-	if (e.key !== "F6") return;
-	let opened = false;
-	try { if (window.electron && window.electron.openDevTools) { window.electron.openDevTools(); opened = true; } } catch (_) {}
-	safe(() => api.ui.toast(opened ? "DevTools opened - check the Console tab" : "DevTools opener not available"));
-}));
-
-// --- F8: grain probe (diagnostics) ----------------------------------------
-// Hover any grain and press F8: a toast reports what the engine thinks it is
-// - type number, name, whether a definition exists, matter type, density.
-// Probe a misbehaving grain and a healthy one and compare.
-// The worker emits "mfg:workerAlive" when its JS actually executes - listen so
-// the probe can tell "worker ran" from "worker never loaded".
-let workerAlive = false;
-safe(() => api.events.on("mfg:workerAlive", () => { workerAlive = true; }));
-safe(() => window.addEventListener("keydown", (e) => {
-	if (e.key !== "F8") return;
-	const cell = safe(() => api.input.getMouseCellPosition());
-	if (!cell) { safe(() => api.ui.toast("probe: no cursor cell")); return; }
-	const info = safe(() => api.elements.getInfoAtCell(cell.x, cell.y));
-	if (!info || typeof info.elementType !== "number" || info.elementType === 0) {
-		safe(() => api.ui.toast("probe: no element under the cursor"));
-		return;
-	}
-	const t = info.elementType;
-	const def = safe(() => api.elements.getDefinitionByType(t));
-	const name = safe(() => api.elements.getNameByType(t));
-	const MT = safe(() => sandkit.enums.MatterType) || {};
-	const mtName = def ? (Object.keys(MT).find(k => MT[k] === def.matterType) || String(def.matterType)) : "?";
-	const msg = "probe: type " + t + " \"" + (name || "?") + "\" def:" + (def ? "yes" : "MISSING") + " matter:" + mtName + " density:" + (def ? def.density : "?");
-	console.log("[" + MOD_ID + "] " + msg, "info:", info, "def:", def);
-	safe(() => api.ui.toast("main " + msg));
-	// ask the sim worker for ITS view of the same cell
-	if (typeof shared !== "undefined" && shared && typeof PROBE_BASE !== "undefined") {
-		shared[PROBE_BASE] = cell.x; shared[PROBE_BASE + 1] = cell.y;
-		const seq = (shared[PROBE_BASE + 2] | 0) + 1;
-		shared[PROBE_BASE + 2] = seq;
-		const hb0 = shared[PROBE_BASE + 8];
-		setTimeout(() => {
-			if (shared[PROBE_BASE + 7] !== seq) {
-				const beating = shared[PROBE_BASE + 8] !== hb0;
-				const status = beating ? "buffer OK but no answer"
-					: workerAlive ? "worker JS ran but no shared buffer (race)"
-					: "worker JS NEVER executed";
-				safe(() => api.ui.toast("worker probe: " + status));
-				return;
-			}
-			const wt = shared[PROBE_BASE + 3], wd = shared[PROBE_BASE + 4], wm = shared[PROBE_BASE + 5], wden = shared[PROBE_BASE + 6];
-			const wmName = Object.keys(MT).find(k => MT[k] === wm) || String(wm);
-			const wmsg = "worker probe: type " + wt + " def:" + (wd ? "yes" : "MISSING") + " matter:" + (wm === 255 ? "?" : wmName) + " density:" + wden;
-			console.log("[" + MOD_ID + "] " + wmsg);
-			safe(() => api.ui.toast(wmsg));
-		}, 1200);
-	}
-}));
 
 // --- the ONE free research node, behind the first node at the top (Shaker) ---
 {

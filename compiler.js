@@ -289,8 +289,7 @@ function compile(graph, cfg) {
     L.push(``);
     L.push(`// ------------------------------------------- shared state for the worker --`);
     L.push(`let shared = null;`);
-    L.push(`const PROBE_BASE = ${P0 + purges.length * 2};`);
-    L.push(`try { shared = api.shared.buffers.create("state", { type: "uint32", length: ${P0 + purges.length * 2 + 10} }); } catch (e) { console.error(\`[\${MOD_ID}] shared buffer failed:\`, e); }`);
+    L.push(`try { shared = api.shared.buffers.create("state", { type: "uint32", length: ${P0 + purges.length * 2} }); } catch (e) { console.error(\`[\${MOD_ID}] shared buffer failed:\`, e); }`);
     L.push(`function publish() {`);
     L.push(`\tif (!shared) return;`);
     L.push(`\tshared[0] = isEnabled() ? 1 : 0;`);
@@ -409,24 +408,19 @@ function buildWorker(cfg, touches, purges, overrides) {
 // live here because only this thread sees particles move.
 const api = sandkit.api;
 const MOD_ID = ${JSON.stringify(cfg.id)};
-// Out-of-band "the worker JS executed" ping, independent of the shared buffer,
-// so main can tell "worker ran but no buffer" from "worker never ran".
-try { api.main && api.main.emitEvent && api.main.emitEvent("mfg:workerAlive", { v: ${JSON.stringify(cfg.version || "?")} }); } catch (e) {}
 let shared = null;
-const PROBE_BASE = ${P0 + P * 2};
-const BUFLEN = ${P0 + P * 2 + 10};
+const BUFLEN = ${P0 + P * 2};
 function safe0(fn) { try { return fn(); } catch (e) { return undefined; } }
-// The main entry is async (hot-load stub fetches main.real.js), so its shared
-// buffer is created LATE - after this worker loads. In 0.5.6 shared.require
-// THROWS hard when the buffer is not there yet, which used to kill the worker
-// on the first try. So retry until main has created it; the probe/handlers
-// below all re-check \`shared\` and come alive the moment it lands.
+// The main entry loads synchronously and creates the shared buffer before this
+// worker loads, but 0.5.6's shared.require THROWS hard if the buffer is not
+// there yet - so retry until it lands rather than dying on the first try. The
+// handlers below re-check \`shared\` and come alive the moment it is attached.
 (function acquire(n) {
 \tif (shared) return;
 \tshared = safe0(() => api.shared.buffers.require("state", { type: "uint32", length: BUFLEN })) || null;
-\tif (shared) { console.log(\`[\${MOD_ID}] worker attached to shared state (try \${n})\`); return; }
+\tif (shared) { console.log(\`[\${MOD_ID}] worker attached to shared state\`); return; }
 \tif (n < 400 && typeof setTimeout === "function") setTimeout(() => acquire(n + 1), 100);
-\telse console.error(\`[\${MOD_ID}] worker never got shared state - main entry did not create it\`);
+\telse console.error(\`[\${MOD_ID}] worker never got shared state\`);
 })(0);
 const T = ${T}, P0 = ${P0}, P = ${P};
 const active = () => shared && shared[0] === 1;
@@ -488,25 +482,6 @@ function applyMakeovers() {
 }
 applyMakeovers();
 if (typeof setTimeout === "function") for (const d of [2000, 6000]) setTimeout(applyMakeovers, d);
-// Probe responder: main writes a cell request (F8), this worker answers with
-// ITS OWN view of that cell - type, def presence, matter, density. Comparing
-// the two sides pins down cross-thread desyncs.
-let probeSeen = 0;
-if (typeof setInterval === "function") setInterval(() => {
-\tif (!shared) return;
-\tshared[PROBE_BASE + 8] = (shared[PROBE_BASE + 8] + 1) >>> 0; // heartbeat
-\tconst seq = shared[PROBE_BASE + 2];
-\tif (!seq || seq === probeSeen) return;
-\tprobeSeen = seq;
-\tconst x = shared[PROBE_BASE], y = shared[PROBE_BASE + 1];
-\tconst t = readType(x, y) || 0;
-\tconst def = t ? safe(() => api.elements.getDefinitionByType(t)) : null;
-\tshared[PROBE_BASE + 3] = t;
-\tshared[PROBE_BASE + 4] = def ? 1 : 0;
-\tshared[PROBE_BASE + 5] = def && typeof def.matterType === "number" ? def.matterType : 255;
-\tshared[PROBE_BASE + 6] = def && typeof def.density === "number" ? def.density : 0;
-\tshared[PROBE_BASE + 7] = seq;
-}, 200);
 function register() {
 \tlet ready = false;
 \tfor (let i = 0; i < T; i++) if (shared && shared[8 + i * 3]) ready = true;

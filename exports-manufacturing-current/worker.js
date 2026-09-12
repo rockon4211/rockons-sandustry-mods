@@ -4,24 +4,19 @@ function __baked(sandkit) {
 // live here because only this thread sees particles move.
 const api = sandkit.api;
 const MOD_ID = "brandon.manufacturing";
-// Out-of-band "the worker JS executed" ping, independent of the shared buffer,
-// so main can tell "worker ran but no buffer" from "worker never ran".
-try { api.main && api.main.emitEvent && api.main.emitEvent("mfg:workerAlive", { v: "0.7.9" }); } catch (e) {}
 let shared = null;
-const PROBE_BASE = 10;
-const BUFLEN = 20;
+const BUFLEN = 10;
 function safe0(fn) { try { return fn(); } catch (e) { return undefined; } }
-// The main entry is async (hot-load stub fetches main.real.js), so its shared
-// buffer is created LATE - after this worker loads. In 0.5.6 shared.require
-// THROWS hard when the buffer is not there yet, which used to kill the worker
-// on the first try. So retry until main has created it; the probe/handlers
-// below all re-check `shared` and come alive the moment it lands.
+// The main entry loads synchronously and creates the shared buffer before this
+// worker loads, but 0.5.6's shared.require THROWS hard if the buffer is not
+// there yet - so retry until it lands rather than dying on the first try. The
+// handlers below re-check `shared` and come alive the moment it is attached.
 (function acquire(n) {
 	if (shared) return;
 	shared = safe0(() => api.shared.buffers.require("state", { type: "uint32", length: BUFLEN })) || null;
-	if (shared) { console.log(`[${MOD_ID}] worker attached to shared state (try ${n})`); return; }
+	if (shared) { console.log(`[${MOD_ID}] worker attached to shared state`); return; }
 	if (n < 400 && typeof setTimeout === "function") setTimeout(() => acquire(n + 1), 100);
-	else console.error(`[${MOD_ID}] worker never got shared state - main entry did not create it`);
+	else console.error(`[${MOD_ID}] worker never got shared state`);
 })(0);
 const T = 0, P0 = 8, P = 1;
 const active = () => shared && shared[0] === 1;
@@ -83,25 +78,6 @@ function applyMakeovers() {
 }
 applyMakeovers();
 if (typeof setTimeout === "function") for (const d of [2000, 6000]) setTimeout(applyMakeovers, d);
-// Probe responder: main writes a cell request (F8), this worker answers with
-// ITS OWN view of that cell - type, def presence, matter, density. Comparing
-// the two sides pins down cross-thread desyncs.
-let probeSeen = 0;
-if (typeof setInterval === "function") setInterval(() => {
-	if (!shared) return;
-	shared[PROBE_BASE + 8] = (shared[PROBE_BASE + 8] + 1) >>> 0; // heartbeat
-	const seq = shared[PROBE_BASE + 2];
-	if (!seq || seq === probeSeen) return;
-	probeSeen = seq;
-	const x = shared[PROBE_BASE], y = shared[PROBE_BASE + 1];
-	const t = readType(x, y) || 0;
-	const def = t ? safe(() => api.elements.getDefinitionByType(t)) : null;
-	shared[PROBE_BASE + 3] = t;
-	shared[PROBE_BASE + 4] = def ? 1 : 0;
-	shared[PROBE_BASE + 5] = def && typeof def.matterType === "number" ? def.matterType : 255;
-	shared[PROBE_BASE + 6] = def && typeof def.density === "number" ? def.density : 0;
-	shared[PROBE_BASE + 7] = seq;
-}, 200);
 function register() {
 	let ready = false;
 	for (let i = 0; i < T; i++) if (shared && shared[8 + i * 3]) ready = true;
