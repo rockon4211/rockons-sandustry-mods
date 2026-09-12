@@ -353,64 +353,48 @@ function compile(graph, cfg) {
   // new .real.js and F10 picks it up. If the fetch is blocked, the stub falls
   // back to the baked copy of the same code - never worse than the old way.
   if (cfg.hotload) {
-    // Worker entries are evaluated WITHOUT async support (top-level await is a
-    // silent syntax error there - learned the hard way: the worker was dead
-    // from v0.6.12 to v0.7.5). The worker stub must be fully synchronous.
-    const wrapWorker = (name, code) => {
+    // SYNCHRONOUS hot-load. The critical lesson (v0.5.6, days of debugging):
+    // an ASYNC fetch defers the real code by a microtask, so element
+    // registration runs AFTER the engine has already shipped mod-element
+    // definitions to the sim worker - the element renders red and never
+    // simulates there. And the worker's shared.require ran before main's
+    // async body created the buffer. Loading the real code with a BLOCKING
+    // XMLHttpRequest makes the stub behave exactly like a direct, synchronous
+    // mod entry (registration in the right window, buffer created before the
+    // worker loads) while still reading fresh code from disk for F10.
+    //   isMain=true: the real code may use top-level await (sprite loading),
+    //   so it is run as an async IIFE - but CALLED synchronously, so its
+    //   synchronous prefix (element registration) completes before any await.
+    const wrap = (name, code, isMain) => {
       files[name.replace(".js", ".real.js")] = code;
+      const url = cfg.hotload + name.replace(".js", ".real.js");
+      const runReal = isMain
+        ? `new (Object.getPrototypeOf(async function(){}).constructor)("sandkit", src)(sandkit);`
+        : `new Function("sandkit", src)(sandkit);`;
+      const baked = isMain
+        ? `async function __baked(sandkit) {\n${code}\n}`
+        : `function __baked(sandkit) {\n${code}\n}`;
       return [
-        `// ${cfg.name} - hot-load stub (sync; worker entries cannot use await).`,
-        `function __baked(sandkit) {`,
-        code,
-        `}`,
+        `// ${cfg.name} - hot-load stub (synchronous). Real code: ${name.replace(".js", ".real.js")}.`,
+        baked,
         `(function () {`,
-        `\tvar ran = false;`,
+        `\tvar src = null;`,
         `\ttry {`,
-        `\t\tfetch(${JSON.stringify(cfg.hotload + name.replace(".js", ".real.js"))} + "?ts=" + Date.now()).then(function (r) {`,
-        `\t\t\tif (!r.ok) throw new Error("HTTP " + r.status);`,
-        `\t\t\treturn r.text();`,
-        `\t\t}).then(function (src) {`,
-        `\t\t\tnew Function("sandkit", src)(sandkit);`,
-        `\t\t\tran = true;`,
-        `\t\t\tconsole.log("[${cfg.id}] worker hot-loaded ${name.replace(".js", ".real.js")} fresh from disk");`,
-        `\t\t}).catch(function (e) {`,
-        `\t\t\tconsole.warn("[${cfg.id}] worker hot-load failed, using baked code:", e && e.message);`,
-        `\t\t\tif (!ran) __baked(sandkit);`,
-        `\t\t});`,
-        `\t} catch (e) {`,
-        `\t\tconsole.warn("[${cfg.id}] worker hot-load unavailable, using baked code");`,
-        `\t\t__baked(sandkit);`,
-        `\t}`,
+        `\t\tvar xhr = new XMLHttpRequest();`,
+        `\t\txhr.open("GET", ${JSON.stringify(url)} + "?ts=" + Date.now(), false);`,
+        `\t\txhr.send();`,
+        `\t\tif (xhr.status === 0 || xhr.status === 200) src = xhr.responseText;`,
+        `\t} catch (e) { src = null; }`,
+        `\ttry {`,
+        `\t\tif (src) { ${runReal} console.log("[${cfg.id}] ${name} hot-loaded fresh from disk"); }`,
+        `\t\telse { __baked(sandkit); console.log("[${cfg.id}] ${name} using baked code (no disk read)"); }`,
+        `\t} catch (e) { console.warn("[${cfg.id}] ${name} hot-load threw, using baked:", e && e.message); __baked(sandkit); }`,
         `})();`,
       ].join("\n") + "\n";
     };
-    const wrap = (name, code) => {
-      files[name.replace(".js", ".real.js")] = code;
-      return [
-        `// ${cfg.name} - hot-load stub. The real code lives in ${name.replace(".js", ".real.js")},`,
-        `// fetched fresh on every boot so F10 quick reload picks up new builds.`,
-        `async function __baked(sandkit) {`,
-        code,
-        `}`,
-        `(async () => {`,
-        `\tlet ran = false;`,
-        `\ttry {`,
-        `\t\tconst r = await fetch(${JSON.stringify(cfg.hotload + name.replace(".js", ".real.js"))} + "?ts=" + Date.now());`,
-        `\t\tif (r.ok) {`,
-        `\t\t\tconst src = await r.text();`,
-        `\t\t\tconst A = Object.getPrototypeOf(async function () {}).constructor;`,
-        `\t\t\tawait new A("sandkit", src)(sandkit);`,
-        `\t\t\tran = true;`,
-        `\t\t\tconsole.log("[${cfg.id}] hot-loaded ${name.replace(".js", ".real.js")} fresh from disk");`,
-        `\t\t}`,
-        `\t} catch (e) { console.warn("[${cfg.id}] hot-load failed, using baked code:", e); }`,
-        `\tif (!ran) await __baked(sandkit);`,
-        `})();`,
-      ].join("\n") + "\n";
-    };
-    files["main.js"] = wrap("main.js", files["main.js"]);
-    if (files["worker.js"]) files["worker.js"] = wrapWorker("worker.js", files["worker.js"]);
-    report.ok.push("hot-load stubs: main.js" + (files["worker.real.js"] ? " + worker.js" : "") + " fetch their .real.js fresh each boot");
+    files["main.js"] = wrap("main.js", files["main.js"], true);
+    if (files["worker.js"]) files["worker.js"] = wrap("worker.js", files["worker.js"], false);
+    report.ok.push("hot-load stubs: synchronous XHR load of .real.js (registration-safe) with baked fallback");
   }
   return { files, report };
 }

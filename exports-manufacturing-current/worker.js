@@ -1,4 +1,4 @@
-// Manufacturing - hot-load stub (sync; worker entries cannot use await).
+// Manufacturing - hot-load stub (synchronous). Real code: worker.real.js.
 function __baked(sandkit) {
 // Manufacturing - worker entry (generated). Touch reactions and purge rules
 // live here because only this thread sees particles move.
@@ -6,7 +6,7 @@ const api = sandkit.api;
 const MOD_ID = "brandon.manufacturing";
 // Out-of-band "the worker JS executed" ping, independent of the shared buffer,
 // so main can tell "worker ran but no buffer" from "worker never ran".
-try { api.main && api.main.emitEvent && api.main.emitEvent("mfg:workerAlive", { v: "0.7.7" }); } catch (e) {}
+try { api.main && api.main.emitEvent && api.main.emitEvent("mfg:workerAlive", { v: "0.7.8" }); } catch (e) {}
 let shared = null;
 const PROBE_BASE = 10;
 const BUFLEN = 20;
@@ -125,21 +125,15 @@ register();
 
 }
 (function () {
-	var ran = false;
+	var src = null;
 	try {
-		fetch("file:///C:/Users/Brand/AppData/Roaming/sandustry/mods/manufacturing/worker.real.js" + "?ts=" + Date.now()).then(function (r) {
-			if (!r.ok) throw new Error("HTTP " + r.status);
-			return r.text();
-		}).then(function (src) {
-			new Function("sandkit", src)(sandkit);
-			ran = true;
-			console.log("[brandon.manufacturing] worker hot-loaded worker.real.js fresh from disk");
-		}).catch(function (e) {
-			console.warn("[brandon.manufacturing] worker hot-load failed, using baked code:", e && e.message);
-			if (!ran) __baked(sandkit);
-		});
-	} catch (e) {
-		console.warn("[brandon.manufacturing] worker hot-load unavailable, using baked code");
-		__baked(sandkit);
-	}
+		var xhr = new XMLHttpRequest();
+		xhr.open("GET", "file:///C:/Users/Brand/AppData/Roaming/sandustry/mods/manufacturing/worker.real.js" + "?ts=" + Date.now(), false);
+		xhr.send();
+		if (xhr.status === 0 || xhr.status === 200) src = xhr.responseText;
+	} catch (e) { src = null; }
+	try {
+		if (src) { new Function("sandkit", src)(sandkit); console.log("[brandon.manufacturing] worker.js hot-loaded fresh from disk"); }
+		else { __baked(sandkit); console.log("[brandon.manufacturing] worker.js using baked code (no disk read)"); }
+	} catch (e) { console.warn("[brandon.manufacturing] worker.js hot-load threw, using baked:", e && e.message); __baked(sandkit); }
 })();
