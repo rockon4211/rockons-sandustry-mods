@@ -94,6 +94,10 @@ button:focus-visible,.mat:focus-visible{outline:2px solid var(--accent)}
 .edge.dis{opacity:.15;stroke-dasharray:2 5}
 .vlink{fill:none;stroke:#4a5568;stroke-width:1;stroke-dasharray:3 4;opacity:.3;pointer-events:none}
 .vlink.hl{opacity:.95;stroke:var(--accent);stroke-width:1.4}
+.slot{fill:transparent;stroke:#2e3642;stroke-dasharray:3 4;opacity:.28;pointer-events:none}
+.slot.free{pointer-events:all;cursor:pointer;opacity:.6;stroke:#5b6472}
+.slot.free:hover{stroke:var(--accent);opacity:1;fill:rgba(255,215,94,.07)}
+.node.carrying rect.box{stroke:var(--touch);stroke-width:2.2;stroke-dasharray:4 3}
 .edge.custom{stroke-width:2}
 .node.linksrc rect.box{stroke:var(--touch);stroke-width:2}
 .frm label{display:block;font:600 9.5px var(--disp);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:10px 0 3px}
@@ -124,6 +128,7 @@ button:focus-visible,.mat:focus-visible{outline:2px solid var(--accent)}
   <span style="display:inline-flex;border:1px solid var(--line2);border-radius:6px;overflow:hidden">
     <button class="tbtn" id="tabVan" style="border:none;border-radius:0">VANILLA</button>
     <button class="tbtn on" id="tabMod" style="border:none;border-radius:0">MOD</button>
+    <button class="tbtn" id="tabTech" style="border:none;border-radius:0">TECH</button>
   </span>
   <button class="tbtn" id="newMatBtn">+ MATERIAL</button>
   <button class="tbtn" id="linkBtn">⇢ DRAW PROCESS</button>
@@ -152,10 +157,10 @@ button:focus-visible,.mat:focus-visible{outline:2px solid var(--accent)}
 </div>
 </div>
 <script>
-// ============ DATA — extracted from the decompiled game (v0.5.2) ============
+// ============ DATA — extracted from the decompiled game, audited vs v0.5.6 (2026-09) ============
 const MATS = [
 // core industry
-{id:"sand",n:"Sand",m:"Solid",d:150,c:0xF4A860,g:"Core industry",x:120,y:120},
+{id:"sand",n:"Sand",m:"Solid",d:150,c:0xF4A460,g:"Core industry",x:120,y:120},
 {id:"wetSand",n:"Wet Sand",m:"Slushy",d:150,c:0xCD853F,g:"Core industry",x:120,y:230},
 {id:"gold",n:"Gold",m:"Solid",d:300,c:0xFFD700,g:"Core industry",x:420,y:290},
 {id:"residue",n:"Residue",m:"Slushy",d:50,c:0xCCCCCC,g:"Core industry",x:420,y:180},
@@ -178,16 +183,16 @@ const MATS = [
 {id:"seed",n:"Seed",m:"Solid",d:150,c:0x7FFF00,g:"Plants",x:120,y:660},
 {id:"wetSeed",n:"Wet Seed",m:"Slushy",d:100,c:0x66CC66,g:"Plants",x:310,y:660},
 {id:"seedling",n:"Seedling",m:"Static",d:100,c:0x1B5E20,g:"Plants",x:490,y:660},
-{id:"petalium",n:"Amethelis",m:"Wisp",d:40,c:0xCC55DB,g:"Plants",x:670,y:660},
+{id:"petalium",n:"Amethelis",m:"Wisp",d:40,c:0xCC5CDB,g:"Plants",x:670,y:660},
 {id:"dryPetalium",n:"Dry Amethelis",m:"Wisp",d:39,c:0xFFB859,g:"Plants",x:880,y:660},
 {id:"florin",n:"Florin",m:"Gas",d:20,c:0xC9A5FF,g:"Plants",x:1080,y:660},
 {id:"florinol",n:"Florinol",m:"Liquid",d:30,c:0x9B4FE0,g:"Plants",x:1080,y:770},
 // fire & ice
 {id:"fire",n:"Fire",m:"Gas",d:25,c:0xFF4500,g:"Fire & ice",x:620,y:480},
 {id:"flame",n:"Flame",m:"Solid",d:50,c:0xFFA500,g:"Fire & ice",x:820,y:540},
-{id:"lava",n:"Lava",m:"Liquid",d:75,c:0xFF3300,g:"Fire & ice",x:400,y:590},
+{id:"lava",n:"Lava",m:"Liquid",d:200,c:0xFF3300,g:"Fire & ice",x:400,y:590},
 {id:"basalt",n:"Cinder",m:"Solid",d:50,c:0x8B0000,g:"Fire & ice",x:590,y:590},
-{id:"freezingIce",n:"Snow",m:"Powder",d:150,c:0xE0F7FF,g:"Fire & ice",x:150,y:590},
+{id:"freezingIce",n:"Snow",m:"Powder",d:150,c:0xE0FFFF,g:"Fire & ice",x:150,y:590},
 {id:"caulk",n:"Caulk",m:"Solid",d:200,c:0xFF8C00,g:"Fire & ice",x:620,y:60},
 // void
 {id:"gloom",n:"Voidbloom",m:"Slushy",d:30,c:0x7A00A8,g:"Void",x:1320,y:500},
@@ -196,7 +201,7 @@ const MATS = [
 {id:"prismaline",n:"Prismaline",m:"Gas",d:24,c:0xFF99CC,g:"Void",x:1720,y:610},
 {id:"voidjuice",n:"Voidjuice",m:"Liquid",d:55,c:0x9B59CF,g:"Void",x:1530,y:720},
 {id:"voidhusk",n:"Voidhusk",m:"Slushy",d:45,c:0xB14FE5,g:"Void",x:1320,y:720},
-{id:"voidSeeds",n:"Void Seeds",m:"Slushy",d:30,c:0x9932CC,g:"Void",x:1530,y:830},
+{id:"voidSeeds",n:"Void Seed",m:"Slushy",d:30,c:0x9932CC,g:"Void",x:1530,y:830},
 {id:"growingVoidSeed",n:"Growing Void Seed",m:"Static",d:100,c:0x5B2E8C,g:"Void",x:1720,y:830,dur:[0.1,0.5]},
 {id:"voidPetal",n:"Void Petal",m:"Wisp",d:40,c:0x00CED1,g:"Void",x:1720,y:720},
 {id:"auralite",n:"Auralite",m:"Powder",d:100,c:0xFF69B3,g:"Void",x:1530,y:500},
@@ -226,8 +231,8 @@ const VPROCS = [
 {f:"sand",t:"wetSand",partner:"water",k:"touch",conf:"v",lbl:"+ water",note:"Hardcoded wetting table: [Water, Sand, WetSand]. The water is consumed."},
 {f:"gold",t:"m_collector",k:"heat",conf:"v",lbl:"deposit",note:"The Collector banks gold as currency."},
 {f:"residue",t:"burntResidue",partner:"fire",k:"touch",conf:"a",lbl:"burns",note:"Residue exposed to fire chars into Burnt Residue."},
-{f:"gold",t:"liquidGold",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe: gold → Liquid Gold (register pair found in code, 50% byproduct branch on one entry)."},
-{f:"copper",t:"liquidCopper",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe: copper → Liquid Copper."},
+{f:"gold",t:"liquidGold",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe, verified in code: conversionChance 0.5 — each gold grain has only a 50% chance to become Liquid Gold; the other half is consumed and lost. Melting gold costs you half of it on average."},
+{f:"copper",t:"liquidCopper",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe, verified in code: conversionChance 1 — copper melts 1:1, no loss (unlike gold)."},
 {f:"liquidCopper",t:"m_mold",k:"heat",conf:"v",lbl:"fill 4×4",note:"A Copper Mold whose full 4×4 interior holds Liquid Copper (resting on terrain) sets and the structure transforms into a Power Brick. Verified in the transform code."},
 {f:"water",t:"steam",partner:"lava",k:"touch",conf:"v",lbl:"boils",note:"Hardcoded table: water touching Lava or Flame boils to steam."},
 {f:"steam",t:"water",k:"cycle",conf:"v",lbl:"sky rain",note:"i18n: 'Turns into rain when it reaches the sky'. Steam also condenses back when energy-depleted."},
@@ -269,8 +274,8 @@ m_collector:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSA
 const world=document.getElementById('world'), svg=document.getElementById('cv');
 // ---------- custom overlay (your edits, saved in this browser) ----------
 const MATTERS=['Solid','Liquid','Gas','Powder','Slushy','Wisp','Static'];
-let CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[]};
-try{const c=JSON.parse(localStorage.getItem('sms.custom')||'null'); if(c)CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],...c};}catch(e){}
+let CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],tech:{moves:{},parents:{}}};
+try{const c=JSON.parse(localStorage.getItem('sms.custom')||'null'); if(c)CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],tech:{moves:{},parents:{}},...c};}catch(e){}
 function saveCustom(){CUSTOM.ts=Date.now();try{localStorage.setItem('sms.custom',JSON.stringify(CUSTOM))}catch(e){} pushDb();}
 // ---------- cloud sync (so edits survive browser resets and Claude can read the graph) ----------
 let dbNS=null, syncT=null;
@@ -287,7 +292,7 @@ function pushDb(){
     const snap=await d.doc('studio/custom').get();
     const remote=snap&&snap.exists?snap.data():null;
     if(remote&&(remote.ts||0)>(CUSTOM.ts||0)){
-      CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],...remote};
+      CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],tech:{moves:{},parents:{}},...remote};
       try{localStorage.setItem('sms.custom',JSON.stringify(CUSTOM))}catch(e){}
       migrateCustom(); rebuild();
     } else {
@@ -320,7 +325,7 @@ let posStore={}; try{posStore=JSON.parse(localStorage.getItem('sms.pos')||'{}')|
 function savePos(){ try{for(const id in nodes)posStore[id]={x:nodes[id].x,y:nodes[id].y}; localStorage.setItem('sms.pos',JSON.stringify(posStore))}catch(e){} }
 const nodes={};
 let PROCS=[];
-let view='mod'; try{view=localStorage.getItem('sms.view')==='vanilla'?'vanilla':'mod'}catch(e){}
+let view='mod'; try{const sv=localStorage.getItem('sms.view'); view=(sv==='vanilla'||sv==='tech')?sv:'mod'}catch(e){}
 function rebuild(){
   const modView=view==='mod';
   for(const id in nodes) delete nodes[id];
@@ -332,6 +337,9 @@ function rebuild(){
   for(const id in posStore){ if(nodes[id]){nodes[id].x=posStore[id].x; nodes[id].y=posStore[id].y;} }
   PROCS=VPROCS.map((p,i)=>({...p,key:'v'+i,src:'v',dis:modView&&CUSTOM.dis.includes('v'+i)}));
   if(modView) PROCS=PROCS.concat(CUSTOM.procs.map(p=>({...p,src:'c',conf:'c'})));
+  // Parallel edges (same from -> same to) fan out instead of stacking:
+  // each gets a bigger bend so curves and labels never overlap.
+  {const seen={}; PROCS.forEach(p=>{const k=p.f+'|'+p.t; p._par=seen[k]||0; seen[k]=p._par+1;});}
   document.getElementById('stEl').textContent=Object.values(nodes).filter(n=>n.type==='mat').length;
   document.getElementById('stPr').textContent=PROCS.filter(p=>!p.dis).length;
   document.getElementById('stM').textContent=MACHINES.length;
@@ -352,7 +360,7 @@ function edgePath(p){
   const ux=dx/len, uy=dy/len;
   const sx=ax+ux*(da.w/2+4)*(Math.abs(ux)>Math.abs(uy)?1:Math.abs(uy/Math.max(.01,Math.abs(ux)+Math.abs(uy)))), sy=ay+uy*(da.h/2+4);
   const ex=bx-ux*(db.w/2+8), ey=by-uy*(db.h/2+8);
-  const mx=(sx+ex)/2, my=(sy+ey)/2, bend=Math.min(40,len*.15);
+  const mx=(sx+ex)/2, my=(sy+ey)/2, bend=Math.min(40,len*.15)+((p._par||0)*30);
   const cx=mx-uy*bend, cy=my+ux*bend;
   return {d:`M${sx} ${sy}Q${cx} ${cy} ${ex} ${ey}`,lx:(sx+2*cx+ex)/4,ly:(sy+2*cy+ey)/4};
 }
@@ -492,15 +500,43 @@ function select(id,savedFlash){
   }
   body.innerHTML=h; insp.classList.add('open');
 }
+function partRow(role,id){
+  const n=nodes[id]; if(!n)return '';
+  const sw=n.type==='mat'?`<span class="sw" style="background:${hex(n.c)};margin-right:6px;display:inline-block;vertical-align:-1px"></span>`:(SPRITES[id]?`<img src="${SPRITES[id]}" alt="" style="width:15px;height:15px;object-fit:contain;image-rendering:pixelated;vertical-align:-3px;margin-right:6px">`:'');
+  const meta=n.type==='mat'?`${n.m} · density ${n.d}${n.custom?' · custom':(n.modded?' · modified':'')}`:(n.type==='terrain'?`terrain${n.hp?` · hp ${n.hp}`:''}`:'machine');
+  return `<div class="proc" onmousedown="select('${esc(id)}');centerOn('${esc(id)}');event.stopPropagation()"><span style="color:var(--faint)">${role}</span>&nbsp; ${sw}${esc(n.n)} <span class="via">${meta}</span></div>`;
+}
+function compilesTo(p){
+  if(p.dis)return 'disabled — stripped from the exported mod';
+  if(p.k==='heat'&&p.via==='m_shaker')return 'a real Shaker recipe (outputs drop below / get thrown above)';
+  if(p.k==='heat'&&p.via==='m_smelter')return 'a Smelter recipe (converts on the machine face)';
+  if(p.k==='heat'&&p.via==='m_dryer')return 'a Steam Dryer recipe';
+  if(p.k==='heat'&&p.via)return 'not compilable yet — no mod recipe registry found for that machine';
+  if(p.k==='touch')return 'a worker touch reaction — the partner grain is consumed';
+  if(p.k==='mine'&&p.f==='t_dune')return 'a terrain output swap (broken dune cells spawn the target)';
+  if(p.k==='mine')return 'vanilla terrain behaviour (output table)';
+  if(p.k==='cycle')return 'engine-internal timing — not compilable yet';
+  return 'not compilable yet';
+}
 function selectProc(i){
   const p=PROCS[i]; sel=null; applySel();
   edgeEls.forEach(e=>e.path.classList.toggle('hl',e.p===p));
   let h=`<h2>${esc(nodes[p.f].n)} → ${esc(nodes[p.t].n)}${p.src==='c'?'<span class="tag">custom</span>':''}${p.dis?'<span class="tag" style="background:rgba(255,138,138,.12);color:#ff8a8a">disabled</span>':''}</h2>
-    <div class="id"><span class="chip" style="color:${KCOL[p.k]}">${{heat:'machine / heat',touch:'touch reaction',mine:'mining drop',cycle:'growth / cycle'}[p.k]}</span>${p.via&&nodes[p.via]?` <span class="chip">via ${esc(nodes[p.via].n)}</span>`:''}${p.partner&&nodes[p.partner]?` <span class="chip">+ ${esc(nodes[p.partner].n)}</span>`:''}${p.src==='c'?'':confTag(p.conf)}</div>
-    <div class="kv"><span>step</span><span>${esc(p.lbl||'—')}</span></div>
-    ${p.note?`<div class="note">${esc(p.note)}</div>`:''}`;
+    <div class="id"><span class="chip" style="color:${KCOL[p.k]}">${{heat:'machine / heat',touch:'touch reaction',mine:'mining drop',cycle:'growth / cycle'}[p.k]}</span>${p.src==='c'?'':confTag(p.conf)}</div>`;
+  h+=`<h3>Ingredients & result</h3>`;
+  h+=partRow('in',p.f);
+  if(p.partner&&nodes[p.partner])h+=partRow('+',p.partner);
+  if(p.via&&nodes[p.via])h+=partRow('via',p.via);
+  h+=partRow('out',p.t);
+  h+=`<h3>Details</h3>`;
+  if(p.lbl)h+=`<div class="kv"><span>label on the arrow</span><span>${esc(p.lbl)}</span></div>`;
   const fa=nodes[p.f], fb=nodes[p.t];
-  if(p.via&&fa&&fb&&fa.type==='mat'&&fb.type==='mat'&&fb.d>=fa.d)
+  if(fa&&fb&&fa.type==='mat'&&fb.type==='mat')
+    h+=`<div class="kv"><span>density change</span><span>${fa.d} → ${fb.d}${fb.d<fa.d?' ✓':''}</span></div>`;
+  h+=`<div class="kv"><span>source</span><span>${p.src==='c'?'yours (custom)':'vanilla game'}</span></div>`;
+  h+=`<div class="kv"><span>compiles to</span><span style="text-align:right;max-width:160px">${compilesTo(p)}</span></div>`;
+  if(p.note)h+=`<div class="note">${esc(p.note)}</div>`;
+  if((p.via==='m_smelter'||p.via==='m_dryer')&&fa&&fb&&fa.type==='mat'&&fb.type==='mat'&&fb.d>=fa.d)
     h+=`<div class="note" style="color:#ffb04d">⚠ The output (density ${fb.d}) is not lighter than the input (${fa.d}). The machine converts in place and displacement is pure density — an equal-or-heavier product tends to sit on the machine and jam it. Vanilla recipes always go lighter (gold 300 → 120, copper 200 → 150). Consider density ${Math.max(1,fa.d-10)} or less for ${esc(fb.n)}.</div>`;
   if(p.src==='v'){
     h+=`<div class="note" style="color:var(--faint)">${p.conf==='v'?'Read directly from the decompiled game code or its own text.':'Well-known behaviour, not yet pinned to a line of code.'}</div>`;
@@ -656,16 +692,128 @@ function linkClick(id){
 }
 linkBtn.onclick=()=>setLinkMode(!linkMode);
 document.getElementById('newMatBtn').onclick=newMat;
+// ---------- TECH TREE view ----------
+// Extracted from the game's own layout tables: grid rows + drawn connections.
+const TECHDATA={"nodes":[{"id":"Shaker","r":0,"c":4,"n":"Shaker","cost":20},{"id":"Conveyors","r":1,"c":3,"n":"Logistics","cost":30},{"id":"Hover","r":1,"c":5,"n":"Hover","cost":50},{"id":"Map","r":1,"c":7,"n":"Map","cost":100},{"id":"FlareGun","r":1,"c":8,"n":"Flare Gun","cost":150},{"id":"Filters","r":2,"c":2,"n":"Filters","cost":250},{"id":"SprintBoost","r":2,"c":6,"n":"{t:ui|keyBindings|SprintBoost}","cost":200},{"id":"StaticLights","r":2,"c":8,"n":"Static Lights","cost":400},{"id":"KineticPress","r":3,"c":4,"n":"Kinetic Press","cost":500},{"id":"Flamethrower","r":3,"c":5,"n":"Flamethrower","cost":400},{"id":"burnerBelt","r":4,"c":0,"n":"Burner Belt"},{"id":"thermalRelay","r":4,"c":1,"n":"Thermal Relay"},{"id":"Sweeper","r":4,"c":6,"n":"Sweeper","cost":800},{"id":"flashlight","r":4,"c":8,"n":"Flashlight"},{"id":"QuantumPortal","r":5,"c":2,"n":"Quantum Portal","cost":750},{"id":"Cryoblaster","r":5,"c":6,"n":"Cryoblaster","cost":1},{"id":"Pipes","r":6,"c":2,"n":"Fluids","cost":1250},{"id":"PlanterBox","r":6,"c":4,"n":"Planter Box","cost":2},{"id":"Gun","r":6,"c":5,"n":"Gun","cost":1500},{"id":"heatCannon","r":7,"c":0,"n":"Heat Cannon"},{"id":"ClearingFrame","r":7,"c":2,"n":"Clearing Frame","cost":1},{"id":"Vacuum","r":7,"c":6,"n":"Vacuum","cost":2},{"id":"Heatmap","r":7,"c":8,"n":"Activity Heatmap","cost":700},{"id":"kineticFieldEmitter","r":8,"c":2,"n":"Kinetic Field Emitter"},{"id":"Diggers","r":8,"c":6,"n":"Diggers","cost":2500},{"id":"AdvancedFilters","r":9,"c":2,"n":"Advanced Filters","cost":1500},{"id":"Thermo","r":9,"c":4,"n":"Drying & Condensing","cost":2500},{"id":"Rocket","r":9,"c":5,"n":"Rocket","cost":2},{"id":"ConveyorsMk2","r":10,"c":3,"n":"Logistics Mk. 2","cost":2500},{"id":"Corraller","r":10,"c":6,"n":"Corraller","cost":1250},{"id":"Haulers","r":11,"c":3,"n":"Haulers","cost":3},{"id":"reconDrone","r":11,"c":8,"n":"Recon Drone"},{"id":"snowmaker","r":12,"c":2,"n":"Snowmaker"},{"id":"GoldBattery","r":12,"c":4,"n":"Gold Battery","cost":1500},{"id":"Drill","r":12,"c":5,"n":"Drill","cost":2500},{"id":"Smelter","r":13,"c":1,"n":"Smelter","cost":3},{"id":"energySiphon","r":13,"c":3,"n":"Energy Siphon"},{"id":"fluxEmanator","r":13,"c":8,"n":"Flux Emanator"},{"id":"copperMold","r":14,"c":2,"n":"Copper Mold"},{"id":"voidOrb","r":14,"c":7,"n":"Void Orb"},{"id":"electricityConnector","r":15,"c":1,"n":"Electricity Connector"},{"id":"SteamTurbine","r":15,"c":3,"n":"Steam Turbine","cost":3},{"id":"MiningLaser","r":16,"c":5,"n":"Mining Laser","cost":5},{"id":"Recall","r":16,"c":6,"n":"Recall","cost":4},{"id":"Locator","r":16,"c":8,"n":"Locator","cost":3},{"id":"aurixiteCrystallizer","r":17,"c":4,"n":"Aurixite Crystallizer"},{"id":"swarmConsole","r":19,"c":4,"n":"Swarm Console"},{"id":"entityCount1","r":20,"c":3,"n":"Swarm Capacity I"},{"id":"volcanizer","r":20,"c":5,"n":"Volcanizer"},{"id":"entityCount2","r":21,"c":2,"n":"Swarm Capacity II"},{"id":"spiralSwarm","r":21,"c":3,"n":"Spiral Swarm"},{"id":"prismiteWell","r":21,"c":4,"n":"Prismite Well"},{"id":"ImplosionGun","r":21,"c":6,"n":"Implosion Gun","cost":1},{"id":"swarmZoning","r":22,"c":2,"n":"Swarm Zoning"},{"id":"swarmScouts","r":22,"c":3,"n":"Swarm Strikers"},{"id":"prismalineWell","r":23,"c":4,"n":"Prismaline Well"}],"edges":[["Shaker","Conveyors"],["GoldBattery","snowmaker"],["thermalRelay","burnerBelt"],["aurixiteCrystallizer","swarmConsole"],["Conveyors","Filters"],["Flamethrower","KineticPress"],["entityCount1","spiralSwarm"],["entityCount1","entityCount2"],["entityCount2","swarmZoning"],["spiralSwarm","swarmScouts"],["prismiteWell","prismalineWell"],["volcanizer","ImplosionGun"],["Flamethrower","Gun"],["PlanterBox","Thermo"],["KineticPress","PlanterBox"],["Shaker","Hover"],["Hover","Flamethrower"],["Hover","Map"],["Map","FlareGun"],["voidOrb","Recall"],["voidOrb","fluxEmanator"],["voidOrb","Locator"],["Conveyors","ConveyorsMk2"],["thermalRelay","heatCannon"],["KineticPress","thermalRelay"],["PlanterBox","Pipes"],["Gun","Rocket"],["Rocket","Drill"],["Drill","MiningLaser"],["GoldBattery","Drill"],["GoldBattery","aurixiteCrystallizer"],["thermalRelay","Smelter"],["Smelter","copperMold"],["copperMold","energySiphon"],["copperMold","electricityConnector"],["copperMold","SteamTurbine"],["Map","voidOrb"],["Conveyors","QuantumPortal"],["Conveyors","ClearingFrame"],["ClearingFrame","kineticFieldEmitter"],["Conveyors","AdvancedFilters"],["Flamethrower","Sweeper"],["Gun","Diggers"],["Flamethrower","Cryoblaster"],["Map","Corraller"],["Gun","Vacuum"],["Map","reconDrone"],["ConveyorsMk2","Haulers"],["GoldBattery","copperMold"],["Hover","SprintBoost"],["FlareGun","StaticLights"],["StaticLights","flashlight"],["Map","Heatmap"],["Thermo","GoldBattery"],["conveyorRightMk2","launcherUpMk2"],["thermodryer","thermofroster"]]};
+// Our mod's nodes: draggable, re-parentable; defaults match the compiled mod.
+TECHDATA.nodes.forEach(n=>{if(n.n.indexOf('{')>=0){const x=n.id.replace(/(?!^)([A-Z])/g,' $1');n.n=x[0].toUpperCase()+x.slice(1);}});
+const MYTECH=[
+ {id:"brandonModTools",n:"Mod Tools",parent:"Shaker",r:0,c:5,cost:0},
+ {id:"brandonManufacturing",n:"Manufacturing",parent:"Smelter",r:13,c:0,cost:250},
+ {id:"brandonGlassTech",n:"Glass",parent:"brandonManufacturing",r:14,c:0,cost:500},
+];
+const TCW=118,TCH=96,TNW=96,TNH=64;
+function myTech(){
+ const t=CUSTOM.tech||{moves:{},parents:{}};
+ return MYTECH.map(m=>({...m,
+   r:(t.moves[m.id]&&t.moves[m.id].r!==undefined)?t.moves[m.id].r:m.r,
+   c:(t.moves[m.id]&&t.moves[m.id].c!==undefined)?t.moves[m.id].c:m.c,
+   parent:t.parents[m.id]||m.parent}));
+}
+function techOccupied(r,c,exceptId){
+ if(TECHDATA.nodes.some(n=>n.r===r&&n.c===c))return true;
+ return myTech().some(m=>m.id!==exceptId&&m.r===r&&m.c===c);
+}
+let techSel=null;
+function techDraw(){
+ world.innerHTML=''; edgeEls=[]; nodeEls={};
+ const mine=myTech();
+ const all={}; TECHDATA.nodes.forEach(n=>all[n.id]=n); mine.forEach(m=>all[m.id]=m);
+ const cx=n=>n.c*TCW+TNW/2, cy=n=>n.r*TCH+TNH/2;
+ // the grid itself: one slot outline per possible node position
+ const MAXR=31,MAXC=10;
+ for(let r=0;r<MAXR;r++)for(let c=0;c<MAXC;c++){
+   const occ=techOccupied(r,c,null);
+   const free=!occ&&!!techCarry;
+   const cell=el('rect',{class:'slot'+(free?' free':''),x:c*TCW,y:r*TCH,width:TNW,height:TNH,rx:8});
+   if(free){const rr=r,cc=c;cell.addEventListener('click',ev=>{ev.stopPropagation();
+     CUSTOM.tech=CUSTOM.tech||{moves:{},parents:{}};
+     CUSTOM.tech.moves[techCarry]={r:rr,c:cc};
+     const placed=techCarry; techCarry=null;
+     saveCustom(); techDraw(); techSelect(placed); techToast('Placed');});}
+   world.appendChild(cell);
+ }
+ const drawEdge=(f,t,mineEdge)=>{
+   const a=all[f],b=all[t]; if(!a||!b)return;
+   const p=el('path',{class:'vlink',d:`M${cx(a)} ${cy(a)}L${cx(b)} ${cy(b)}`,
+     style:mineEdge?'stroke:var(--accent);opacity:.8;stroke-dasharray:none;stroke-width:1.6':'opacity:.5;stroke-dasharray:none'});
+   world.appendChild(p);
+ };
+ TECHDATA.edges.forEach(e=>drawEdge(e[0],e[1],false));
+ mine.forEach(m=>drawEdge(m.parent,m.id,true));
+ for(const id in all){
+   const n=all[id], isMine=MYTECH.some(m=>m.id===id);
+   const g=el('g',{class:'node machine'+(isMine?' sel':''),transform:`translate(${n.c*TCW},${n.r*TCH})`});
+   g.appendChild(el('rect',{class:'box',width:TNW,height:TNH,rx:8,
+     style:isMine?'stroke:var(--accent)':(techSel===id?'stroke:var(--touch)':'')}));
+   const t=el('text',{class:'nm',x:TNW/2,y:26,'text-anchor':'middle',style:'font-size:10px'+(isMine?'':';fill:var(--text)')});
+   t.textContent=n.n.length>14?n.n.slice(0,13)+'…':n.n; g.appendChild(t);
+   const sub=el('text',{class:'mt',x:TNW/2,y:44,'text-anchor':'middle'});
+   sub.textContent=isMine?(n.cost?n.cost+'g · yours':'free · yours'):(n.cost!==undefined?n.cost+'g':''); g.appendChild(sub);
+   if(isMine&&techCarry===id)g.classList.add('carrying');
+   g.addEventListener('click',ev=>{ev.stopPropagation();
+     if(isMine){ if(techCarry===id){techCarry=null;techToast('Put back down');} else {techCarry=id;techToast('Carrying '+n.n+' - click a free cell to place, Esc to cancel');} techDraw(); techSelect(id); }
+     else techSelect(id);});
+   world.appendChild(g); nodeEls[id]=g;
+ }
+ document.getElementById('stEl').textContent=TECHDATA.nodes.length+mine.length;
+ document.getElementById('stPr').textContent=TECHDATA.edges.length+mine.length;
+ document.getElementById('stM').textContent=mine.length;
+}
+let techCarry=null;
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&techCarry){techCarry=null;if(view==='tech')techDraw();techToast('Cancelled');}});
+function techToast(m){const h=document.getElementById('hint');const old=h.textContent;h.textContent=m;setTimeout(()=>{h.textContent=old},2000);}
+function safeName(id){const n=TECHDATA.nodes.find(x=>x.id===id)||MYTECH.find(x=>x.id===id);return n?n.n:id;}
+function techSelect(id){
+ techSel=id; techDraw();
+ const mine=myTech().find(m=>m.id===id);
+ const v=TECHDATA.nodes.find(n=>n.id===id);
+ const n=mine||v; if(!n)return;
+ let h=`<h2>${esc(n.n)}${mine?'<span class="tag">yours</span>':''}</h2>
+   <div class="id">${mine?'your research node':'vanilla research node'} · grid ${n.r},${n.c}</div>`;
+ if(n.cost!==undefined)h+=`<div class="kv"><span>cost</span><span>${n.cost} gold</span></div>`;
+ if(mine){
+   h+=`<div class="kv"><span>unlocks after</span><span>${esc(safeName(mine.parent))}</span></div>`;
+   const opts=TECHDATA.nodes.map(x=>x.id).concat(MYTECH.map(x=>x.id)).filter(x=>x!==id);
+   h+=`<div class="frm"><label>re-parent (which node unlocks this?)</label>
+     <select id="tp_sel">${opts.map(o=>`<option value="${esc(o)}"${o===mine.parent?' selected':''}>${esc(safeName(o))}</option>`).join('')}</select>
+     <div class="btns"><button class="btn pri" onmousedown="techSetParent('${esc(id)}')">Save parent</button>
+     <button class="btn" onmousedown="techReset('${esc(id)}')">Reset node</button></div></div>
+   <div class="note" style="color:var(--faint)">Click the node to pick it up, then click any free grid cell to place it (Esc cancels). Moves and re-parenting compile into the mod on the next export.</div>`;
+ } else {
+   const outs=TECHDATA.edges.filter(e=>e[0]===id).map(e=>safeName(e[1]));
+   const ins=TECHDATA.edges.filter(e=>e[1]===id).map(e=>safeName(e[0]));
+   if(ins.length)h+=`<div class="kv"><span>unlocked by</span><span style="text-align:right">${esc(ins.join(', '))}</span></div>`;
+   if(outs.length)h+=`<div class="kv"><span>leads to</span><span style="text-align:right;max-width:150px">${esc(outs.join(', '))}</span></div>`;
+   h+=`<div class="note" style="color:var(--faint)">Vanilla node - fixed in place. The engine offers no way to move vanilla tree positions from a mod (rewiring their gates is under investigation).</div>`;
+ }
+ body.innerHTML=h; insp.classList.add('open');
+}
+function techSetParent(id){
+ const sel=document.getElementById('tp_sel'); if(!sel)return;
+ CUSTOM.tech=CUSTOM.tech||{moves:{},parents:{}};
+ CUSTOM.tech.parents[id]=sel.value;
+ saveCustom(); techDraw(); techSelect(id);
+}
+function techReset(id){
+ CUSTOM.tech=CUSTOM.tech||{moves:{},parents:{}};
+ delete CUSTOM.tech.moves[id]; delete CUSTOM.tech.parents[id];
+ saveCustom(); techDraw(); techSelect(id);
+}
+window.techSelect=techSelect;window.techSetParent=techSetParent;window.techReset=techReset;
 // ---------- vanilla / mod views ----------
 function setView(v){
   view=v; try{localStorage.setItem('sms.view',v)}catch(e){}
   document.getElementById('tabVan').classList.toggle('on',v==='vanilla');
   document.getElementById('tabMod').classList.toggle('on',v==='mod');
+  document.getElementById('tabTech').classList.toggle('on',v==='tech');
   document.getElementById('newMatBtn').hidden=v!=='mod';
   document.getElementById('linkBtn').hidden=v!=='mod';
-  setLinkMode(false); sel=null; insp.classList.remove('open');
-  rebuild(); applySel();
+  setLinkMode(false); sel=null; techSel=null; insp.classList.remove('open');
+  if(v==='tech'){ techDraw(); document.getElementById('list').innerHTML='<div class="grp">Tech tree</div><div class="note" style="padding:4px 8px;font-size:11.5px;color:var(--dim)">The real in-game research tree. Gold-bordered nodes are yours: click to pick one up, click a free cell to place it, click again to put it down. Re-parent from the panel. Vanilla nodes are fixed by the engine.</div>'; }
+  else { rebuild(); applySel(); }
 }
+document.getElementById('tabTech').onclick=()=>setView('tech');
 document.getElementById('tabVan').onclick=()=>setView('vanilla');
 document.getElementById('tabMod').onclick=()=>setView('mod');
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){setLinkMode(false); sel=null; applySel(); insp.classList.remove('open');}});

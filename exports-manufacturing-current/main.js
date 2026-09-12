@@ -179,7 +179,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.8.0 running"));
+		safe(() => api.ui.toast("Manufacturing v0.8.1 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);

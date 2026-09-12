@@ -465,9 +465,12 @@ function scan(x, y) {
 \t\t}
 \t}
 }
-// Vanilla makeovers, applied IN THIS THREAD: the world renderer reads this
-// worker's own color scheme, and the main thread's update broadcast does not
-// reliably reach it - so the worker re-applies the same patches directly.
+// Vanilla makeovers, worker side. 0.5.6 audit (2026-09): the worker mod
+// runtime does NOT expose api.elements.updateDefinition, so this path is a
+// no-op there and the main-thread update (which now postAll-broadcasts to the
+// sim workers) is what actually lands the makeover. Kept and gated on the
+// method's presence so it self-activates if a future worker runtime adds it,
+// without burning two timers per load when it is absent.
 // (nameKey: null clears the i18n key so the custom name wins on this side too.)
 const MAKEOVERS = ${JSON.stringify(overrides || [])};
 function applyMakeovers() {
@@ -480,8 +483,10 @@ function applyMakeovers() {
 \t}
 \tif (MAKEOVERS.length) console.log(\`[\${MOD_ID}] worker makeovers applied (\${MAKEOVERS.map(m => m.id).join(", ")})\`);
 }
-applyMakeovers();
-if (typeof setTimeout === "function") for (const d of [2000, 6000]) setTimeout(applyMakeovers, d);
+if (typeof (api.elements && api.elements.updateDefinition) === "function") {
+\tapplyMakeovers();
+\tif (typeof setTimeout === "function") for (const d of [2000, 6000]) setTimeout(applyMakeovers, d);
+}
 function register() {
 \tlet ready = false;
 \tfor (let i = 0; i < T; i++) if (shared && shared[8 + i * 3]) ready = true;

@@ -1,7 +1,7 @@
 {
  "id": "brandon.manufacturing",
  "name": "Manufacturing",
- "version": "0.7.0",
+ "version": "0.8.1",
  "author": "Brandon",
  "purgeMap": {
   "sunsand": "Sand"

@@ -1,0 +1,50 @@
+{
+ "dis": [],
+ "hidden": [
+  "sunsand"
+ ],
+ "over": {
+  "sand": {
+   "n": "soil"
+  },
+  "wetSand": {
+   "n": "Wet Soil"
+  }
+ },
+ "mats": {
+  "glass": {
+   "c": 11842220,
+   "d": 140,
+   "g": "Custom",
+   "id": "glass",
+   "m": "Solid",
+   "n": "Glass"
+  },
+  "Sand": {
+   "c": 16766814,
+   "d": 150,
+   "g": "Custom",
+   "id": "Sand",
+   "m": "Solid",
+   "n": "Sand"
+  }
+ },
+ "procs": [
+  {
+   "f": "Sand",
+   "k": "heat",
+   "key": "c24",
+   "lbl": "smelt",
+   "note": "turns sand to glass",
+   "t": "glass",
+   "via": "m_smelter"
+  },
+  {
+   "f": "t_dune",
+   "k": "mine",
+   "key": "c25",
+   "lbl": "break",
+   "t": "Sand"
+  }
+ ]
+}
