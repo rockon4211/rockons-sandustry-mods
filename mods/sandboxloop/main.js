@@ -292,6 +292,10 @@ safe(() => {
 	window.addEventListener("mouseup", () => { if (!_drag) return; _drag = false; safe(() => window.localStorage.setItem("brandon.sandboxloop.panelpos", JSON.stringify(panelPos))); });
 });
 function startDrag(e) { _drag = true; _ddx = e.clientX - panelPos.x; _ddy = e.clientY - panelPos.y; if (e.preventDefault) e.preventDefault(); }
+// --- minimize / restore ------------------------------------------------------
+let panelMin = false;
+(function loadMin() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.panelmin")) === "1") panelMin = true; })();
+function setMin(v) { panelMin = v; safe(() => window.localStorage.setItem("brandon.sandboxloop.panelmin", v ? "1" : "0")); if (panelRepaint) panelRepaint((x) => x + 1); }
 function Row(label, cfg, accent) {
 	const opts = palette.map((p) => h("option", { value: p.type, key: p.type }, p.name));
 	const onMat = (e) => { cfg.type = +e.target.value; savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
@@ -420,22 +424,33 @@ function CleanupRow() {
 		clearMsg ? h("span", { style: { fontSize: "10px", color: "#8fb98f", fontWeight: 700 } }, clearMsg) : null);
 }
 
+const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };
+function TitleBar() {
+	return h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "4px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
+		h("span", { style: { color: "#5b6470", fontSize: "13px", lineHeight: 1 } }, "⠿"),
+		h("span", null, "Sandbox Loop" + (regErr ? "  (err: " + regErr.slice(0, 20) + ")" : "")),
+		h("span", { style: { flex: "1 1 auto" } }),
+		h("button", { title: panelMin ? "expand" : "minimize", onMouseDown: (e) => { if (e.stopPropagation) e.stopPropagation(); }, onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setMin(!panelMin); }, style: MINBTN }, panelMin ? "▢" : "–"));
+}
 function Panel() {
 	const [, b] = React.useState(0); panelRepaint = b;
 	if (!isEnabled() || !inWorld()) return null;
 	if (emitCfg.type == null) emitCfg.type = defaultType();
 	if (removeCfg.type == null) removeCfg.type = defaultType();
-	return h("div", {
-		style: {
-			position: "fixed", left: panelPos.x + "px", top: panelPos.y + "px", zIndex: 99998, pointerEvents: "auto",
-			background: "rgba(10,14,20,0.94)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "8px",
-			padding: "8px 10px", font: '600 12px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#e8edf3",
-			boxShadow: "0 4px 16px rgba(0,0,0,.5)", minWidth: "312px", maxWidth: "340px",
-		},
-	},
-		h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "5px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
-			h("span", { style: { color: "#5b6470", fontSize: "13px", lineHeight: 1 } }, "⠿"),
-			h("span", null, "Sandbox Loop" + (regErr ? "  (err: " + regErr.slice(0, 20) + ")" : ""))),
+	const base = {
+		position: "fixed", left: panelPos.x + "px", top: panelPos.y + "px", zIndex: 99998, pointerEvents: "auto",
+		background: "rgba(10,14,20,0.94)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "8px",
+		padding: "8px 10px", font: '600 12px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#e8edf3",
+		boxShadow: "0 4px 16px rgba(0,0,0,.5)",
+	};
+	if (panelMin) {
+		const ns = eachOf(SRC_ID).length, nr = eachOf(SNK_ID).length;
+		return h("div", { style: Object.assign({}, base, { minWidth: "210px" }) },
+			TitleBar(),
+			h("div", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600, marginLeft: "20px" } }, ns + (ns === 1 ? " source" : " sources") + " · " + nr + (nr === 1 ? " remover" : " removers")));
+	}
+	return h("div", { style: Object.assign({}, base, { minWidth: "312px", maxWidth: "340px" }) },
+		TitleBar(),
 		Row("Source", emitCfg, "#8fe0aa"),
 		Row("Remover", removeCfg, "#e79b9b"),
 		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now."),
