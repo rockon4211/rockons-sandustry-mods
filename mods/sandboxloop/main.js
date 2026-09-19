@@ -163,11 +163,12 @@ const SHAPE_SRC = [
 	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
 	[1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,1,1,1,0,0,0,0],[0,0,0,0,1,0,0,1,0,0,0,0],
 ];
+// Solid block: material lands on TOP of it and is eaten from the surface.
 const SHAPE_SNK = [
-	[0,0,0,0,0,0,0,0,0,0,0,0],[1,1,0,0,0,0,0,0,0,0,1,1],[1,1,0,0,0,0,0,0,0,0,1,1],
-	[1,1,0,0,0,0,0,0,0,0,1,1],[1,1,0,0,0,0,0,0,0,0,1,1],[1,1,0,0,0,0,0,0,0,0,1,1],
-	[1,1,0,0,0,0,0,0,0,0,1,1],[1,1,0,0,0,0,0,0,0,0,1,1],[1,1,0,0,0,0,0,0,0,0,1,1],
-	[1,1,0,0,0,0,0,0,0,0,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
+	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
+	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
+	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
+	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
 ];
 let regErr = "";
 (async () => {
@@ -175,7 +176,7 @@ let regErr = "";
 	catch (e) { regErr = "sprites"; console.error("[" + MOD_ID + "] sprites failed:", e); }
 	try {
 		api.structures.register({ id: SRC_ID, name: "Source", description: "Emits the material shown on the Sandbox panel when you place it, at the set particles/sec.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SRC_ID, angles: [0] }], render: { imageName: SRC_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SRC, defaultData: {} });
-		api.structures.register({ id: SNK_ID, name: "Remover", description: "Deletes the material shown on the Sandbox panel (only that one) at the set rate, when it pools in the basin.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SNK_ID, angles: [0] }], render: { imageName: SNK_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SNK, defaultData: {} });
+		api.structures.register({ id: SNK_ID, name: "Remover", description: "A solid block. Whatever the material shown on the Sandbox panel (only that one) lands ON TOP of it is slowly deleted from the surface at the set rate. Route material onto it with belts or gravity.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SNK_ID, angles: [0] }], render: { imageName: SNK_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SNK, defaultData: {} });
 		console.log("[" + MOD_ID + "] Source + Remover registered");
 	} catch (e) { regErr = String(e && e.message || e); console.error("[" + MOD_ID + "] register failed:", e); }
 })();
@@ -242,12 +243,16 @@ setInterval(() => {
 		if (cfg.type == null || cfg.rate <= 0) continue;
 		const k = "r" + ikey(s.x, s.y); let rt = runtime.get(k); if (!rt) { rt = { accum: 0, last: now }; runtime.set(k, rt); }
 		const dt = Math.min(now - rt.last, 1000); rt.last = now;
-		rt.accum += (cfg.rate * dt) / 1000; if (rt.accum > 12) rt.accum = 12;
+		rt.accum += (cfg.rate * dt) / 1000; const rcap = Math.max(12, cfg.rate); if (rt.accum > rcap) rt.accum = rcap;
 		let guard = 0;
-		while (rt.accum >= 1 && guard < 40) {
+		// Eat whatever sits ON TOP of the block. The block spans rows s.y..s.y+11
+		// (12 wide), so its top surface is s.y; material rests at s.y-1 and above.
+		// Scan the full width, from the surface upward, deleting the lowest matching
+		// grain first so the pile keeps settling down onto the block.
+		while (rt.accum >= 1 && guard < 80) {
 			guard++; let removed = false;
-			for (let x = s.x + 2; x <= s.x + 9 && !removed; x++) {
-				for (let y = s.y; y <= s.y + 9 && !removed; y++) {
+			for (let x = s.x; x <= s.x + 11 && !removed; x++) {
+				for (let y = s.y - 1; y >= s.y - 14 && !removed; y--) {
 					const key = x + "," + y; if ((rmRecent.get(key) || 0) > now) continue;
 					if (safe(() => api.elements.getResolvedTypeAtCell(x, y)) === cfg.type) {
 						safe(() => api.elements.removeAtCellWhenIdle(x, y)); rmRecent.set(key, now + 500); removed = true; bump(rmTot, cfg.type);
