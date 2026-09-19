@@ -579,12 +579,12 @@ function CleanupRow() {
 function ThermalRow() {
 	const on = thermalLock, pinned = thermalPins.size;
 	return h("div", { style: { display: "flex", alignItems: "center", gap: "7px", margin: "5px 0 2px" } },
-		h("span", { style: { width: "58px", color: "#f0a58a", fontWeight: 700 } }, "Buffers"),
+		h("span", { style: { width: "58px", color: "#f0a58a", fontWeight: 700, lineHeight: 1.1 } }, "Thermal buffer"),
 		h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setThermalLock(!on); },
-			title: on ? "Thermal Buffers never lose charge: each one is held at its peak temperature (charging still raises it). Tap to return to normal." : "Thermal Buffers drain normally. Tap to lock them at their peak so they always work.",
-			style: pillStyle(on, "#f0a58a", "#3a2116") }, on ? "🔒 HEAT LOCKED" : "NORMAL"),
+			title: on ? "Thermal Buffers never lose their temperature (hot or cold): each is held at its peak, charging still raises it. Tap to return to normal." : "Thermal Buffers drain normally. Tap to lock their temperature (hot or cold) at its peak so they always work.",
+			style: pillStyle(on, "#f0a58a", "#3a2116") }, on ? "🔒 TEMP LOCKED" : "NORMAL"),
 		h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } },
-			thermalCount + (thermalCount === 1 ? " buffer" : " buffers") + (on ? " · " + pinned + " held at peak" : " · drain normally")));
+			thermalCount + (thermalCount === 1 ? " buffer" : " buffers") + (on ? " · " + pinned + " held at peak temp" : " · drain normally")));
 }
 const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };
 function TitleBar() {
