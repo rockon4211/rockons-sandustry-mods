@@ -535,15 +535,42 @@ function CleanupRow() {
 		clearMsg ? h("span", { style: { fontSize: "10px", color: "#8fb98f", fontWeight: 700 } }, clearMsg) : null);
 }
 
-// --- "Here" probe: what is at the cell under the player? (diagnostic) --------
+// --- "Here" probe: what is at / around the player? (diagnostic) --------------
+// Reports EVERY layer at a cell (structure + element + terrain) plus the raw
+// cell id, so overlapping things can't mask each other.
 function probeCell(x, y) {
+	const parts = [];
 	const st = safe(() => api.structures.getAtCell(x, y));
-	if (st && st.type !== undefined && st.type !== null) return "structure " + String(st.type) + (typeof st.x === "number" ? " @" + st.x + "," + st.y : "");
+	if (st && st.type !== undefined && st.type !== null) parts.push("struct " + String(st.type));
 	const et = safe(() => api.elements.getResolvedTypeAtCell(x, y));
-	if (et !== null && et !== undefined) return "element " + nameOf(et);
-	if (safe(() => api.world && api.world.isTerrainAtCell(x, y))) return "TERRAIN (solid)";
-	if (safe(() => api.world && api.world.isCellEmptyAtCell(x, y))) return "empty";
-	return "unknown / invalid";
+	if (et !== null && et !== undefined) parts.push("elem " + nameOf(et));
+	const id = safe(() => api.world && api.world.getCellIdAtCell(x, y));
+	const ter = safe(() => api.world && api.world.isTerrainAtCell(x, y));
+	if (ter) parts.push("TERRAIN id " + id);
+	else if (typeof id === "number" && id !== 0 && et === null) parts.push("cellId " + id);
+	if (!parts.length) return (typeof id === "number" && id !== 0) ? ("cellId " + id) : "empty";
+	return parts.join(" + ");
+}
+// scan a (2r+1)^2 block around (cx,cy); list only the non-empty cells
+function probeArea(cx, cy, r) {
+	const out = [];
+	for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+		const d = probeCell(cx + dx, cy + dy);
+		if (d !== "empty") out.push((dx >= 0 ? "+" : "") + dx + "," + (dy >= 0 ? "+" : "") + dy + ": " + d);
+	}
+	return out;
+}
+// remove whatever structure sits at the player's centre / under the feet
+let hereMsg = "";
+function removeHere(cx, cy, fy) {
+	let hit = 0;
+	for (const c of [[cx, fy], [cx, cy], [cx - 1, fy], [cx + 1, fy]]) {
+		const st = safe(() => api.structures.getAtCell(c[0], c[1]));
+		if (st) { safe(() => api.structures.removeAtCellWhenIdle(c[0], c[1])); hit++; }
+	}
+	hereMsg = hit ? ("removed " + hit + (hit === 1 ? " structure" : " structures")) : "no structure here";
+	if (panelRepaint) panelRepaint((v) => v + 1);
+	setTimeout(() => { hereMsg = ""; if (panelRepaint) panelRepaint((v) => v + 1); }, 2500);
 }
 function HereRow() {
 	const p = safe(() => api.player && api.player.getWorldPosition());
@@ -551,9 +578,15 @@ function HereRow() {
 	const CS = 4;
 	const cx = Math.floor((p.x + 6) / CS), cy = Math.floor((p.y + 15) / CS);   // player centre (12x30 px body)
 	const fy = Math.floor((p.y + 31) / CS);                                     // cell just under the feet
+	const near = probeArea(cx, fy, 2);   // 5x5 around the cell under the feet
 	return h("div", { style: { marginTop: "6px", paddingTop: "5px", borderTop: "1px solid rgba(255,255,255,.1)", fontSize: "10px", color: "#93a1b0", fontWeight: 600, lineHeight: 1.5 } },
 		h("div", null, h("span", { style: { color: "#cdd6df" } }, "Here "), "cell ", cspan("#e8edf3", cx + "," + cy), " → ", probeCell(cx, cy)),
-		h("div", null, h("span", { style: { color: "#cdd6df" } }, "Under feet "), "cell ", cspan("#e8edf3", cx + "," + fy), " → ", probeCell(cx, fy)));
+		h("div", null, h("span", { style: { color: "#cdd6df" } }, "Under feet "), "cell ", cspan("#e8edf3", cx + "," + fy), " → ", probeCell(cx, fy)),
+		h("div", { style: { marginTop: "2px" } }, h("span", { style: { color: "#cdd6df" } }, "Nearby (5×5 around feet, offset: what) "),
+			near.length ? h("div", { style: { fontFamily: "ui-monospace,Consolas,monospace", fontSize: "9.5px", color: "#c7d0da", maxHeight: "96px", overflowY: "auto", whiteSpace: "pre-wrap" } }, near.join("\n")) : h("span", null, "all empty")),
+		h("div", { style: { display: "flex", alignItems: "center", gap: "8px", marginTop: "3px" } },
+			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); removeHere(cx, cy, fy); }, title: "Removes the structure at your centre / under your feet — works on frames the deconstruct tool can't grab.", style: { background: "#241b1b", color: "#ffd0d0", border: "1px solid #7a3a3a", borderRadius: "5px", fontSize: "10px", fontWeight: 700, padding: "2px 8px", cursor: "pointer" } }, "Remove structure here"),
+			hereMsg ? h("span", { style: { color: "#8fb98f", fontWeight: 700 } }, hereMsg) : null));
 }
 const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };
 function TitleBar() {
