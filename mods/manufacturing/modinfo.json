@@ -1,0 +1,21 @@
+{
+	"manifestVersion": 1,
+	"id": "brandon.manufacturing",
+	"name": "Manufacturing",
+	"version": "0.9.5",
+	"apiVersion": 1,
+	"entry": "main.js",
+	"author": "Brandon",
+	"description": "Made with the Sandustry Material Studio.\n\nTHE NAME SWAP\nThe world's old sand is SOIL now (renamed in place - an existing save converts instantly). Soil still wets into Wet Soil and Wet Soil still refines on the Shaker into gold and residue, exactly as before.\n\nSAND, REBORN\nThe desert owns the name now. Broken dunes drop SAND - a golden grain that looks like the sunsand it replaces - and unlike sunsand it rides belts and vacuums like any honest solid. Research MANUFACTURING (left of the Smelter in the tech tree, 250 gold) and then GLASS (500 gold) and the Smelter learns to convert Sand 1:1 into GLASS, slightly lighter so it clears the machine. Until then Sand just sits on it.\n\nNO MORE SUNSAND\nSunsand is gone: any grain of it that so much as twitches converts into Sand. Resting grains still harden into dunes as ever - which then break into Sand. One consequence to mine around: with sunsand gone the desert no longer regrows. What you dig is dug.\n\nMOD TOOLS\nOne free research node behind the Shaker unlocks the whole testing kit: the Matter Gun (fires any material, picker at the bottom of the screen), delete buttons on every vacuum tank, and the Omni Vacuum - sucks anything, liquids and gases included, with 10x tank storage.",
+	"dependencies": [],
+	"loadOrder": 0,
+	"configSchema": {
+		"enabled": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Mod enabled",
+			"descriptionKey": "Turn the mod off without unsubscribing. Recipes can only be withdrawn at load, so switching off leaves them until the next restart."
+		}
+	},
+	"workerEntry": "worker.js"
+}

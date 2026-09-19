@@ -1,0 +1,33 @@
+{
+	"manifestVersion": 1,
+	"id": "brandon.lavaboiloff",
+	"name": "Lava Boil-Off",
+	"version": "0.1.0",
+	"apiVersion": 1,
+	"entry": "main.js",
+	"workerEntry": "worker.js",
+	"author": "Brandon",
+	"description": "Lava normally lasts forever when it boils water into steam. This mod gives lava a small chance to burn itself out: each time a water cell is boiled to steam against lava, there is a 1-in-N chance (default 1 in 5000) that the lava cell also vanishes. Set the rarity below. Turn it off to restore vanilla behaviour.",
+	"dependencies": [],
+	"loadOrder": 0,
+	"configSchema": {
+		"enabled": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Mod enabled",
+			"descriptionKey": "Turn the boil-off effect off without unsubscribing (restores vanilla: lava never vanishes from making steam)."
+		},
+		"chanceDenominator": {
+			"type": "number",
+			"default": 100,
+			"labelKey": "Boil-off rarity (1 in N)",
+			"descriptionKey": "Each time lava boils a water cell into steam, a 1-in-N chance the lava also vanishes. Higher N = rarer / lava lasts longer. Default 100."
+		},
+		"showChecker": {
+			"type": "boolean",
+			"default": false,
+			"labelKey": "Show checker readout",
+			"descriptionKey": "Show a small on-screen readout (top-left) with the live roll / vanish counters to confirm the mod is working. Off by default."
+		}
+	}
+}
