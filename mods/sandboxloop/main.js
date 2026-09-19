@@ -339,6 +339,37 @@ setInterval(() => {
 	if (rmRecent.size > 512) { for (const [k, exp] of rmRecent) if (exp < now) rmRecent.delete(k); }
 }, 80);
 
+// --- thermal buffer lock ----------------------------------------------------
+// The Thermal Buffer (structure "thermalRelay") keeps its charge in
+// data.temperature (+ hot / − cold). It drains as it heats or cools neighbours
+// and equalises with connected buffers. With the lock ON we remember each
+// buffer's PEAK temperature and restore it every tick: charging still raises
+// it, but it can never drain — so they keep working forever. Lock OFF = normal.
+const THERMAL_ID = "thermalRelay";
+let thermalLock = false;
+(function loadTL() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.thermallock")) === "1") thermalLock = true; })();
+const thermalPins = new Map();   // "x,y" -> pinned temperature
+let thermalCount = 0;
+function setThermalLock(v) {
+	thermalLock = !!v;
+	safe(() => window.localStorage.setItem("brandon.sandboxloop.thermallock", thermalLock ? "1" : "0"));
+	if (!thermalLock) thermalPins.clear();   // release: buffers behave normally again
+	if (panelRepaint) panelRepaint((x) => x + 1);
+}
+setInterval(() => {
+	if (!isEnabled() || !inWorld()) return;
+	let n = 0;
+	safe(() => api.structures.forEachOfType(THERMAL_ID, (s) => {
+		n++;
+		if (!thermalLock || typeof s.x !== "number") return;
+		const t = (s.data && typeof s.data.temperature === "number") ? s.data.temperature : 0;
+		const k = ikey(s.x, s.y), pin = thermalPins.get(k);
+		if (pin === undefined || Math.abs(t) >= Math.abs(pin)) thermalPins.set(k, t);      // charging up (or first sight): follow it
+		else if (t !== pin) safe(() => api.structures.setData(s, { temperature: pin }));   // draining: put it back
+	}));
+	thermalCount = n;
+}, 50);
+
 // --- config panel (interactive) ---------------------------------------------
 let panelRepaint = null;
 // Reset the running totals: zero the cumulative emit/remove counters (and the
@@ -545,6 +576,16 @@ function CleanupRow() {
 		clearMsg ? h("span", { style: { fontSize: "10px", color: "#8fb98f", fontWeight: 700 } }, clearMsg) : null);
 }
 
+function ThermalRow() {
+	const on = thermalLock, pinned = thermalPins.size;
+	return h("div", { style: { display: "flex", alignItems: "center", gap: "7px", margin: "5px 0 2px" } },
+		h("span", { style: { width: "58px", color: "#f0a58a", fontWeight: 700 } }, "Buffers"),
+		h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setThermalLock(!on); },
+			title: on ? "Thermal Buffers never lose charge: each one is held at its peak temperature (charging still raises it). Tap to return to normal." : "Thermal Buffers drain normally. Tap to lock them at their peak so they always work.",
+			style: pillStyle(on, "#f0a58a", "#3a2116") }, on ? "🔒 HEAT LOCKED" : "NORMAL"),
+		h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } },
+			thermalCount + (thermalCount === 1 ? " buffer" : " buffers") + (on ? " · " + pinned + " held at peak" : " · drain normally")));
+}
 const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };
 function TitleBar() {
 	return h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "4px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
@@ -575,6 +616,7 @@ function Panel() {
 		Row("Source", emitCfg, "#8fe0aa"),
 		Row("Remover", removeCfg, "#e79b9b"),
 		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now."),
+		ThermalRow(),
 		Tracker(),
 		CleanupRow());
 }
