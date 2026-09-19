@@ -95,13 +95,16 @@ function cfgTotals() {
 	return { e, r };
 }
 
-// --- world census (samples the WHOLE map so materials the loop never touches —
-//     water, steam, gold, anything the game itself makes — still show a real
-//     surplus/deficit). Cost is bounded no matter how big the world is: each
-//     sweep reads a fixed ~TARGET coarse lattice points, time-sliced a few
-//     thousand per 150ms tick, with a rest between sweeps. Trend = the change in
-//     a material's estimated count from one completed sweep to the next.
-const TARGET = 16000, BUDGET = 3000, REST_MS = 1500;
+// --- world census (counts EVERY material on the whole map, so materials the
+//     loop never touches — water, steam, prismite, anything the game itself
+//     makes — show a real surplus/deficit). Every cell is read for an exact
+//     count; the work is time-sliced across ticks so it never stalls a frame,
+//     and trend = the change in a material's count from one sweep to the next.
+// Exact full-map scan: every cell is read (so narrow/concentrated blobs like a
+// prismite column can't be stepped over the way coarse sampling did). It's time-
+// sliced — a bounded budget of cells per 100ms tick — so a whole sweep spreads
+// over ~SWEEP_SECS and never stalls a frame. Budget adapts to world size.
+const BUDGET_MAX = 12000, BUDGET_MIN = 4000, SWEEP_SECS = 20, REST_MS = 400;
 let census = new Map();        // type -> estimated cell count (last full sweep)
 let censusTrend = new Map();   // type -> estimated Δ cells / second
 let censusInfo = { step: 0, eps: 0, at: 0 };
@@ -138,34 +141,32 @@ setInterval(() => {
 		const d = safe(() => api.world && api.world.getDimensions()) || {};
 		const W = d.widthCells | 0, H = d.heightCells | 0;
 		if (W <= 0 || H <= 0) { _restUntil = now + 500; return; }
-		const step = Math.max(1, Math.round(Math.sqrt((W * H) / TARGET)));
-		const cols = Math.ceil(W / step), rows = Math.ceil(H / step);
-		_sweep = { step, cols, total: cols * rows }; _acc = new Map(); _cursor = 0;
+		const total = W * H;
+		const budget = Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.ceil(total / (SWEEP_SECS * 10))));
+		_sweep = { W, total, budget }; _acc = new Map(); _cursor = 0;
 	}
-	const { step, cols, total } = _sweep;
+	const { W, total, budget } = _sweep;
 	let n = 0;
-	while (_cursor < total && n < BUDGET) {
-		const cx = (_cursor % cols) * step, cy = ((_cursor / cols) | 0) * step;
+	while (_cursor < total && n < budget) {
+		const cx = _cursor % W, cy = (_cursor / W) | 0;
 		const t = safe(() => api.elements.getResolvedTypeAtCell(cx, cy));
 		if (t !== null && t !== undefined) _acc.set(t, (_acc.get(t) || 0) + 1);
 		_cursor++; n++;
 	}
 	if (_cursor >= total) {
-		const scale = step * step, fresh = new Map();
-		for (const [t, c] of _acc) fresh.set(t, c * scale);
+		const fresh = _acc;   // exact counts — every cell was read, scale 1
 		censusTrend = new Map();
 		if (_prevAt) {
 			const dt = Math.max(0.001, (now - _prevAt) / 1000);
 			const types = new Set(); for (const k of fresh.keys()) types.add(k); for (const k of _prevCensus.keys()) types.add(k);
 			for (const t of types) censusTrend.set(t, ((fresh.get(t) || 0) - (_prevCensus.get(t) || 0)) / dt);
 		}
-		const dtPrev = _prevAt ? Math.max(0.5, (now - _prevAt) / 1000) : 2.4;
 		_prevCensus = fresh; _prevAt = now; census = fresh;
 		if (!censusBaseAt) { censusBase = new Map(fresh); censusBaseAt = now; saveTotals(); }   // first sweep sets (and persists) the "since reset" baseline
-		censusInfo = { step, eps: (scale * 1.5) / dtPrev, at: now };
+		censusInfo = { exact: true, eps: 0.75, at: now };
 		_sweep = null; _restUntil = now + REST_MS;
 	}
-}, 150);
+}, 100);
 (function loadCfg() {
 	const raw = safe(() => window.localStorage.getItem(CFG_KEY));
 	const o = raw && safe(() => JSON.parse(raw));
@@ -385,7 +386,7 @@ function censusRow(t, count, eps) {
 	const k = tr > eps ? "up" : tr < -eps ? "down" : "flat";
 	return h("div", { key: "c_" + t, style: { margin: "6px 0" } },
 		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, pinStar(t), swatch(t), nameCell(t), badge(k === "up" ? "RISING" : k === "down" ? "FALLING" : "STEADY", k)),
-		h("div", { style: SUBLINE }, "≈", cspan("#c7d0da", fmtCount(count)), " on the map  ·  now ", cspan(kindCol(k), fmtSigned(tr) + "/s")),
+		h("div", { style: SUBLINE }, cspan("#c7d0da", fmtCount(count)), " on the map  ·  now ", cspan(kindCol(k), fmtSigned(tr) + "/s")),
 		h("div", { style: SUBLINE }, "since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since))));
 }
 function Tracker() {
@@ -415,7 +416,7 @@ function Tracker() {
 	// ---- world census: every material actually on the map + its trend ----
 	if (censusOn()) {
 		const present = [...census.entries()].filter((p) => p[1] > 0);
-		kids.push(h("div", { key: "ch", style: SUB_HEAD }, h("span", null, "Whole map"), h("span", { style: SUB_DIM }, censusInfo.at ? "every material · sampled" : "scanning…")));
+		kids.push(h("div", { key: "ch", style: SUB_HEAD }, h("span", null, "Whole map"), h("span", { style: SUB_DIM }, censusInfo.at ? "exact count · refreshed ~20s" : "counting…")));
 		if (!present.length) kids.push(h("div", { key: "cn", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Scanning the map… (first read takes a moment)"));
 		else {
 			const eps = censusInfo.eps || 0;
@@ -424,7 +425,7 @@ function Tracker() {
 			const top = ordered.slice(0, Math.max(12, pinnedCount));   // always keep every pinned row visible
 			kids.push(h("div", { key: "cr", style: { maxHeight: "260px", overflowY: "auto" } }, top.map((p) => censusRow(p[0], p[1], eps))));
 			if (present.length > top.length) kids.push(h("div", { key: "cm", style: { fontSize: "9px", color: "#7f8b98", marginTop: "2px" } }, "+" + (present.length - top.length) + " more, near steady"));
-			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px", lineHeight: 1.5 } }, "≈ counts are estimates from sampling — trust the badge and trend over the exact number.  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), " to pin a material to the top so it stops moving."));
+			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px", lineHeight: 1.5 } }, "Exact whole-map count, re-scanned every ~20s (so trends update slowly).  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), " to pin a material to the top so it stops moving."));
 		}
 	}
 	return h("div", null, kids);
