@@ -729,12 +729,23 @@ setInterval(armGlassRecipe, 1500);
 // write them, so it's edge-triggered — flipping it ON runs one sweep; to run
 // again, flip it OFF and back ON.
 const BLOCK_CELL = 15;
+// Terrain ids the sweep treats as "structure stamps". 15 = Block (the default
+// stamped under fallback/broken structures). Registered mod structures stamp a
+// separate runtime terrain (id 56 in this world); STAMP_NAMES lets us find it
+// by name at runtime so an id shift between sessions doesn't break the sweep.
+const STAMP_IDS = new Set([BLOCK_CELL, 56]);
+const STAMP_NAMES = ["modStructure", "mod_structure", "structure", "block"];
+function stampSet() {
+	const ids = new Set(STAMP_IDS);
+	for (const n of STAMP_NAMES) { const t = safe(() => api.terrains.getTypeById(n)); if (typeof t === "number" && t > 0) ids.add(t); }
+	return ids;
+}
 let _rbFix = null, _rbLastFlag = null;
 function startRedBlockSweep() {
 	const d = safe(() => api.world && api.world.getDimensions()) || {};
 	const W = d.widthCells | 0, H = d.heightCells | 0;
 	if (W <= 0 || H <= 0) { safe(() => api.ui.toast("Red-block fix: world not ready")); return; }
-	_rbFix = { W, total: W * H, cursor: 0, found: 0, cleared: 0, budget: 25000, nextToastPct: 25 };
+	_rbFix = { W, total: W * H, cursor: 0, found: 0, cleared: 0, budget: 25000, nextToastPct: 25, ids: stampSet() };
 	safe(() => api.ui.toast("Clearing stuck red blocks... scanning the whole map (~30s)"));
 	console.log(`[${MOD_ID}] red-block sweep started: ${W}x${H}`);
 }
@@ -745,7 +756,7 @@ setInterval(() => {
 	try {
 		while (f.cursor < f.total && n < f.budget) {
 			const x = f.cursor % f.W, y = (f.cursor / f.W) | 0;
-			if (world.getCellIdAtCell(x, y) === BLOCK_CELL) {
+			if (f.ids.has(world.getCellIdAtCell(x, y))) {
 				f.found++;
 				if (!structs.getAtCell(x, y)) { world.excavateAtCell(x, y, { x: 0, y: 0 }, 1, { forceRemoveAll: true }); f.cleared++; }
 			}
@@ -785,7 +796,7 @@ function probeCell(x, y) {
 	if (et !== null && et !== undefined) parts.push("elem " + probeName(et));
 	const id = safe(() => api.world && api.world.getCellIdAtCell(x, y));
 	const ter = safe(() => api.world && api.world.isTerrainAtCell(x, y));
-	if (ter) parts.push("TERRAIN id " + id);
+	if (ter) { const def = safe(() => api.terrains.getDefinitionByType(id)); const nm = def && (def.id || def.name || def.nameKey); parts.push("TERRAIN id " + id + (nm ? " (" + nm + ")" : "")); }
 	else if (typeof id === "number" && id !== 0 && (et === null || et === undefined)) parts.push("cellId " + id);
 	if (!parts.length) return (typeof id === "number" && id !== 0) ? ("cellId " + id) : "empty";
 	return parts.join(" + ");

@@ -20,7 +20,7 @@
 			"type": "boolean",
 			"default": false,
 			"labelKey": "Clear stuck red blocks (turn ON to run once)",
-			"descriptionKey": "Sweeps the whole map and removes stuck red 'Block' terrain left behind by removed structures (the undiggable red blocks with nothing to deconstruct). Only cells with NO structure on them are cleared, so real foundations are safe. Takes ~30s with progress toasts. To run it again later, switch this OFF and back ON."
+			"descriptionKey": "Sweeps the whole map and removes stuck red terrain left behind by removed structures (the undiggable red blocks with nothing to deconstruct) - both the default Block stamp and the mod-structure stamp. Only cells with NO structure on them are cleared, so real foundations are safe. Takes ~30s with progress toasts. To run it again later, switch this OFF and back ON."
 		},
 		"showProbe": {
 			"type": "boolean",
