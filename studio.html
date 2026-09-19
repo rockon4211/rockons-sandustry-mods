@@ -205,6 +205,7 @@ const MATS = [
 {id:"growingVoidSeed",n:"Growing Void Seed",m:"Static",d:100,c:0x5B2C8C,g:"Void",x:1720,y:830,dur:[0.1,0.5]},
 {id:"voidPetal",n:"Void Petal",m:"Wisp",d:40,c:0x00CED1,g:"Void",x:1720,y:720},
 {id:"auralite",n:"Auralite",m:"Powder",d:100,c:0xFF66B3,g:"Void",x:1530,y:500},
+{id:"aurixite",n:"Aurixite",m:"Slushy",d:60,c:0xCA7BE8,g:"Void",x:1300,y:640},
 ];
 const TERRAINS = [
 {id:"t_dune",n:"Dune",g:"Desert",hp:1,x:1530,y:150},
@@ -223,14 +224,16 @@ const MACHINES = [
 {id:"m_collector",n:"Collector",x:420,y:60},
 {id:"m_condenser",n:"Condenser",x:1290,y:770},
 {id:"m_snowmaker",n:"Snowmaker",x:300,y:545},
+{id:"m_press",n:"Kinetic Press",x:360,y:400},
+{id:"m_crystallizer",n:"Aurixite Crystallizer",x:1230,y:560},
 ];
 // kind: heat | touch | mine | cycle ; conf: v(erified in code) | a(pprox)
 const VPROCS = [
-{f:"wetSand",t:"gold",via:"m_shaker",k:"heat",conf:"v",lbl:"refine",note:"Wet Sand placed on a Shaker refines automatically; Gold drops downward out of it."},
-{f:"wetSand",t:"residue",via:"m_shaker",k:"heat",conf:"v",lbl:"byproduct",note:"Residue is thrown as the Shaker's waste stream."},
-{f:"sand",t:"wetSand",partner:"water",k:"touch",conf:"v",lbl:"+ water",note:"Hardcoded wetting table: [Water, Sand, WetSand]. The water is consumed."},
+{f:"wetSand",t:"gold",via:"m_shaker",k:"heat",conf:"v",lbl:"gold 25%",note:"Wet Sand placed on a Shaker refines automatically; Gold drops downward out of it. Rate: ~25% of grains yield gold in normal play (the 50% figure only applies during the RefineWetSand tutorial step)."},
+{f:"wetSand",t:"residue",via:"m_shaker",k:"heat",conf:"v",lbl:"residue 100%",note:"Residue is thrown as the Shaker's waste stream — one residue per wet sand (100%)."},
+{f:"sand",t:"wetSand",partner:"water",k:"touch",conf:"v",lbl:"+ water 1:1",note:"Hardcoded wetting table: [Water, Sand, WetSand]. 1 sand → 1 wet sand; the water grain is consumed as the catalyst."},
 {f:"gold",t:"m_collector",k:"heat",conf:"v",lbl:"deposit",note:"The Collector banks gold as currency."},
-{f:"residue",t:"burntResidue",partner:"fire",k:"touch",conf:"a",lbl:"burns",note:"Residue exposed to fire chars into Burnt Residue."},
+{f:"residue",t:"burntResidue",partner:"fire",k:"touch",conf:"a",lbl:"burns ~25%",note:"Residue exposed to fire chars into Burnt Residue — roughly 25% per burn tick, so this is the biggest throughput loss in the sand→auralite chain. Needs a steady flame source."},
 {f:"gold",t:"liquidGold",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe, verified in code: conversionChance 0.5 — each gold grain has only a 50% chance to become Liquid Gold; the other half is consumed and lost. Melting gold costs you half of it on average."},
 {f:"copper",t:"liquidCopper",via:"m_smelter",k:"heat",conf:"v",lbl:"smelt",note:"Smelter recipe, verified in code: conversionChance 1 — copper melts 1:1, no loss (unlike gold)."},
 {f:"liquidCopper",t:"m_mold",k:"heat",conf:"v",lbl:"fill 4×4",note:"A Copper Mold whose full 4×4 interior holds Liquid Copper (resting on terrain) sets and the structure transforms into a Power Brick. Verified in the transform code."},
@@ -244,7 +247,7 @@ const VPROCS = [
 {f:"t_iceSoil",t:"freezingIce",k:"mine",conf:"v",lbl:"dig"},
 {f:"seed",t:"wetSeed",partner:"water",k:"touch",conf:"v",lbl:"+ water",note:"Hardcoded wetting table: [Water, Seed, WetSeed]."},
 {f:"wetSeed",t:"seedling",k:"cycle",conf:"a",lbl:"sprouts"},
-{f:"seedling",t:"petalium",k:"cycle",conf:"a",lbl:"grows",note:"The Planter Box tends the growth chain."},
+{f:"seedling",t:"petalium",k:"cycle",conf:"a",lbl:"up to 4 petals",note:"The Planter Box tends the growth chain. A grown seed yields up to 4 petals (one per empty side), and each petal harvests to one Amethelis/Petalium — this is the chain's second multiplier after the Shaker. The spent seed cell becomes GoldSoil, which digs to gold."},
 {f:"m_planter",t:"seedling",k:"cycle",conf:"v",lbl:"tends"},
 {f:"petalium",t:"dryPetalium",via:"m_dryer",k:"heat",conf:"v",lbl:"dry",note:"Steam Dryer recipe: Amethelis → Dry Amethelis, chance 1. Verified."},
 {f:"dryPetalium",t:"florin",partner:"fire",k:"touch",conf:"v",lbl:"burns",note:"i18n: 'A lighter, dried version… that burns into Florin.'"},
@@ -258,6 +261,11 @@ const VPROCS = [
 {f:"t_scoria",t:"basalt",k:"mine",conf:"v",lbl:"break, 100%",note:"Scoria terrain: hp 10, output {Cinder, chance 1}. The main Cinder source."},
 {f:"steam",t:"water",via:"m_condenser",k:"heat",conf:"v",lbl:"condense",note:"Condenser recipe, verified: steam → water, chance 1."},
 {f:"water",t:"freezingIce",via:"m_snowmaker",k:"heat",conf:"v",lbl:"freeze",note:"Snowmaker recipe, verified: water → Snow, chance 1."},
+// ---- sand→auralite tail (completes the full processing chain) ----
+{f:"burntResidue",t:"seed",via:"m_press",k:"heat",conf:"a",lbl:"press → seed 1:1",note:"Kinetic Press: Burnt Residue entering with downward velocity is pressed into a Seed (1:1), plus a Gold grain on the side. The residue must arrive moving downward for the press to fire."},
+{f:"burntResidue",t:"gold",via:"m_press",k:"heat",conf:"a",lbl:"+ gold 1:1",note:"The Kinetic Press's gold branch — one Gold per Burnt Residue pressed, produced alongside the Seed."},
+{f:"florinol",t:"aurixite",via:"m_crystallizer",k:"heat",conf:"v",lbl:"1:1 (~50E ea)",note:"Aurixite Crystallizer (the 'Synthesizer'): processes a full 4×4 (16-cell) block of Florinol at once into Aurixite, 1:1. Energy is 800 per block ≈ 50 per florinol, and it is all-or-nothing — the whole block must be full."},
+{f:"aurixite",t:"auralite",via:"m_shaker",k:"heat",conf:"v",lbl:"1 → 3",note:"Aurixite on a Shaker throws out 3 Auralite per grain, provided the 3 cells directly below are empty. This ×3 is the last and largest multiplier — it is why 1 sand can net roughly 1.5 auralite through the full chain."},
 ];
 // ============ RENDER ============
 const NW=132, NH=46, MW=134, MH=36;

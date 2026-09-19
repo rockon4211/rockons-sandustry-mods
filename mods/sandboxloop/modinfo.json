@@ -1,0 +1,26 @@
+{
+	"manifestVersion": 1,
+	"id": "brandon.sandboxloop",
+	"name": "Sandbox Loop",
+	"version": "0.1.0",
+	"apiVersion": 1,
+	"entry": "main.js",
+	"author": "Brandon",
+	"description": "Sources and Removers for an endless, self-balancing system. A Source emits a chosen material at an adjustable particles/sec; a Remover deletes one chosen material at an adjustable rate. Set the material + rate on the on-screen panel, then place the structure — each one bakes in the settings that were showing when you placed it, so you can run many different sources and sinks at once.",
+	"dependencies": [],
+	"loadOrder": 0,
+	"configSchema": {
+		"enabled": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Mod enabled",
+			"descriptionKey": "Turn the Sandbox Loop panel and its Source/Remover behaviour off without unsubscribing."
+		},
+		"showTracker": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Show balance tracker",
+			"descriptionKey": "Show the live Balance section on the panel: each material's effective emit/s, remove/s and net rate, with a surplus / deficit verdict. Turn off to hide it (the Source/Remover controls stay)."
+		}
+	}
+}
