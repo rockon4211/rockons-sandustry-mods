@@ -40,18 +40,48 @@ function publish() {
 publish();
 setInterval(publish, 1000);
 
-// --- Checker readout ------------------------------------------------------
-// A small HUD that proves the mod is live: shows the resolved water/lava types,
-// the rarity, and the running roll / vanish counters the worker publishes. If
-// "rolls" climbs when water meets lava, the worker is firing; if "vanished"
-// climbs at roughly 1-in-N of that, the odds are right. Hide via the setting.
-function showChecker() { return setting("showChecker", true); }
+// --- Checker panel --------------------------------------------------------
+// Styled to match the Sandbox Loop panel: same title bar (grip + minimize),
+// draggable by the title with a remembered position, same fonts/colors/badges.
+// Hidden unless "Show checker panel" is on in the mod settings.
+function showChecker() { return setting("showChecker", false); }
 let repaint = null;
 function inWorld() {
 	const active = safe(() => api.scene.getActive());
 	const Scene = safe(() => sandkit.enums.Scene) || {};
 	const menus = [Scene.MainMenu, Scene.Intro].filter((v) => typeof v === "number");
 	return active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
+}
+// position (default: top-right, mirroring Sandbox Loop's top-left) + minimize, both remembered
+const POS_KEY = "brandon.lavaboiloff.panelpos", MIN_KEY = "brandon.lavaboiloff.panelmin";
+let panelPos = { x: Math.max(12, (safe(() => window.innerWidth) || 1200) - 292), y: 84 };
+(function loadPos() { const raw = safe(() => window.localStorage.getItem(POS_KEY)); const o = raw && safe(() => JSON.parse(raw)); if (o && typeof o.x === "number" && typeof o.y === "number") panelPos = o; })();
+let panelMin = safe(() => window.localStorage.getItem(MIN_KEY)) === "1";
+function setMin(v) { panelMin = !!v; safe(() => window.localStorage.setItem(MIN_KEY, panelMin ? "1" : "0")); if (repaint) repaint((x) => x + 1); }
+let _drag = false, _ddx = 0, _ddy = 0;
+safe(() => {
+	window.addEventListener("mousemove", (e) => { if (!_drag) return; panelPos = { x: Math.max(0, e.clientX - _ddx), y: Math.max(0, e.clientY - _ddy) }; if (repaint) repaint((v) => v + 1); });
+	window.addEventListener("mouseup", () => { if (!_drag) return; _drag = false; safe(() => window.localStorage.setItem(POS_KEY, JSON.stringify(panelPos))); });
+});
+function startDrag(e) { _drag = true; _ddx = e.clientX - panelPos.x; _ddy = e.clientY - panelPos.y; if (e.preventDefault) e.preventDefault(); }
+
+// shared look (mirrors Sandbox Loop)
+const FONT = '600 12px -apple-system,"Segoe UI",Roboto,sans-serif';
+const SUBLINE = { fontSize: "10.5px", color: "#9aa6b2", fontWeight: 600, lineHeight: 1.55 };
+const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };
+function cspan(color, text) { return h("span", { style: { color: color, fontWeight: 700, fontVariantNumeric: "tabular-nums" } }, text); }
+function badge(text, k) {
+	const col = k === "up" ? "#8fe0aa" : k === "down" ? "#e79b9b" : k === "warn" ? "#e0b060" : "#aab4c0";
+	const bg = k === "up" ? "#16351f" : k === "down" ? "#351717" : k === "warn" ? "#3a2f12" : "#232a31";
+	return h("span", { style: { background: bg, color: col, fontSize: "9px", fontWeight: 800, letterSpacing: ".06em", padding: "2px 8px", borderRadius: "10px", whiteSpace: "nowrap", flexShrink: 0 } }, text);
+}
+function TitleBar(statusBadge) {
+	return h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "4px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
+		h("span", { style: { color: "#5b6470", fontSize: "13px", lineHeight: 1 } }, "⠿"),
+		h("span", null, "Lava Boil-Off"),
+		h("span", { style: { flex: "1 1 auto" } }),
+		statusBadge,
+		h("button", { title: panelMin ? "expand" : "minimize", onMouseDown: (e) => { if (e.stopPropagation) e.stopPropagation(); }, onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setMin(!panelMin); }, style: MINBTN }, panelMin ? "▢" : "–"));
 }
 function Checker() {
 	const [, b] = React.useState(0); repaint = b;
@@ -60,19 +90,23 @@ function Checker() {
 	const rolls = shared[4] >>> 0, vanished = shared[5] >>> 0;
 	const observed = vanished > 0 ? Math.round(rolls / vanished) : null;
 	const typesOk = water > 0 && lava > 0;
-	const row = (t, c) => h("div", { style: { whiteSpace: "nowrap", color: c || "#cfe8dd" } }, t);
-	return h("div", {
-		style: {
-			position: "fixed", left: "8px", top: "8px", zIndex: 99999, font: "11px monospace",
-			background: "rgba(5,8,13,0.92)", color: "#cfe8dd", padding: "6px 9px",
-			border: "1px solid " + (en && typesOk ? "#7a4a3a" : "#8a4a4a"), borderRadius: "4px",
-			pointerEvents: "none", lineHeight: "1.5",
-		},
-	},
-		row("Lava Boil-Off " + (en ? (typesOk ? "✓ armed" : "— resolving…") : "OFF"), en && typesOk ? "#f0a58a" : "#ffb38a"),
-		row("water=" + water + " lava=" + lava + "  odds 1-in-" + denom),
-		row("rolls: " + rolls + "   vanished: " + vanished),
-		row("observed: " + (observed !== null ? "1-in-" + observed : "— (none yet)"), "#9fe7c8"));
+	const status = !en ? badge("OFF", "flat") : typesOk ? badge("ARMED ✓", "up") : badge("RESOLVING…", "warn");
+	const base = {
+		position: "fixed", left: panelPos.x + "px", top: panelPos.y + "px", zIndex: 99998, pointerEvents: "auto",
+		background: "rgba(10,14,20,0.94)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "8px",
+		padding: "8px 10px", font: FONT, color: "#e8edf3", boxShadow: "0 4px 16px rgba(0,0,0,.5)",
+	};
+	if (panelMin) return h("div", { style: Object.assign({}, base, { minWidth: "200px" }) }, TitleBar(status));
+	const line = (label, val, col) => h("div", { style: SUBLINE }, label + " ", cspan(col || "#e8edf3", val));
+	return h("div", { style: Object.assign({}, base, { minWidth: "270px", maxWidth: "320px" }) },
+		TitleBar(status),
+		h("div", { style: { fontSize: "9.5px", color: "#8a94a0", fontWeight: 600, margin: "2px 0 4px", lineHeight: 1.5 } },
+			"Each time lava boils water to steam, a ", cspan("#e0b060", "1-in-" + denom), " roll to burn the lava out."),
+		line("rolls (water met lava):", String(rolls), "#c7d0da"),
+		line("vanished (lava burnt out):", String(vanished), "#e79b9b"),
+		line("observed odds:", observed !== null ? "1-in-" + observed : "— none yet", observed !== null ? "#8fe0aa" : "#aab4c0"),
+		h("div", { style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px", lineHeight: 1.5 } },
+			"If rolls climb when water touches lava the mod is firing; if vanished tracks ~1-in-" + denom + " of that, the odds are right.  types water=" + water + " lava=" + lava));
 }
 if (h) {
 	safe(() => api.ui.inject("brandon-lavaboiloff-checker", Checker));

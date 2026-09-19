@@ -26,8 +26,8 @@
 		"showChecker": {
 			"type": "boolean",
 			"default": false,
-			"labelKey": "Show checker readout",
-			"descriptionKey": "Show a small on-screen readout (top-left) with the live roll / vanish counters to confirm the mod is working. Off by default."
+			"labelKey": "Show checker panel",
+			"descriptionKey": "Shows the Lava Boil-Off panel (draggable, minimizable - same style as the Sandbox Loop panel) with the live roll / vanish counters so you can confirm the mod is working and the odds are right. Off by default."
 		}
 	}
 }
