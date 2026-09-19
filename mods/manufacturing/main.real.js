@@ -768,3 +768,55 @@ function checkRedBlockFlag() {
 }
 safe(() => api.settings.onChange(checkRedBlockFlag));
 setInterval(checkRedBlockFlag, 1000);
+
+// -------------------------------------------- Mod Tools: cell probe (debug) --
+// Turn on "Show cell probe" in settings to get a small HUD that reports what is
+// at your cell and in a 5x5 around your feet: structure type, element name,
+// terrain + raw cell id. Reports EVERY layer at a cell so overlapping things
+// can't mask each other. Use it to identify mystery blocks.
+function probeName(t) { return safe(() => api.elements.getNameByType(t)) || ("type " + t); }
+function probeCell(x, y) {
+	const parts = [];
+	const st = safe(() => api.structures.getAtCell(x, y));
+	if (st && st.type !== undefined && st.type !== null) parts.push("struct " + String(st.type));
+	const et = safe(() => api.elements.getResolvedTypeAtCell(x, y));
+	if (et !== null && et !== undefined) parts.push("elem " + probeName(et));
+	const id = safe(() => api.world && api.world.getCellIdAtCell(x, y));
+	const ter = safe(() => api.world && api.world.isTerrainAtCell(x, y));
+	if (ter) parts.push("TERRAIN id " + id);
+	else if (typeof id === "number" && id !== 0 && (et === null || et === undefined)) parts.push("cellId " + id);
+	if (!parts.length) return (typeof id === "number" && id !== 0) ? ("cellId " + id) : "empty";
+	return parts.join(" + ");
+}
+function probeArea(cx, cy, r) {
+	const out = [];
+	for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+		const d = probeCell(cx + dx, cy + dy);
+		if (d !== "empty") out.push((dx >= 0 ? "+" : "") + dx + "," + (dy >= 0 ? "+" : "") + dy + ": " + d);
+	}
+	return out;
+}
+if (ReactM && hM) {
+	function CellProbe() {
+		const [, bump] = ReactM.useState(0);
+		ReactM.useEffect(() => { const id = setInterval(() => bump((v) => v + 1), 400); return () => clearInterval(id); }, []);
+		if (!isEnabled() || !inGame() || !setting("showProbe", false)) return null;
+		const p = safe(() => api.player && api.player.getWorldPosition());
+		if (!p || typeof p.x !== "number") return null;
+		const CS = 4;
+		const cx = Math.floor((p.x + 6) / CS), cy = Math.floor((p.y + 15) / CS), fy = Math.floor((p.y + 31) / CS);
+		const near = probeArea(cx, fy, 2);
+		const line = (label, txt) => hM("div", null, hM("span", { style: { color: "#f0a080" } }, label + " "), txt);
+		return hM("div", {
+			style: { position: "fixed", right: "12px", top: "84px", zIndex: 99997, pointerEvents: "none", maxWidth: "340px",
+				padding: "7px 9px", background: "rgba(12,12,18,0.9)", border: "1px solid rgba(235,90,60,0.55)", borderRadius: "6px",
+				font: "10.5px monospace", color: "#ddd", lineHeight: 1.45, whiteSpace: "pre-wrap" },
+		},
+			hM("div", { style: { fontWeight: 700, color: "#f0a080", marginBottom: "3px" } }, "CELL PROBE  (Mod Tools)"),
+			line("Here", "cell " + cx + "," + cy + " -> " + probeCell(cx, cy)),
+			line("Under feet", "cell " + cx + "," + fy + " -> " + probeCell(cx, fy)),
+			hM("div", { style: { color: "#f0a080", marginTop: "3px" } }, "Nearby 5x5 around feet (offset: what)"),
+			hM("div", { style: { maxHeight: "150px", overflow: "hidden" } }, near.length ? near.join("\n") : "all empty"));
+	}
+	safe(() => api.ui.inject("brandon-cell-probe", CellProbe));
+}

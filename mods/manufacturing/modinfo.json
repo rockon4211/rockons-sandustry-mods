@@ -21,6 +21,12 @@
 			"default": false,
 			"labelKey": "Clear stuck red blocks (turn ON to run once)",
 			"descriptionKey": "Sweeps the whole map and removes stuck red 'Block' terrain left behind by removed structures (the undiggable red blocks with nothing to deconstruct). Only cells with NO structure on them are cleared, so real foundations are safe. Takes ~30s with progress toasts. To run it again later, switch this OFF and back ON."
+		},
+		"showProbe": {
+			"type": "boolean",
+			"default": false,
+			"labelKey": "Show cell probe (debug HUD)",
+			"descriptionKey": "Shows a small readout of what is at your cell and in a 5x5 around your feet: structure type, element, terrain and raw cell id. Handy for identifying mystery blocks. Off by default."
 		}
 	},
 	"workerEntry": "worker.js"
