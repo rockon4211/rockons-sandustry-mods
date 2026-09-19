@@ -535,6 +535,26 @@ function CleanupRow() {
 		clearMsg ? h("span", { style: { fontSize: "10px", color: "#8fb98f", fontWeight: 700 } }, clearMsg) : null);
 }
 
+// --- "Here" probe: what is at the cell under the player? (diagnostic) --------
+function probeCell(x, y) {
+	const st = safe(() => api.structures.getAtCell(x, y));
+	if (st && st.type !== undefined && st.type !== null) return "structure " + String(st.type) + (typeof st.x === "number" ? " @" + st.x + "," + st.y : "");
+	const et = safe(() => api.elements.getResolvedTypeAtCell(x, y));
+	if (et !== null && et !== undefined) return "element " + nameOf(et);
+	if (safe(() => api.world && api.world.isTerrainAtCell(x, y))) return "TERRAIN (solid)";
+	if (safe(() => api.world && api.world.isCellEmptyAtCell(x, y))) return "empty";
+	return "unknown / invalid";
+}
+function HereRow() {
+	const p = safe(() => api.player && api.player.getWorldPosition());
+	if (!p || typeof p.x !== "number") return null;
+	const CS = 4;
+	const cx = Math.floor((p.x + 6) / CS), cy = Math.floor((p.y + 15) / CS);   // player centre (12x30 px body)
+	const fy = Math.floor((p.y + 31) / CS);                                     // cell just under the feet
+	return h("div", { style: { marginTop: "6px", paddingTop: "5px", borderTop: "1px solid rgba(255,255,255,.1)", fontSize: "10px", color: "#93a1b0", fontWeight: 600, lineHeight: 1.5 } },
+		h("div", null, h("span", { style: { color: "#cdd6df" } }, "Here "), "cell ", cspan("#e8edf3", cx + "," + cy), " → ", probeCell(cx, cy)),
+		h("div", null, h("span", { style: { color: "#cdd6df" } }, "Under feet "), "cell ", cspan("#e8edf3", cx + "," + fy), " → ", probeCell(cx, fy)));
+}
 const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };
 function TitleBar() {
 	return h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "4px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
@@ -565,6 +585,7 @@ function Panel() {
 		Row("Source", emitCfg, "#8fe0aa"),
 		Row("Remover", removeCfg, "#e79b9b"),
 		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now."),
+		HereRow(),
 		Tracker(),
 		CleanupRow());
 }
