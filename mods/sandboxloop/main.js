@@ -377,10 +377,21 @@ let panelRepaint = null;
 // reset" figure starts from zero again.
 function resetTotals() {
 	emitTot.clear(); rmTot.clear(); rate.clear();
-	censusBase = new Map(census); censusBaseAt = census.size ? Date.now() : 0;
+	// also restart the whole-map scan from scratch: drop the current/last sweep
+	// so the "since reset" baseline comes from a brand-new count, not a stale one
+	_sweep = null; _prevAt = 0; _prevCensus = new Map(); census = new Map(); censusTrend = new Map();
+	censusInfo = { step: 0, eps: 0, at: 0 }; _restUntil = 0;
+	censusBase = new Map(); censusBaseAt = 0;   // first sweep after the reset sets the baseline
 	trackerStart = Date.now();
 	saveTotals();
 	if (panelRepaint) panelRepaint((v) => v + 1);
+}
+// two-click confirm for the reset button
+let resetArmed = 0;
+function doReset() {
+	const now = Date.now();
+	if (resetArmed < now) { resetArmed = now + 3000; if (panelRepaint) panelRepaint((v) => v + 1); return; }
+	resetArmed = 0; resetTotals();
 }
 // --- draggable panel position (drag the title bar) --------------------------
 let panelPos = { x: 12, y: 84 };
@@ -480,7 +491,11 @@ function Tracker() {
 		h("span", { style: { fontWeight: 800, fontSize: "13px" } }, "Balance"),
 		h("span", { style: { flex: "1 1 auto" } }),
 		h("span", { style: SUB_DIM }, "tracking " + fmtDur(Date.now() - trackerStart)),
-		h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); resetTotals(); }, style: { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "10px", fontWeight: 700, padding: "2px 8px", cursor: "pointer" } }, "↺ reset"));
+		(function () { const armed = resetArmed > Date.now();
+			return h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); doReset(); },
+				title: "Zeroes the running totals AND restarts the whole-map scan from scratch. Click twice to confirm.",
+				style: { background: armed ? "#7a2f2f" : "#1c2530", color: armed ? "#ffd0d0" : "#cdd6df", border: "1px solid " + (armed ? "#a04040" : "#3a4550"), borderRadius: "5px", fontSize: "10px", fontWeight: 700, padding: "2px 8px", cursor: "pointer" } },
+				armed ? "click again to reset" : "↺ reset"); })());
 	if (!trackerOpen) return header;
 	const kids = [header];
 	// legend — spell out what the words mean
