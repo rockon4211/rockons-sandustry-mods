@@ -104,7 +104,8 @@ function cfgTotals() {
 // prismite column can't be stepped over the way coarse sampling did). It's time-
 // sliced — a bounded budget of cells per 100ms tick — so a whole sweep spreads
 // over ~SWEEP_SECS and never stalls a frame. Budget adapts to world size.
-const BUDGET_MAX = 12000, BUDGET_MIN = 4000, SWEEP_SECS = 20, REST_MS = 400;
+const BUDGET_MAX = 12000, BUDGET_MIN = 4000, SWEEP_SECS = 20, REST_MS = 400;   // exact-mode scan
+const TARGET = 16000, COARSE_BUDGET = 3000, COARSE_REST = 1200;                // fast-mode coarse sampling
 let census = new Map();        // type -> estimated cell count (last full sweep)
 let censusTrend = new Map();   // type -> estimated Δ cells / second
 let censusInfo = { step: 0, eps: 0, at: 0 };
@@ -133,6 +134,23 @@ function saveTotals() {
 	if (typeof o.st === "number") trackerStart = o.st;
 })();
 setInterval(saveTotals, 4000);   // keep the persisted copy fresh as totals grow
+// --- exact vs fast census mode ----------------------------------------------
+// fast  = coarse sampling (cheap, ~2s refresh, estimates — can miss thin blobs)
+// exact = read every cell (heavier, ~20s refresh, exact — catches everything)
+// The "since reset" running total only makes sense with exact counts, so it's
+// hidden in fast mode. Default: fast.
+let censusExactMode = false;
+(function loadExact() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.exact")) === "1") censusExactMode = true; })();
+function censusExact() { return censusExactMode; }
+function setExact(v) {
+	censusExactMode = !!v;
+	safe(() => window.localStorage.setItem("brandon.sandboxloop.exact", censusExactMode ? "1" : "0"));
+	// switching modes: throw away the in-progress/last run so estimate and exact
+	// counts never mix, and re-baseline the "since reset" from the new mode.
+	_sweep = null; _prevAt = 0; _prevCensus = new Map(); census = new Map(); censusTrend = new Map();
+	censusBase = new Map(); censusBaseAt = 0; saveTotals();
+	if (panelRepaint) panelRepaint((x) => x + 1);
+}
 setInterval(() => {
 	if (!isEnabled() || !inWorld() || !setting("showTracker", true) || !censusOn()) { _sweep = null; return; }
 	const now = Date.now();
@@ -141,30 +159,40 @@ setInterval(() => {
 		const d = safe(() => api.world && api.world.getDimensions()) || {};
 		const W = d.widthCells | 0, H = d.heightCells | 0;
 		if (W <= 0 || H <= 0) { _restUntil = now + 500; return; }
-		const total = W * H;
-		const budget = Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.ceil(total / (SWEEP_SECS * 10))));
-		_sweep = { W, total, budget }; _acc = new Map(); _cursor = 0;
+		const exact = censusExact();
+		let step, cols, total, budget;
+		if (exact) {
+			step = 1; cols = W; total = W * H;
+			budget = Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.ceil(total / (SWEEP_SECS * 10))));
+		} else {
+			step = Math.max(1, Math.round(Math.sqrt((W * H) / TARGET)));
+			cols = Math.ceil(W / step); total = cols * Math.ceil(H / step);
+			budget = COARSE_BUDGET;
+		}
+		_sweep = { step, cols, total, budget, exact }; _acc = new Map(); _cursor = 0;
 	}
-	const { W, total, budget } = _sweep;
+	const { step, cols, total, budget, exact } = _sweep;
 	let n = 0;
 	while (_cursor < total && n < budget) {
-		const cx = _cursor % W, cy = (_cursor / W) | 0;
+		const cx = (_cursor % cols) * step, cy = ((_cursor / cols) | 0) * step;
 		const t = safe(() => api.elements.getResolvedTypeAtCell(cx, cy));
 		if (t !== null && t !== undefined) _acc.set(t, (_acc.get(t) || 0) + 1);
 		_cursor++; n++;
 	}
 	if (_cursor >= total) {
-		const fresh = _acc;   // exact counts — every cell was read, scale 1
+		const scale = step * step, fresh = new Map();
+		for (const [t, c] of _acc) fresh.set(t, c * scale);
 		censusTrend = new Map();
 		if (_prevAt) {
 			const dt = Math.max(0.001, (now - _prevAt) / 1000);
 			const types = new Set(); for (const k of fresh.keys()) types.add(k); for (const k of _prevCensus.keys()) types.add(k);
 			for (const t of types) censusTrend.set(t, ((fresh.get(t) || 0) - (_prevCensus.get(t) || 0)) / dt);
 		}
+		const dtPrev = _prevAt ? Math.max(0.5, (now - _prevAt) / 1000) : 2.4;
 		_prevCensus = fresh; _prevAt = now; census = fresh;
 		if (!censusBaseAt) { censusBase = new Map(fresh); censusBaseAt = now; saveTotals(); }   // first sweep sets (and persists) the "since reset" baseline
-		censusInfo = { exact: true, eps: 0.75, at: now };
-		_sweep = null; _restUntil = now + REST_MS;
+		censusInfo = { exact, eps: exact ? 0.75 : (scale * 1.5) / dtPrev, at: now };
+		_sweep = null; _restUntil = now + (exact ? REST_MS : COARSE_REST);
 	}
 }, 100);
 (function loadCfg() {
@@ -384,10 +412,13 @@ function loopRow(t, cfgE, cfgR) {
 function censusRow(t, count, eps) {
 	const tr = censusTrend.get(t) || 0, base = censusBase.get(t) || 0, since = count - base;
 	const k = tr > eps ? "up" : tr < -eps ? "down" : "flat";
-	return h("div", { key: "c_" + t, style: { margin: "6px 0" } },
-		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, pinStar(t), swatch(t), nameCell(t), badge(k === "up" ? "RISING" : k === "down" ? "FALLING" : "STEADY", k)),
-		h("div", { style: SUBLINE }, cspan("#c7d0da", fmtCount(count)), " on the map  ·  now ", cspan(kindCol(k), fmtSigned(tr) + "/s")),
-		h("div", { style: SUBLINE }, "since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since))));
+	const rows = [
+		h("div", { key: "h", style: { display: "flex", alignItems: "center", gap: "7px" } }, pinStar(t), swatch(t), nameCell(t), badge(k === "up" ? "RISING" : k === "down" ? "FALLING" : "STEADY", k)),
+		h("div", { key: "a", style: SUBLINE }, cspan("#c7d0da", fmtCount(count)), " on the map  ·  now ", cspan(kindCol(k), fmtSigned(tr) + "/s")),
+	];
+	// running total only makes sense with exact counts — hide it in fast mode
+	if (censusExact()) rows.push(h("div", { key: "b", style: SUBLINE }, "since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since))));
+	return h("div", { key: "c_" + t, style: { margin: "6px 0" } }, rows);
 }
 function Tracker() {
 	if (!setting("showTracker", true)) return null;
@@ -416,7 +447,12 @@ function Tracker() {
 	// ---- world census: every material actually on the map + its trend ----
 	if (censusOn()) {
 		const present = [...census.entries()].filter((p) => p[1] > 0);
-		kids.push(h("div", { key: "ch", style: SUB_HEAD }, h("span", null, "Whole map"), h("span", { style: SUB_DIM }, censusInfo.at ? "exact count · refreshed ~20s" : "counting…")));
+		const ex = censusExact();
+		kids.push(h("div", { key: "ch", style: SUB_HEAD }, h("span", null, "Whole map"),
+			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setExact(!ex); },
+				title: ex ? "Exact: reads every cell (heavier, ~20s refresh, catches everything). Tap for fast." : "Fast: coarse sampling (cheap, ~2s refresh, can miss thin blobs, no running total). Tap for exact.",
+				style: { background: ex ? "#16351f" : "#232a31", color: ex ? "#8fe0aa" : "#9aa6b2", border: "1px solid " + (ex ? "#2f6a45" : "#3a4550"), borderRadius: "9px", fontSize: "9px", fontWeight: 800, letterSpacing: ".04em", padding: "2px 9px", cursor: "pointer" } },
+				ex ? "EXACT ✓" : "FAST")));
 		if (!present.length) kids.push(h("div", { key: "cn", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Scanning the map… (first read takes a moment)"));
 		else {
 			const eps = censusInfo.eps || 0;
@@ -425,7 +461,9 @@ function Tracker() {
 			const top = ordered.slice(0, Math.max(12, pinnedCount));   // always keep every pinned row visible
 			kids.push(h("div", { key: "cr", style: { maxHeight: "260px", overflowY: "auto" } }, top.map((p) => censusRow(p[0], p[1], eps))));
 			if (present.length > top.length) kids.push(h("div", { key: "cm", style: { fontSize: "9px", color: "#7f8b98", marginTop: "2px" } }, "+" + (present.length - top.length) + " more, near steady"));
-			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px", lineHeight: 1.5 } }, "Exact whole-map count, re-scanned every ~20s (so trends update slowly).  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), " to pin a material to the top so it stops moving."));
+			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px", lineHeight: 1.5 } },
+				ex ? "Exact whole-map count, re-scanned every ~20s (heavier)." : "Fast sampled estimate (cheap) — running totals are hidden because they'd be inexact. Tap FAST for exact.",
+				"  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), " to pin a material so it stops moving."));
 		}
 	}
 	return h("div", null, kids);
