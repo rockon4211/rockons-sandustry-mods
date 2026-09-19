@@ -152,6 +152,8 @@ function setExact(v) {
 	// counts never mix, and re-baseline the "since reset" from the new mode.
 	_sweep = null; _prevAt = 0; _prevCensus = new Map(); census = new Map(); censusTrend = new Map();
 	censusBase = new Map(); censusBaseAt = 0; saveTotals();
+	censusInfo = { step: 0, eps: 0, at: 0 };   // "first scan not done yet" again — so the progress banner shows for the new mode
+	_restUntil = 0;                            // and start the new mode's first sweep immediately
 	if (panelRepaint) panelRepaint((x) => x + 1);
 }
 // watchlist: show only the materials you've pinned (★) instead of the top movers
@@ -472,9 +474,18 @@ function Tracker() {
 				h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setExact(!ex); },
 					title: ex ? "Exact: reads every cell (heavier, ~20s refresh, catches everything). Tap for fast." : "Fast: coarse sampling (cheap, ~2s refresh, can miss thin blobs, no running total). Tap for exact.",
 					style: pillStyle(ex, "#8fe0aa", "#16351f") }, ex ? "EXACT ✓" : "FAST"))));
-		// first sweep not done yet → show live progress so it never looks stuck
+		// live scan status. Exact sweeps take ~30s EVERY time, so always show where
+		// the current sweep is; the first one gets a louder banner.
+		const scanning = !!_sweep, pct = censusProgress();
+		const ago = censusInfo.at ? Math.max(0, Math.round((Date.now() - censusInfo.at) / 1000)) : null;
 		if (!censusInfo.at) kids.push(h("div", { key: "cp", style: { fontSize: "10px", color: "#e0b060", fontWeight: 700, margin: "2px 0" } },
-			(ex ? "First exact scan of the whole map… " : "First scan… ") + censusProgress() + "%" + (ex ? "  (big world — ~30s)" : "")));
+			(ex ? "First exact scan of the whole map… " : "First scan… ") + pct + "%" + (ex ? "  (big world — ~30s)" : "")));
+		else kids.push(h("div", { key: "cs", style: { fontSize: "9.5px", color: scanning ? "#e0b060" : "#7f8b98", fontWeight: 600, margin: "1px 0 2px", display: "flex", alignItems: "center", gap: "6px" } },
+			scanning
+				? [h("span", { key: "b", style: { display: "inline-block", width: "90px", height: "5px", background: "#232a31", borderRadius: "3px", overflow: "hidden" } },
+						h("span", { style: { display: "block", width: pct + "%", height: "100%", background: "#e0b060" } })),
+				   h("span", { key: "t" }, (ex ? "rescanning… " : "sampling… ") + pct + "%")]
+				: h("span", null, "counts from " + ago + "s ago" + (ex ? " · next exact scan soon" : ""))));
 		if (watch) {
 			const pins = [...pinned];
 			if (!pins.length) kids.push(h("div", { key: "cw", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500, margin: "2px 0" } },
