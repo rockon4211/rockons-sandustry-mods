@@ -529,125 +529,12 @@ function doClear() {
 	if (panelRepaint) panelRepaint((v) => v + 1);
 }
 function CleanupRow() {
-	const armed = clearArmed > Date.now(), farmed = fixArmed > Date.now();
-	const running = !!_fix, pct = running ? Math.floor((100 * _fix.cursor) / _fix.total) : 0;
-	return h("div", { style: { marginTop: "6px", paddingTop: "6px", borderTop: "1px solid rgba(255,255,255,.12)", display: "flex", flexDirection: "column", gap: "5px" } },
-		h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
-			h("button", { onClick: doClear, style: { background: armed ? "#7a2f2f" : "#241b1b", color: "#ffd0d0", border: "1px solid #7a3a3a", borderRadius: "5px", fontSize: "11px", fontWeight: 700, padding: "3px 9px", cursor: "pointer" } }, armed ? "click again to confirm" : "Clear ALL Sources + Removers"),
-			clearMsg ? h("span", { style: { fontSize: "10px", color: "#8fb98f", fontWeight: 700 } }, clearMsg) : null),
-		h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
-			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); if (!running) doFixAll(); }, disabled: running,
-				title: "Sweeps the whole map and clears every stuck red 'Block' terrain cell that has no structure on it. Real foundations (which have their structure on top) are untouched. Takes ~30s.",
-				style: { background: farmed ? "#7a4a1a" : "#3a2a12", color: "#ffd9a8", border: "1px solid #8a6a2a", borderRadius: "5px", fontSize: "11px", fontWeight: 700, padding: "3px 9px", cursor: running ? "default" : "pointer", opacity: running ? 0.7 : 1 } },
-				running ? ("Clearing red blocks… " + pct + "%") : farmed ? "click again to confirm" : "Clear ALL red blocks (whole map)"),
-			fixMsg ? h("span", { style: { fontSize: "10px", color: "#8fb98f", fontWeight: 700 } }, fixMsg) : null));
+	const armed = clearArmed > Date.now();
+	return h("div", { style: { marginTop: "6px", paddingTop: "6px", borderTop: "1px solid rgba(255,255,255,.12)", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+		h("button", { onClick: doClear, style: { background: armed ? "#7a2f2f" : "#241b1b", color: "#ffd0d0", border: "1px solid #7a3a3a", borderRadius: "5px", fontSize: "11px", fontWeight: 700, padding: "3px 9px", cursor: "pointer" } }, armed ? "click again to confirm" : "Clear ALL Sources + Removers"),
+		clearMsg ? h("span", { style: { fontSize: "10px", color: "#8fb98f", fontWeight: 700 } }, clearMsg) : null);
 }
 
-// --- "Here" probe: what is at / around the player? (diagnostic) --------------
-// Reports EVERY layer at a cell (structure + element + terrain) plus the raw
-// cell id, so overlapping things can't mask each other.
-function probeCell(x, y) {
-	const parts = [];
-	const st = safe(() => api.structures.getAtCell(x, y));
-	if (st && st.type !== undefined && st.type !== null) parts.push("struct " + String(st.type));
-	const et = safe(() => api.elements.getResolvedTypeAtCell(x, y));
-	if (et !== null && et !== undefined) parts.push("elem " + nameOf(et));
-	const id = safe(() => api.world && api.world.getCellIdAtCell(x, y));
-	const ter = safe(() => api.world && api.world.isTerrainAtCell(x, y));
-	if (ter) parts.push("TERRAIN id " + id);
-	else if (typeof id === "number" && id !== 0 && et === null) parts.push("cellId " + id);
-	if (!parts.length) return (typeof id === "number" && id !== 0) ? ("cellId " + id) : "empty";
-	return parts.join(" + ");
-}
-// scan a (2r+1)^2 block around (cx,cy); list only the non-empty cells
-function probeArea(cx, cy, r) {
-	const out = [];
-	for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-		const d = probeCell(cx + dx, cy + dy);
-		if (d !== "empty") out.push((dx >= 0 ? "+" : "") + dx + "," + (dy >= 0 ? "+" : "") + dy + ": " + d);
-	}
-	return out;
-}
-// remove whatever structure sits at the player's centre / under the feet
-let hereMsg = "";
-function removeHere(cx, cy, fy) {
-	let hit = 0;
-	for (const c of [[cx, fy], [cx, cy], [cx - 1, fy], [cx + 1, fy]]) {
-		const st = safe(() => api.structures.getAtCell(c[0], c[1]));
-		if (st) { safe(() => api.structures.removeAtCellWhenIdle(c[0], c[1])); hit++; }
-	}
-	hereMsg = hit ? ("removed " + hit + (hit === 1 ? " structure" : " structures")) : "no structure here";
-	if (panelRepaint) panelRepaint((v) => v + 1);
-	setTimeout(() => { hereMsg = ""; if (panelRepaint) panelRepaint((v) => v + 1); }, 2500);
-}
-// Clear stuck "Block" terrain (cell id 15) around the feet. Block terrain is what
-// the engine stamps under a structure; a structure removed via a path that never
-// un-stamped it leaves this behind as bare, undiggable red blocks. Real Block
-// cells always have their structure on top, so we only clear cells with NONE.
-const BLOCK_CELL = 15;
-function clearBlocksHere(cx, fy, r) {
-	let n = 0;
-	for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-		const x = cx + dx, y = fy + dy;
-		if (safe(() => api.world.getCellIdAtCell(x, y)) !== BLOCK_CELL) continue;
-		if (safe(() => api.structures.getAtCell(x, y))) continue;   // a real structure owns this cell — leave it
-		safe(() => api.world.excavateAtCell(x, y, { x: 0, y: 0 }, 1, { forceRemoveAll: true }));
-		n++;
-	}
-	hereMsg = n ? ("cleared " + n + (n === 1 ? " red block cell" : " red block cells")) : "no stuck red blocks here";
-	if (panelRepaint) panelRepaint((v) => v + 1);
-	setTimeout(() => { hereMsg = ""; if (panelRepaint) panelRepaint((v) => v + 1); }, 2500);
-}
-// Map-wide version: sweep every cell (time-sliced so it never stalls a frame),
-// clearing only Block(15) cells that have NO structure on them. Block terrain is
-// never used for the world boundary, so this can't damage the map edges.
-let _fix = null, fixMsg = "", fixArmed = 0;
-function startFixAll() {
-	const d = safe(() => api.world && api.world.getDimensions()) || {};
-	const W = d.widthCells | 0, H = d.heightCells | 0;
-	if (W <= 0 || H <= 0) { fixMsg = "world not ready"; return; }
-	_fix = { W, total: W * H, cursor: 0, found: 0, cleared: 0, budget: 25000 };
-	fixMsg = "";
-}
-setInterval(() => {
-	if (!_fix || !inWorld()) return;
-	const f = _fix, world = api.world, structs = api.structures;
-	let n = 0;
-	try {
-		while (f.cursor < f.total && n < f.budget) {
-			const x = f.cursor % f.W, y = (f.cursor / f.W) | 0;
-			if (world.getCellIdAtCell(x, y) === BLOCK_CELL) {
-				f.found++;
-				if (!structs.getAtCell(x, y)) { world.excavateAtCell(x, y, { x: 0, y: 0 }, 1, { forceRemoveAll: true }); f.cleared++; }
-			}
-			f.cursor++; n++;
-		}
-	} catch (e) { f.cursor++; }
-	if (f.cursor >= f.total) { fixMsg = "done — cleared " + f.cleared + " stuck red block cells (" + (f.found - f.cleared) + " real ones kept)"; _fix = null; }
-	if (panelRepaint && (f.cursor % (f.budget * 4) === 0 || !_fix)) panelRepaint((v) => v + 1);
-}, 50);
-function doFixAll() {
-	const now = Date.now();
-	if (fixArmed < now) { fixArmed = now + 3000; fixMsg = ""; if (panelRepaint) panelRepaint((v) => v + 1); return; }
-	fixArmed = 0; startFixAll(); if (panelRepaint) panelRepaint((v) => v + 1);
-}
-function HereRow() {
-	const p = safe(() => api.player && api.player.getWorldPosition());
-	if (!p || typeof p.x !== "number") return null;
-	const CS = 4;
-	const cx = Math.floor((p.x + 6) / CS), cy = Math.floor((p.y + 15) / CS);   // player centre (12x30 px body)
-	const fy = Math.floor((p.y + 31) / CS);                                     // cell just under the feet
-	const near = probeArea(cx, fy, 2);   // 5x5 around the cell under the feet
-	return h("div", { style: { marginTop: "6px", paddingTop: "5px", borderTop: "1px solid rgba(255,255,255,.1)", fontSize: "10px", color: "#93a1b0", fontWeight: 600, lineHeight: 1.5 } },
-		h("div", null, h("span", { style: { color: "#cdd6df" } }, "Here "), "cell ", cspan("#e8edf3", cx + "," + cy), " → ", probeCell(cx, cy)),
-		h("div", null, h("span", { style: { color: "#cdd6df" } }, "Under feet "), "cell ", cspan("#e8edf3", cx + "," + fy), " → ", probeCell(cx, fy)),
-		h("div", { style: { marginTop: "2px" } }, h("span", { style: { color: "#cdd6df" } }, "Nearby (5×5 around feet, offset: what) "),
-			near.length ? h("div", { style: { fontFamily: "ui-monospace,Consolas,monospace", fontSize: "9.5px", color: "#c7d0da", maxHeight: "96px", overflowY: "auto", whiteSpace: "pre-wrap" } }, near.join("\n")) : h("span", null, "all empty")),
-		h("div", { style: { display: "flex", alignItems: "center", gap: "8px", marginTop: "3px" } },
-			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); clearBlocksHere(cx, fy, 3); }, title: "Clears stuck red 'Block' terrain (cell id 15) in a 7x7 around your feet. Only cells with NO structure on them are touched, so real foundations are safe.", style: { background: "#3a2a12", color: "#ffd9a8", border: "1px solid #8a6a2a", borderRadius: "5px", fontSize: "10px", fontWeight: 700, padding: "2px 8px", cursor: "pointer" } }, "Clear red blocks here"),
-			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); removeHere(cx, cy, fy); }, title: "Removes the structure at your centre / under your feet — works on frames the deconstruct tool can't grab.", style: { background: "#241b1b", color: "#ffd0d0", border: "1px solid #7a3a3a", borderRadius: "5px", fontSize: "10px", fontWeight: 700, padding: "2px 8px", cursor: "pointer" } }, "Remove structure here"),
-			hereMsg ? h("span", { style: { color: "#8fb98f", fontWeight: 700 } }, hereMsg) : null));
-}
 const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };
 function TitleBar() {
 	return h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "4px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
@@ -678,7 +565,6 @@ function Panel() {
 		Row("Source", emitCfg, "#8fe0aa"),
 		Row("Remover", removeCfg, "#e79b9b"),
 		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now."),
-		HereRow(),
 		Tracker(),
 		CleanupRow());
 }

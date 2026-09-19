@@ -713,3 +713,58 @@ function armGlassRecipe() {
 armGlassRecipe();
 setInterval(armGlassRecipe, 1500);
 
+
+// ------------------------------------------------- Mod Tools: red-block fix --
+// Stuck "red blocks" are orphaned Block terrain (cell id 15): the engine stamps
+// Block under every structure, and a structure removed through a path that never
+// un-stamped it leaves that terrain behind as bare, undiggable red blocks with
+// nothing on top to deconstruct. Real Block cells always have their structure
+// sitting on them, so the rule is: clear only Block cells with NO structure.
+// (Block terrain is never used for the map border, so the sweep can't hurt the
+// world edges.) Uses the engine's own force-remove-terrain excavate.
+//
+// Trigger: the "Clear stuck red blocks" setting. Mods can read settings but not
+// write them, so it's edge-triggered — flipping it ON runs one sweep; to run
+// again, flip it OFF and back ON.
+const BLOCK_CELL = 15;
+let _rbFix = null, _rbLastFlag = null;
+function startRedBlockSweep() {
+	const d = safe(() => api.world && api.world.getDimensions()) || {};
+	const W = d.widthCells | 0, H = d.heightCells | 0;
+	if (W <= 0 || H <= 0) { safe(() => api.ui.toast("Red-block fix: world not ready")); return; }
+	_rbFix = { W, total: W * H, cursor: 0, found: 0, cleared: 0, budget: 25000, nextToastPct: 25 };
+	safe(() => api.ui.toast("Clearing stuck red blocks... scanning the whole map (~30s)"));
+	console.log(`[${MOD_ID}] red-block sweep started: ${W}x${H}`);
+}
+setInterval(() => {
+	if (!_rbFix || !inGame()) return;
+	const f = _rbFix, world = api.world, structs = api.structures;
+	let n = 0;
+	try {
+		while (f.cursor < f.total && n < f.budget) {
+			const x = f.cursor % f.W, y = (f.cursor / f.W) | 0;
+			if (world.getCellIdAtCell(x, y) === BLOCK_CELL) {
+				f.found++;
+				if (!structs.getAtCell(x, y)) { world.excavateAtCell(x, y, { x: 0, y: 0 }, 1, { forceRemoveAll: true }); f.cleared++; }
+			}
+			f.cursor++; n++;
+		}
+	} catch (e) { f.cursor++; }
+	const pct = Math.floor((100 * f.cursor) / f.total);
+	if (pct >= f.nextToastPct && f.cursor < f.total) { safe(() => api.ui.toast(`Red-block fix: ${pct}%`)); f.nextToastPct += 25; }
+	if (f.cursor >= f.total) {
+		const kept = f.found - f.cleared;
+		safe(() => api.ui.toast(`Red-block fix done: cleared ${f.cleared} stuck cells (${kept} real ones kept)`));
+		console.log(`[${MOD_ID}] red-block sweep done: cleared ${f.cleared}, kept ${kept}`);
+		_rbFix = null;
+	}
+}, 50);
+// edge-trigger on the setting: react instantly via onChange, with a poll as backup
+function checkRedBlockFlag() {
+	const on = !!setting("clearRedBlocks", false);
+	if (_rbLastFlag === null) { _rbLastFlag = on; return; }   // don't fire on the value we booted with
+	if (on && !_rbLastFlag && !_rbFix) startRedBlockSweep();
+	_rbLastFlag = on;
+}
+safe(() => api.settings.onChange(checkRedBlockFlag));
+setInterval(checkRedBlockFlag, 1000);
