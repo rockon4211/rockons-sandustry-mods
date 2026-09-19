@@ -232,24 +232,19 @@ const SHAPE_SRC = [
 	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
 	[1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,1,1,1,0,0,0,0],[0,0,0,0,1,0,0,1,0,0,0,0],
 ];
-// Open TRAY: only the bottom two rows are solid (a thin floor); the top is fully
-// open and there are no side walls, so a conveyor can slide material straight on.
-// The floor gives it a real footprint — so it renders and can be removed with the
-// normal deconstruct tool (an all-0 shape can't be targeted/removed). Material
-// collects on the floor and the chosen type is deleted from there.
-const SHAPE_SNK = [
-	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
-	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
-	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
-	[0,0,0,0,0,0,0,0,0,0,0,0],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
-];
+// Remover: ONE block (4x4 cells = 16x16 px), solid. Small enough to sit at the
+// end of a belt. It eats the chosen material that lands ON TOP of it and that
+// gets pushed against its SIDES, so it works whether a belt drops onto it or
+// runs into it. Solid = real footprint, so it deconstructs normally.
+const SNK_CELLS = 4;
+const SHAPE_SNK = [[1,1,1,1],[1,1,1,1],[1,1,1,1],[1,1,1,1]];
 let regErr = "";
 (async () => {
 	try { await api.sprites.loadFromMod(SRC_SPRITE, "source.png"); await api.sprites.loadFromMod(SNK_SPRITE, "sink.png"); }
 	catch (e) { regErr = "sprites"; console.error("[" + MOD_ID + "] sprites failed:", e); }
 	try {
 		api.structures.register({ id: SRC_ID, name: "Source", description: "Emits the material shown on the Sandbox panel when you place it, at the set particles/sec.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SRC_ID, angles: [0] }], render: { imageName: SRC_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SRC, defaultData: {} });
-		api.structures.register({ id: SNK_ID, name: "Remover", description: "An open tray with a thin floor and no side walls. Slide material onto it with a conveyor (or drop it in from above) — the material shown on the Sandbox panel (only that one) collects on the floor and is deleted at the set rate. Everything else piles up normally.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SNK_ID, angles: [0] }], render: { imageName: SNK_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SNK, defaultData: {} });
+		api.structures.register({ id: SNK_ID, name: "Remover", description: "A single solid block. The material shown on the Sandbox panel (only that one) is deleted at the set rate when it lands on top of it or is pushed against its sides — put it at the end of a belt. Everything else piles up normally.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SNK_ID, angles: [0] }], render: { imageName: SNK_SPRITE, size: { width: 16, height: 16 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SNK, defaultData: {} });
 		console.log("[" + MOD_ID + "] Source + Remover registered");
 	} catch (e) { regErr = String(e && e.message || e); console.error("[" + MOD_ID + "] register failed:", e); }
 })();
@@ -318,17 +313,21 @@ setInterval(() => {
 		const dt = Math.min(now - rt.last, 1000); rt.last = now;
 		rt.accum += (cfg.rate * dt) / 1000; const rcap = Math.max(12, cfg.rate); if (rt.accum > rcap) rt.accum = rcap;
 		let guard = 0;
-		// The floor is rows s.y+10..s.y+11, so material rests on it at s.y+9 and
-		// stacks upward. Scan the open tray (cols s.x..s.x+11), lowest row first, so
-		// the grain sitting on the floor is deleted and the pile keeps settling down.
+		// Eat zone for a one-block (4x4) solid remover: the column ABOVE it (rows
+		// s.y-1 up to s.y-6, cols s.x..s.x+3, lowest row first so a pile settles
+		// down onto the block) plus the cells hugging its LEFT and RIGHT sides
+		// (rows s.y..s.y+3), so material a belt pushes into it is eaten too.
+		const N = SNK_CELLS;
+		const zone = [];
+		for (let y = s.y - 1; y >= s.y - 6; y--) for (let x = s.x; x < s.x + N; x++) zone.push([x, y]);
+		for (let y = s.y; y < s.y + N; y++) { zone.push([s.x - 1, y]); zone.push([s.x + N, y]); }
 		while (rt.accum >= 1 && guard < 120) {
 			guard++; let removed = false;
-			for (let y = s.y + 9; y >= s.y - 2 && !removed; y--) {
-				for (let x = s.x; x <= s.x + 11 && !removed; x++) {
-					const key = x + "," + y; if ((rmRecent.get(key) || 0) > now) continue;
-					if (safe(() => api.elements.getResolvedTypeAtCell(x, y)) === cfg.type) {
-						safe(() => api.elements.removeAtCellWhenIdle(x, y)); rmRecent.set(key, now + 300); removed = true; bump(rmTot, cfg.type);
-					}
+			for (let i = 0; i < zone.length && !removed; i++) {
+				const x = zone[i][0], y = zone[i][1];
+				const key = x + "," + y; if ((rmRecent.get(key) || 0) > now) continue;
+				if (safe(() => api.elements.getResolvedTypeAtCell(x, y)) === cfg.type) {
+					safe(() => api.elements.removeAtCellWhenIdle(x, y)); rmRecent.set(key, now + 300); removed = true; bump(rmTot, cfg.type);
 				}
 			}
 			if (!removed) break;
@@ -510,7 +509,7 @@ function clearSandbox() {
 	let n = 0;
 	for (const id of [SRC_ID, SNK_ID]) {
 		for (const s of eachOf(id)) {
-			const cells = [[s.x, s.y], [s.x + 6, s.y + 6], [s.x + 11, s.y + 11], [s.x, s.y + 10], [s.x + 6, s.y + 11], [s.x + 1, s.y + 1]];
+			const cells = [[s.x, s.y], [s.x + 1, s.y + 1], [s.x + 3, s.y + 3], [s.x + 6, s.y + 6], [s.x + 11, s.y + 11], [s.x, s.y + 10], [s.x + 6, s.y + 11]];
 			for (const c of cells) safe(() => api.structures.removeAtCellWhenIdle(c[0], c[1]));
 			cfgMap.delete(ikey(s.x, s.y));
 			n++;

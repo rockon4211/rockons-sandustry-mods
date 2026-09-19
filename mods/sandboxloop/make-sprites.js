@@ -23,25 +23,24 @@ function buildFromShape(name, shape, body, dark, accent) {
 	return save(buf, name);
 }
 
-// --- Remover: an OPEN TRAY — a thin solid floor (bottom 2 rows) with a bright
-//     top surface line, no side walls and an open top, so a conveyor can slide
-//     material straight on and it collects on the floor to be deleted. The floor
-//     gives it a real footprint (so it renders and can be removed normally). ---
-function buildTray(name) {
-	const buf = blank();
-	const GLOW = [255, 180, 120, 255], FLOOR = [170, 74, 74, 255], FLOOR_D = [110, 46, 46, 255], POST = [200, 96, 96, 255];
-	const rect = (x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) px(buf, x, y, c); };
-	// floor = bottom 2 cells (rows 10-11 => px 40..47)
-	rect(0, 40, W - 1, 47, FLOOR);
-	rect(0, 46, W - 1, 47, FLOOR_D);        // darker underside
-	rect(0, 40, W - 1, 41, GLOW);           // glowing top surface (where material lands / is eaten)
-	// short corner posts so it reads as a tray, not a full slab (kept low: 3 cells)
-	rect(0, 28, 2, 39, POST); rect(W - 3, 28, W - 1, 39, POST);
-	return save(buf, name);
+// --- Remover: ONE solid block, 4x4 cells = 16x16 px. Red body, bright top
+//     surface (where material lands and is eaten), darker underside. ----------
+function buildBlock(name) {
+	const S = 4 * P;  // 16 px
+	const buf = Buffer.alloc(S * S * 4, 0);
+	const px16 = (x, y, c) => { if (x < 0 || y < 0 || x >= S || y >= S) return; const o = 4 * (x + y * S); buf[o] = c[0]; buf[o + 1] = c[1]; buf[o + 2] = c[2]; buf[o + 3] = c[3]; };
+	const rect = (x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) px16(x, y, c); };
+	const GLOW = [255, 180, 120, 255], BODY = [170, 74, 74, 255], DARK = [110, 46, 46, 255], EDGE = [92, 40, 40, 255];
+	rect(0, 0, S - 1, S - 1, BODY);
+	rect(0, S - 3, S - 1, S - 1, DARK);        // underside
+	rect(0, 0, 0, S - 1, EDGE); rect(S - 1, 0, S - 1, S - 1, EDGE);   // side edges
+	rect(0, 0, S - 1, 1, GLOW);                // glowing top surface
+	px16(3, 5, [200, 96, 96, 255]); px16(11, 9, [200, 96, 96, 255]);   // a little texture
+	return sharp(buf, { raw: { width: S, height: S, channels: 4 } }).png().toFile(name);
 }
 
 const SRC = [[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,1,1,1,0,0,0,0],[0,0,0,0,1,0,0,1,0,0,0,0]];
 Promise.all([
 	buildFromShape("source.png", SRC, [72,150,96,255], [44,96,60,255], [150,220,170,255]),
-	buildTray("sink.png"),
+	buildBlock("sink.png"),
 ]).then(() => console.log("wrote source.png + sink.png (passable zone)"));
