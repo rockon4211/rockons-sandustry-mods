@@ -163,14 +163,16 @@ const SHAPE_SRC = [
 	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
 	[1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,1,1,1,0,0,0,0],[0,0,0,0,1,0,0,1,0,0,0,0],
 ];
-// Passable "delete zone": every cell is 0, so it stamps NO collision (like the
-// vanilla Light). A conveyor can slide material straight into/through it and the
-// chosen material is deleted as it passes through the footprint.
+// Open TRAY: only the bottom two rows are solid (a thin floor); the top is fully
+// open and there are no side walls, so a conveyor can slide material straight on.
+// The floor gives it a real footprint — so it renders and can be removed with the
+// normal deconstruct tool (an all-0 shape can't be targeted/removed). Material
+// collects on the floor and the chosen type is deleted from there.
 const SHAPE_SNK = [
 	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
 	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
 	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
-	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
+	[0,0,0,0,0,0,0,0,0,0,0,0],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
 ];
 let regErr = "";
 (async () => {
@@ -178,7 +180,7 @@ let regErr = "";
 	catch (e) { regErr = "sprites"; console.error("[" + MOD_ID + "] sprites failed:", e); }
 	try {
 		api.structures.register({ id: SRC_ID, name: "Source", description: "Emits the material shown on the Sandbox panel when you place it, at the set particles/sec.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SRC_ID, angles: [0] }], render: { imageName: SRC_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SRC, defaultData: {} });
-		api.structures.register({ id: SNK_ID, name: "Remover", description: "A passable delete-zone (no collision). Run a conveyor into it or drop material through it — the material shown on the Sandbox panel (only that one) is deleted as it passes through, at the set rate. Everything else flows through untouched.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SNK_ID, angles: [0] }], render: { imageName: SNK_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SNK, defaultData: {} });
+		api.structures.register({ id: SNK_ID, name: "Remover", description: "An open tray with a thin floor and no side walls. Slide material onto it with a conveyor (or drop it in from above) — the material shown on the Sandbox panel (only that one) collects on the floor and is deleted at the set rate. Everything else piles up normally.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SNK_ID, angles: [0] }], render: { imageName: SNK_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SNK, defaultData: {} });
 		console.log("[" + MOD_ID + "] Source + Remover registered");
 	} catch (e) { regErr = String(e && e.message || e); console.error("[" + MOD_ID + "] register failed:", e); }
 })();
@@ -247,13 +249,12 @@ setInterval(() => {
 		const dt = Math.min(now - rt.last, 1000); rt.last = now;
 		rt.accum += (cfg.rate * dt) / 1000; const rcap = Math.max(12, cfg.rate); if (rt.accum > rcap) rt.accum = rcap;
 		let guard = 0;
-		// The zone is passable, so the chosen material flows THROUGH its own
-		// footprint (rows s.y..s.y+11, cols s.x..s.x+11). Scan lowest row first so
-		// material about to fall out the bottom is deleted before it escapes; also
-		// sweep one row below (s.y+12) as a catch line. Deletes only cfg.type.
+		// The floor is rows s.y+10..s.y+11, so material rests on it at s.y+9 and
+		// stacks upward. Scan the open tray (cols s.x..s.x+11), lowest row first, so
+		// the grain sitting on the floor is deleted and the pile keeps settling down.
 		while (rt.accum >= 1 && guard < 120) {
 			guard++; let removed = false;
-			for (let y = s.y + 12; y >= s.y && !removed; y--) {
+			for (let y = s.y + 9; y >= s.y - 2 && !removed; y--) {
 				for (let x = s.x; x <= s.x + 11 && !removed; x++) {
 					const key = x + "," + y; if ((rmRecent.get(key) || 0) > now) continue;
 					if (safe(() => api.elements.getResolvedTypeAtCell(x, y)) === cfg.type) {
