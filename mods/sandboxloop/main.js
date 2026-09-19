@@ -105,6 +105,8 @@ const TARGET = 16000, BUDGET = 3000, REST_MS = 1500;
 let census = new Map();        // type -> estimated cell count (last full sweep)
 let censusTrend = new Map();   // type -> estimated Δ cells / second
 let censusInfo = { step: 0, eps: 0, at: 0 };
+let censusBase = new Map(), censusBaseAt = 0;   // baseline for the "since reset" running total
+let trackerStart = Date.now();                  // when the running totals began
 let _prevCensus = new Map(), _prevAt = 0, _restUntil = 0;
 let _sweep = null, _acc = new Map(), _cursor = 0;
 function censusOn() { return setting("worldCensus", true); }
@@ -139,6 +141,7 @@ setInterval(() => {
 		}
 		const dtPrev = _prevAt ? Math.max(0.5, (now - _prevAt) / 1000) : 2.4;
 		_prevCensus = fresh; _prevAt = now; census = fresh;
+		if (!censusBaseAt) { censusBase = new Map(fresh); censusBaseAt = now; }   // first sweep sets the "since reset" baseline
 		censusInfo = { step, eps: (scale * 1.5) / dtPrev, at: now };
 		_sweep = null; _restUntil = now + REST_MS;
 	}
@@ -271,6 +274,24 @@ setInterval(() => {
 
 // --- config panel (interactive) ---------------------------------------------
 let panelRepaint = null;
+// Reset the running totals: zero the cumulative emit/remove counters (and the
+// rate baselines), and re-baseline the world census to "now" so every "since
+// reset" figure starts from zero again.
+function resetTotals() {
+	emitTot.clear(); rmTot.clear(); rate.clear();
+	censusBase = new Map(census); censusBaseAt = census.size ? Date.now() : 0;
+	trackerStart = Date.now();
+	if (panelRepaint) panelRepaint((v) => v + 1);
+}
+// --- draggable panel position (drag the title bar) --------------------------
+let panelPos = { x: 12, y: 84 };
+(function loadPos() { const raw = safe(() => window.localStorage.getItem("brandon.sandboxloop.panelpos")); const o = raw && safe(() => JSON.parse(raw)); if (o && typeof o.x === "number" && typeof o.y === "number") panelPos = o; })();
+let _drag = false, _ddx = 0, _ddy = 0;
+safe(() => {
+	window.addEventListener("mousemove", (e) => { if (!_drag) return; panelPos = { x: Math.max(0, e.clientX - _ddx), y: Math.max(0, e.clientY - _ddy) }; if (panelRepaint) panelRepaint((v) => v + 1); });
+	window.addEventListener("mouseup", () => { if (!_drag) return; _drag = false; safe(() => window.localStorage.setItem("brandon.sandboxloop.panelpos", JSON.stringify(panelPos))); });
+});
+function startDrag(e) { _drag = true; _ddx = e.clientX - panelPos.x; _ddy = e.clientY - panelPos.y; if (e.preventDefault) e.preventDefault(); }
 function Row(label, cfg, accent) {
 	const opts = palette.map((p) => h("option", { value: p.type, key: p.type }, p.name));
 	const onMat = (e) => { cfg.type = +e.target.value; savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
@@ -287,74 +308,79 @@ let trackerOpen = true;
 (function loadTk() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.tkopen")) === "0") trackerOpen = false; })();
 function fmt1(n) { return (Math.round(n * 10) / 10).toFixed(1); }
 function fmtCount(n) { n = Math.abs(Math.round(n)); if (n >= 100000) return Math.round(n / 1000) + "k"; if (n >= 1000) return (n / 1000).toFixed(1) + "k"; return "" + n; }
-const SUB_HEAD = { marginTop: "6px", marginBottom: "1px", fontWeight: 800, fontSize: "11px", display: "flex", justifyContent: "space-between", alignItems: "baseline", color: "#cdd6df" };
+const SUB_HEAD = { marginTop: "8px", marginBottom: "2px", fontWeight: 800, fontSize: "11px", display: "flex", justifyContent: "space-between", alignItems: "baseline", color: "#dbe3ec", letterSpacing: ".02em" };
 const SUB_DIM = { fontSize: "9px", color: "#7f8b98", fontWeight: 600 };
-function swatch(t) { return h("span", { style: { width: "11px", height: "11px", borderRadius: "3px", background: colorOf(t), border: "1px solid rgba(255,255,255,.3)", flexShrink: 0 } }); }
-function nameCell(t) { return h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, nameOf(t)); }
-// one row of the "your loop" section (mod emit/remove throughput)
+const SUBLINE = { fontSize: "10.5px", color: "#9aa6b2", fontWeight: 600, marginLeft: "18px", lineHeight: 1.55 };
+function swatch(t) { return h("span", { style: { width: "12px", height: "12px", borderRadius: "3px", background: colorOf(t), border: "1px solid rgba(255,255,255,.35)", flexShrink: 0 } }); }
+function nameCell(t) { return h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700, fontSize: "12.5px" } }, nameOf(t)); }
+function cspan(color, text) { return h("span", { style: { color: color, fontWeight: 700, fontVariantNumeric: "tabular-nums" } }, text); }
+function fmtSigned(n) { return (n >= 0 ? "+" : "−") + fmtCount(n); }
+function fmtDur(ms) { const s = Math.max(0, Math.floor(ms / 1000)), m = Math.floor(s / 60), hh = Math.floor(m / 60); return hh ? (hh + "h " + String(m % 60).padStart(2, "0") + "m") : m ? (m + "m") : (s + "s"); }
+function kindCol(k) { return k === "up" ? "#8fe0aa" : k === "down" ? "#e79b9b" : "#aab4c0"; }
+function badge(text, k) {
+	const bg = k === "up" ? "#16351f" : k === "down" ? "#351717" : "#232a31";
+	return h("span", { style: { background: bg, color: kindCol(k), fontSize: "9px", fontWeight: 800, letterSpacing: ".06em", padding: "2px 8px", borderRadius: "10px", whiteSpace: "nowrap", flexShrink: 0 } }, text);
+}
+// one material in the "Your loop" section (what your Sources/Removers push)
 function loopRow(t, cfgE, cfgR) {
 	const s = rate.get(t) || { e: 0, r: 0 }, em = s.e, rm = s.r, net = em - rm;
 	const ce = cfgE.get(t) || 0, cr = cfgR.get(t) || 0;
-	let verdict, vcol;
-	if (net > 0.3) { verdict = "SURPLUS ↑"; vcol = "#8fe0aa"; }
-	else if (net < -0.3) { verdict = "DEFICIT ↓"; vcol = "#e79b9b"; }
-	else { verdict = "balanced"; vcol = "#c7d0da"; }
+	const total = (emitTot.get(t) || 0) - (rmTot.get(t) || 0);
+	const k = net > 0.3 ? "up" : net < -0.3 ? "down" : "flat";
 	let tag = "";
-	if (ce > 0 && em < ce * 0.5) tag = "source backed up";
-	else if (cr > 0 && rm < cr * 0.5) tag = "remover starved";
-	return h("div", { key: "l_" + t, style: { margin: "3px 0" } },
-		h("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
-			swatch(t), nameCell(t),
-			h("span", { style: { color: "#8fe0aa", width: "44px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, "+" + fmt1(em)),
-			h("span", { style: { color: "#e79b9b", width: "44px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, "−" + fmt1(rm)),
-			h("span", { style: { color: vcol, fontWeight: 800, width: "52px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, (net >= 0 ? "+" : "") + fmt1(net))),
-		h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: "9px", fontWeight: 600, marginLeft: "17px" } },
-			h("span", { style: { color: vcol } }, verdict),
-			h("span", { style: { color: "#7f8b98" } }, tag || ("target +" + fmt1(ce) + " / −" + fmt1(cr)))));
+	if (ce > 0 && em < ce * 0.5) tag = "source can't keep up — backing up";
+	else if (cr > 0 && rm < cr * 0.5) tag = "remover idle — nothing arriving";
+	return h("div", { key: "l_" + t, style: { margin: "6px 0" } },
+		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, swatch(t), nameCell(t), badge(k === "up" ? "SURPLUS" : k === "down" ? "DEFICIT" : "BALANCED", k)),
+		h("div", { style: SUBLINE }, "making ", cspan("#8fe0aa", fmt1(em) + "/s"), "  removing ", cspan("#e79b9b", fmt1(rm) + "/s"), "  net ", cspan(kindCol(k), fmtSigned(net) + "/s")),
+		h("div", { style: SUBLINE }, "net since reset: ", cspan(total >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(total) + " grains"),
+			tag ? h("span", { style: { color: "#e0b060", display: "block" } }, "⚠ " + tag) : null));
 }
-// one row of the "world census" section (sampled whole-map count + trend)
+// one material in the "Whole map" section (sampled count + trend)
 function censusRow(t, count, eps) {
-	const tr = censusTrend.get(t) || 0;
-	let col = "#c7d0da", arrow = "–", word = "steady";
-	if (tr > eps) { col = "#8fe0aa"; arrow = "▲"; word = "surplus"; }
-	else if (tr < -eps) { col = "#e79b9b"; arrow = "▼"; word = "deficit"; }
-	return h("div", { key: "c_" + t, style: { display: "flex", alignItems: "center", gap: "6px", margin: "2px 0" } },
-		swatch(t), nameCell(t),
-		h("span", { style: { width: "42px", textAlign: "right", color: "#c7d0da", fontVariantNumeric: "tabular-nums" } }, "~" + fmtCount(count)),
-		h("span", { title: word, style: { width: "74px", textAlign: "right", color: col, fontWeight: 800, fontVariantNumeric: "tabular-nums" } }, arrow + " " + (tr >= 0 ? "+" : "−") + fmtCount(tr) + "/s"));
+	const tr = censusTrend.get(t) || 0, base = censusBase.get(t) || 0, since = count - base;
+	const k = tr > eps ? "up" : tr < -eps ? "down" : "flat";
+	return h("div", { key: "c_" + t, style: { margin: "6px 0" } },
+		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, swatch(t), nameCell(t), badge(k === "up" ? "RISING" : k === "down" ? "FALLING" : "STEADY", k)),
+		h("div", { style: SUBLINE }, "≈", cspan("#c7d0da", fmtCount(count)), " on the map  ·  now ", cspan(kindCol(k), fmtSigned(tr) + "/s")),
+		h("div", { style: SUBLINE }, "since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since))));
 }
 function Tracker() {
 	if (!setting("showTracker", true)) return null;
 	const header = h("div", {
 		onClick: () => { trackerOpen = !trackerOpen; safe(() => window.localStorage.setItem("brandon.sandboxloop.tkopen", trackerOpen ? "1" : "0")); if (panelRepaint) panelRepaint((v) => v + 1); },
-		style: { marginTop: "7px", paddingTop: "6px", borderTop: "1px solid rgba(255,255,255,.12)", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", userSelect: "none" },
+		style: { marginTop: "8px", paddingTop: "7px", borderTop: "1px solid rgba(255,255,255,.14)", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", userSelect: "none" },
 	},
 		h("span", { style: { display: "inline-block", transform: trackerOpen ? "rotate(90deg)" : "none", fontSize: "9px", color: "#93a1b0" } }, "▶"),
-		h("span", { style: { fontWeight: 800 } }, "Balance"),
-		h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } }, "surplus / deficit"));
+		h("span", { style: { fontWeight: 800, fontSize: "13px" } }, "Balance"),
+		h("span", { style: { flex: "1 1 auto" } }),
+		h("span", { style: SUB_DIM }, "tracking " + fmtDur(Date.now() - trackerStart)),
+		h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); resetTotals(); }, style: { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "10px", fontWeight: 700, padding: "2px 8px", cursor: "pointer" } }, "↺ reset"));
 	if (!trackerOpen) return header;
 	const kids = [header];
+	// legend — spell out what the words mean
+	kids.push(h("div", { key: "leg", style: { fontSize: "9.5px", color: "#8a94a0", fontWeight: 600, margin: "3px 0 2px", lineHeight: 1.5 } },
+		cspan("#8fe0aa", "SURPLUS / RISING"), " = being made faster than it's removed.  ", cspan("#e79b9b", "DEFICIT / FALLING"), " = leaving faster than it's made."));
 
 	// ---- your loop: what the Sources/Removers actually push, per material ----
 	const { e: cfgE, r: cfgR } = cfgTotals();
 	const loopTypes = new Set(); for (const k of cfgE.keys()) loopTypes.add(k); for (const k of cfgR.keys()) loopTypes.add(k);
-	kids.push(h("div", { key: "lh", style: SUB_HEAD }, h("span", null, "Your loop"), h("span", { style: SUB_DIM }, "emit − remove /s")));
+	kids.push(h("div", { key: "lh", style: SUB_HEAD }, h("span", null, "Your loop"), h("span", { style: SUB_DIM }, "Sources − Removers")));
 	if (loopTypes.size === 0) kids.push(h("div", { key: "ln", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500, margin: "1px 0 2px" } }, "No Source or Remover placed yet."));
 	else kids.push(h("div", { key: "lr" }, [...loopTypes].sort((a, b) => nameOf(a).localeCompare(nameOf(b))).map((t) => loopRow(t, cfgE, cfgR))));
 
 	// ---- world census: every material actually on the map + its trend ----
 	if (censusOn()) {
 		const present = [...census.entries()].filter((p) => p[1] > 0);
-		kids.push(h("div", { key: "ch", style: SUB_HEAD }, h("span", null, "World census"),
-			h("span", { style: SUB_DIM }, censusInfo.at ? "all materials · sampled ≈2s" : "scanning…")));
+		kids.push(h("div", { key: "ch", style: SUB_HEAD }, h("span", null, "Whole map"), h("span", { style: SUB_DIM }, censusInfo.at ? "every material · sampled" : "scanning…")));
 		if (!present.length) kids.push(h("div", { key: "cn", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Scanning the map… (first read takes a moment)"));
 		else {
 			const eps = censusInfo.eps || 0;
 			present.sort((a, b) => (Math.abs(censusTrend.get(b[0]) || 0) - Math.abs(censusTrend.get(a[0]) || 0)) || (b[1] - a[1]));
-			const top = present.slice(0, 14);
-			kids.push(h("div", { key: "cr", style: { maxHeight: "196px", overflowY: "auto" } }, top.map((p) => censusRow(p[0], p[1], eps))));
+			const top = present.slice(0, 12);
+			kids.push(h("div", { key: "cr", style: { maxHeight: "260px", overflowY: "auto" } }, top.map((p) => censusRow(p[0], p[1], eps))));
 			if (present.length > top.length) kids.push(h("div", { key: "cm", style: { fontSize: "9px", color: "#7f8b98", marginTop: "2px" } }, "+" + (present.length - top.length) + " more, near steady"));
-			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "3px" } }, "~ = estimated from sampling; watch the arrow (trend), not the exact number."));
+			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px" } }, "≈ counts are estimates from sampling — trust the badge and the trend more than the exact number."));
 		}
 	}
 	return h("div", null, kids);
@@ -401,13 +427,15 @@ function Panel() {
 	if (removeCfg.type == null) removeCfg.type = defaultType();
 	return h("div", {
 		style: {
-			position: "fixed", left: "12px", top: "84px", zIndex: 99998, pointerEvents: "auto",
+			position: "fixed", left: panelPos.x + "px", top: panelPos.y + "px", zIndex: 99998, pointerEvents: "auto",
 			background: "rgba(10,14,20,0.94)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "8px",
 			padding: "8px 10px", font: '600 12px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#e8edf3",
-			boxShadow: "0 4px 16px rgba(0,0,0,.5)", minWidth: "312px",
+			boxShadow: "0 4px 16px rgba(0,0,0,.5)", minWidth: "312px", maxWidth: "340px",
 		},
 	},
-		h("div", { style: { fontWeight: 800, marginBottom: "4px", letterSpacing: ".02em" } }, "Sandbox Loop" + (regErr ? "  (err: " + regErr.slice(0, 20) + ")" : "")),
+		h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "5px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
+			h("span", { style: { color: "#5b6470", fontSize: "13px", lineHeight: 1 } }, "⠿"),
+			h("span", null, "Sandbox Loop" + (regErr ? "  (err: " + regErr.slice(0, 20) + ")" : ""))),
 		Row("Source", emitCfg, "#8fe0aa"),
 		Row("Remover", removeCfg, "#e79b9b"),
 		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now."),
