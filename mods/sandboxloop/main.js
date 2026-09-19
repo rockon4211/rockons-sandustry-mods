@@ -163,12 +163,14 @@ const SHAPE_SRC = [
 	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
 	[1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,1,1,1,1,0,0,0,0],[0,0,0,0,1,0,0,1,0,0,0,0],
 ];
-// Solid block: material lands on TOP of it and is eaten from the surface.
+// Passable "delete zone": every cell is 0, so it stamps NO collision (like the
+// vanilla Light). A conveyor can slide material straight into/through it and the
+// chosen material is deleted as it passes through the footprint.
 const SHAPE_SNK = [
-	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
-	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
-	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
-	[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],
+	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
+	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
+	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
+	[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0],
 ];
 let regErr = "";
 (async () => {
@@ -176,7 +178,7 @@ let regErr = "";
 	catch (e) { regErr = "sprites"; console.error("[" + MOD_ID + "] sprites failed:", e); }
 	try {
 		api.structures.register({ id: SRC_ID, name: "Source", description: "Emits the material shown on the Sandbox panel when you place it, at the set particles/sec.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SRC_ID, angles: [0] }], render: { imageName: SRC_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SRC, defaultData: {} });
-		api.structures.register({ id: SNK_ID, name: "Remover", description: "A solid block. Whatever the material shown on the Sandbox panel (only that one) lands ON TOP of it is slowly deleted from the surface at the set rate. Route material onto it with belts or gravity.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SNK_ID, angles: [0] }], render: { imageName: SNK_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SNK, defaultData: {} });
+		api.structures.register({ id: SNK_ID, name: "Remover", description: "A passable delete-zone (no collision). Run a conveyor into it or drop material through it — the material shown on the Sandbox panel (only that one) is deleted as it passes through, at the set rate. Everything else flows through untouched.", categoryKey: "special", buildModes: [{ type: "single" }], variants: [{ id: SNK_ID, angles: [0] }], render: { imageName: SNK_SPRITE, size: { width: 48, height: 48 }, offset: { x: 0, y: 0 }, ui: { outline: true } }, shape: SHAPE_SNK, defaultData: {} });
 		console.log("[" + MOD_ID + "] Source + Remover registered");
 	} catch (e) { regErr = String(e && e.message || e); console.error("[" + MOD_ID + "] register failed:", e); }
 })();
@@ -245,17 +247,17 @@ setInterval(() => {
 		const dt = Math.min(now - rt.last, 1000); rt.last = now;
 		rt.accum += (cfg.rate * dt) / 1000; const rcap = Math.max(12, cfg.rate); if (rt.accum > rcap) rt.accum = rcap;
 		let guard = 0;
-		// Eat whatever sits ON TOP of the block. The block spans rows s.y..s.y+11
-		// (12 wide), so its top surface is s.y; material rests at s.y-1 and above.
-		// Scan the full width, from the surface upward, deleting the lowest matching
-		// grain first so the pile keeps settling down onto the block.
-		while (rt.accum >= 1 && guard < 80) {
+		// The zone is passable, so the chosen material flows THROUGH its own
+		// footprint (rows s.y..s.y+11, cols s.x..s.x+11). Scan lowest row first so
+		// material about to fall out the bottom is deleted before it escapes; also
+		// sweep one row below (s.y+12) as a catch line. Deletes only cfg.type.
+		while (rt.accum >= 1 && guard < 120) {
 			guard++; let removed = false;
-			for (let x = s.x; x <= s.x + 11 && !removed; x++) {
-				for (let y = s.y - 1; y >= s.y - 14 && !removed; y--) {
+			for (let y = s.y + 12; y >= s.y && !removed; y--) {
+				for (let x = s.x; x <= s.x + 11 && !removed; x++) {
 					const key = x + "," + y; if ((rmRecent.get(key) || 0) > now) continue;
 					if (safe(() => api.elements.getResolvedTypeAtCell(x, y)) === cfg.type) {
-						safe(() => api.elements.removeAtCellWhenIdle(x, y)); rmRecent.set(key, now + 500); removed = true; bump(rmTot, cfg.type);
+						safe(() => api.elements.removeAtCellWhenIdle(x, y)); rmRecent.set(key, now + 300); removed = true; bump(rmTot, cfg.type);
 					}
 				}
 			}
@@ -264,7 +266,7 @@ setInterval(() => {
 		}
 	}
 	if (rmRecent.size > 512) { for (const [k, exp] of rmRecent) if (exp < now) rmRecent.delete(k); }
-}, 150);
+}, 80);
 
 // --- config panel (interactive) ---------------------------------------------
 let panelRepaint = null;
