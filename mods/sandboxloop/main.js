@@ -200,18 +200,32 @@ setInterval(() => {
 		if (cfg.type == null || cfg.rate <= 0) continue;
 		const k = ikey(s.x, s.y); let rt = runtime.get(k); if (!rt) { rt = { accum: 0, last: now }; runtime.set(k, rt); }
 		const dt = Math.min(now - rt.last, 1000); rt.last = now;
-		rt.accum += (cfg.rate * dt) / 1000; if (rt.accum > 8) rt.accum = 8;
+		rt.accum += (cfg.rate * dt) / 1000;
+		const cap = Math.max(8, cfg.rate);              // buffer up to ~1s of the set rate
+		if (rt.accum > cap) rt.accum = cap;
 		const EMPTY = safe(() => api.elements.getResolvedTypeAtCell(s.x + 6, s.y - 6));
-		let guard = 0;
-		while (rt.accum >= 1 && guard < 20) {
+		// Drop across the WHOLE underside of the hopper (10 cols) and well below it,
+		// not a 2-cell column — that alone was choking the rate. And keep a per-tick
+		// `claimed` set: createAtCellWhenIdle is queued, so within one tick re-reads
+		// still show our just-placed cells as empty; without this, every unit this
+		// tick targets the same cell and only ~1 survives (the "1 at a time" bug).
+		const claimed = new Set();
+		const COLS = 10, X0 = s.x + 1, TOP = s.y + 12, BOT = s.y + 60;
+		let guard = 0, col = (rt.col || 0) % COLS;
+		while (rt.accum >= 1 && guard < 240) {
 			guard++; let placed = false;
-			for (const ox of [s.x + 5, s.x + 6]) {
-				for (let oy = s.y + 11; oy <= s.y + 40 && !placed; oy++) {
+			for (let ci = 0; ci < COLS && !placed; ci++) {
+				const ox = X0 + ((col + ci) % COLS);
+				for (let oy = TOP; oy <= BOT; oy++) {
+					const key = ox + "," + oy;
+					if (claimed.has(key)) continue;                                   // already targeted this tick
+					if (safe(() => api.world && api.world.isTerrainAtCell(ox, oy))) break; // pile rests on ground — stop this column
 					const t = safe(() => api.elements.getResolvedTypeAtCell(ox, oy));
-					if (EMPTY !== undefined && t === EMPTY) { safe(() => api.elements.createAtCellWhenIdle(ox, oy, cfg.type)); placed = true; bump(emitTot, cfg.type); }
+					if (EMPTY !== undefined && t === EMPTY) { safe(() => api.elements.createAtCellWhenIdle(ox, oy, cfg.type)); claimed.add(key); placed = true; bump(emitTot, cfg.type); break; }
+					if (t !== EMPTY && t !== undefined) break;                         // hit settled material, next column
 				}
-				if (placed) break;
 			}
+			col = (col + 1) % COLS; rt.col = col;                                  // spread the next unit to the next column
 			if (!placed) break;
 			rt.accum -= 1;
 		}
