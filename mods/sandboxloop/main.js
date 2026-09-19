@@ -151,6 +151,10 @@ function setExact(v) {
 	censusBase = new Map(); censusBaseAt = 0; saveTotals();
 	if (panelRepaint) panelRepaint((x) => x + 1);
 }
+// watchlist: show only the materials you've pinned (★) instead of the top movers
+let censusWatchOnly = false;
+(function loadWatch() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.watch")) === "1") censusWatchOnly = true; })();
+function setWatch(v) { censusWatchOnly = !!v; safe(() => window.localStorage.setItem("brandon.sandboxloop.watch", censusWatchOnly ? "1" : "0")); if (panelRepaint) panelRepaint((x) => x + 1); }
 setInterval(() => {
 	if (!isEnabled() || !inWorld() || !setting("showTracker", true) || !censusOn()) { _sweep = null; return; }
 	const now = Date.now();
@@ -393,6 +397,7 @@ function badge(text, k) {
 	const bg = k === "up" ? "#16351f" : k === "down" ? "#351717" : "#232a31";
 	return h("span", { style: { background: bg, color: kindCol(k), fontSize: "9px", fontWeight: 800, letterSpacing: ".06em", padding: "2px 8px", borderRadius: "10px", whiteSpace: "nowrap", flexShrink: 0 } }, text);
 }
+function pillStyle(on, onColor, onBg) { return { background: on ? onBg : "#232a31", color: on ? onColor : "#9aa6b2", border: "1px solid " + (on ? onColor : "#3a4550"), borderRadius: "9px", fontSize: "8.5px", fontWeight: 800, letterSpacing: ".03em", padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }; }
 // one material in the "Your loop" section (what your Sources/Removers push)
 function loopRow(t, cfgE, cfgR) {
 	const s = rate.get(t) || { e: 0, r: 0 }, em = s.e, rm = s.r, net = em - rm;
@@ -446,25 +451,36 @@ function Tracker() {
 
 	// ---- world census: every material actually on the map + its trend ----
 	if (censusOn()) {
-		const present = [...census.entries()].filter((p) => p[1] > 0);
-		const ex = censusExact();
+		const ex = censusExact(), watch = censusWatchOnly, eps = censusInfo.eps || 0;
 		kids.push(h("div", { key: "ch", style: SUB_HEAD }, h("span", null, "Whole map"),
-			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setExact(!ex); },
-				title: ex ? "Exact: reads every cell (heavier, ~20s refresh, catches everything). Tap for fast." : "Fast: coarse sampling (cheap, ~2s refresh, can miss thin blobs, no running total). Tap for exact.",
-				style: { background: ex ? "#16351f" : "#232a31", color: ex ? "#8fe0aa" : "#9aa6b2", border: "1px solid " + (ex ? "#2f6a45" : "#3a4550"), borderRadius: "9px", fontSize: "9px", fontWeight: 800, letterSpacing: ".04em", padding: "2px 9px", cursor: "pointer" } },
-				ex ? "EXACT ✓" : "FAST")));
-		if (!present.length) kids.push(h("div", { key: "cn", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Scanning the map… (first read takes a moment)"));
-		else {
-			const eps = censusInfo.eps || 0;
+			h("span", { style: { display: "flex", gap: "5px", alignItems: "center" } },
+				h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setWatch(!watch); },
+					title: watch ? "Watchlist: showing ONLY the materials you pinned (★). Tap to show top movers." : "Showing the top movers. Tap to show only your pinned (★) materials.",
+					style: pillStyle(watch, "#ffd166", "#3a2f12") }, watch ? "★ WATCH" : "TOP"),
+				h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setExact(!ex); },
+					title: ex ? "Exact: reads every cell (heavier, ~20s refresh, catches everything). Tap for fast." : "Fast: coarse sampling (cheap, ~2s refresh, can miss thin blobs, no running total). Tap for exact.",
+					style: pillStyle(ex, "#8fe0aa", "#16351f") }, ex ? "EXACT ✓" : "FAST"))));
+		if (watch) {
+			const pins = [...pinned];
+			if (!pins.length) kids.push(h("div", { key: "cw", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500, margin: "2px 0" } },
+				"Watchlist is empty — tap ", h("span", { style: { color: "#ffd166" } }, "★"), " on any material to add it (it'll show here even at 0)."));
+			else {
+				const rows = pins.map((t) => [t, census.get(t) || 0]).sort((a, b) => nameOf(a[0]).localeCompare(nameOf(b[0])));
+				kids.push(h("div", { key: "cr", style: { maxHeight: "320px", overflowY: "auto" } }, rows.map((p) => censusRow(p[0], p[1], eps))));
+			}
+		} else if (!census.size) {
+			kids.push(h("div", { key: "cn", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Scanning the map… (first read takes a moment)"));
+		} else {
+			const present = [...census.entries()].filter((p) => p[1] > 0);
 			const ordered = pinnedFirst(present, (p) => p[0], (a, b) => (Math.abs(censusTrend.get(b[0]) || 0) - Math.abs(censusTrend.get(a[0]) || 0)) || (b[1] - a[1]));
 			const pinnedCount = ordered.filter((p) => pinned.has(p[0])).length;
 			const top = ordered.slice(0, Math.max(12, pinnedCount));   // always keep every pinned row visible
 			kids.push(h("div", { key: "cr", style: { maxHeight: "260px", overflowY: "auto" } }, top.map((p) => censusRow(p[0], p[1], eps))));
-			if (present.length > top.length) kids.push(h("div", { key: "cm", style: { fontSize: "9px", color: "#7f8b98", marginTop: "2px" } }, "+" + (present.length - top.length) + " more, near steady"));
-			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px", lineHeight: 1.5 } },
-				ex ? "Exact whole-map count, re-scanned every ~20s (heavier)." : "Fast sampled estimate (cheap) — running totals are hidden because they'd be inexact. Tap FAST for exact.",
-				"  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), " to pin a material so it stops moving."));
+			if (present.length > top.length) kids.push(h("div", { key: "cm", style: { fontSize: "9px", color: "#7f8b98", marginTop: "2px" } }, "+" + (present.length - top.length) + " more, near steady — pin them or use ★ WATCH"));
 		}
+		kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px", lineHeight: 1.5 } },
+			ex ? "Exact scans every material on the map (~20s)." : "Fast sampled estimate — running totals hidden (they'd be inexact).",
+			"  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), watch ? " to add/remove from the watchlist." : " to pin; ★ WATCH shows only pinned."));
 	}
 	return h("div", null, kids);
 }
