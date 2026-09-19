@@ -296,6 +296,24 @@ function startDrag(e) { _drag = true; _ddx = e.clientX - panelPos.x; _ddy = e.cl
 let panelMin = false;
 (function loadMin() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.panelmin")) === "1") panelMin = true; })();
 function setMin(v) { panelMin = v; safe(() => window.localStorage.setItem("brandon.sandboxloop.panelmin", v ? "1" : "0")); if (panelRepaint) panelRepaint((x) => x + 1); }
+// --- pin favourites to the top (so they stop reordering under you) ----------
+const pinned = new Set();
+(function loadPins() { const raw = safe(() => window.localStorage.getItem("brandon.sandboxloop.pins")); const a = raw && safe(() => JSON.parse(raw)); if (Array.isArray(a)) for (const t of a) pinned.add(t); })();
+function savePins() { safe(() => window.localStorage.setItem("brandon.sandboxloop.pins", JSON.stringify([...pinned]))); }
+function togglePin(t) { if (pinned.has(t)) pinned.delete(t); else pinned.add(t); savePins(); if (panelRepaint) panelRepaint((v) => v + 1); }
+function pinStar(t) {
+	const on = pinned.has(t);
+	return h("span", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); togglePin(t); }, title: on ? "unpin" : "pin to top", style: { cursor: "pointer", color: on ? "#ffd166" : "#57616e", fontSize: "12px", lineHeight: 1, width: "14px", textAlign: "center", flexShrink: 0, userSelect: "none" } }, on ? "★" : "☆");
+}
+// pinned first (stable, alphabetical), then the rest by the caller's order
+function pinnedFirst(arr, keyOf, restCmp) {
+	return arr.slice().sort((a, b) => {
+		const pa = pinned.has(keyOf(a)) ? 1 : 0, pb = pinned.has(keyOf(b)) ? 1 : 0;
+		if (pa !== pb) return pb - pa;
+		if (pa) return nameOf(keyOf(a)).localeCompare(nameOf(keyOf(b)));
+		return restCmp(a, b);
+	});
+}
 function Row(label, cfg, accent) {
 	const opts = palette.map((p) => h("option", { value: p.type, key: p.type }, p.name));
 	const onMat = (e) => { cfg.type = +e.target.value; savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
@@ -314,7 +332,7 @@ function fmt1(n) { return (Math.round(n * 10) / 10).toFixed(1); }
 function fmtCount(n) { n = Math.abs(Math.round(n)); if (n >= 100000) return Math.round(n / 1000) + "k"; if (n >= 1000) return (n / 1000).toFixed(1) + "k"; return "" + n; }
 const SUB_HEAD = { marginTop: "8px", marginBottom: "2px", fontWeight: 800, fontSize: "11px", display: "flex", justifyContent: "space-between", alignItems: "baseline", color: "#dbe3ec", letterSpacing: ".02em" };
 const SUB_DIM = { fontSize: "9px", color: "#7f8b98", fontWeight: 600 };
-const SUBLINE = { fontSize: "10.5px", color: "#9aa6b2", fontWeight: 600, marginLeft: "18px", lineHeight: 1.55 };
+const SUBLINE = { fontSize: "10.5px", color: "#9aa6b2", fontWeight: 600, marginLeft: "33px", lineHeight: 1.55 };
 function swatch(t) { return h("span", { style: { width: "12px", height: "12px", borderRadius: "3px", background: colorOf(t), border: "1px solid rgba(255,255,255,.35)", flexShrink: 0 } }); }
 function nameCell(t) { return h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700, fontSize: "12.5px" } }, nameOf(t)); }
 function cspan(color, text) { return h("span", { style: { color: color, fontWeight: 700, fontVariantNumeric: "tabular-nums" } }, text); }
@@ -335,7 +353,7 @@ function loopRow(t, cfgE, cfgR) {
 	if (ce > 0 && em < ce * 0.5) tag = "source can't keep up — backing up";
 	else if (cr > 0 && rm < cr * 0.5) tag = "remover idle — nothing arriving";
 	return h("div", { key: "l_" + t, style: { margin: "6px 0" } },
-		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, swatch(t), nameCell(t), badge(k === "up" ? "SURPLUS" : k === "down" ? "DEFICIT" : "BALANCED", k)),
+		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, pinStar(t), swatch(t), nameCell(t), badge(k === "up" ? "SURPLUS" : k === "down" ? "DEFICIT" : "BALANCED", k)),
 		h("div", { style: SUBLINE }, "making ", cspan("#8fe0aa", fmt1(em) + "/s"), "  removing ", cspan("#e79b9b", fmt1(rm) + "/s"), "  net ", cspan(kindCol(k), fmtSigned(net) + "/s")),
 		h("div", { style: SUBLINE }, "net since reset: ", cspan(total >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(total) + " grains"),
 			tag ? h("span", { style: { color: "#e0b060", display: "block" } }, "⚠ " + tag) : null));
@@ -345,7 +363,7 @@ function censusRow(t, count, eps) {
 	const tr = censusTrend.get(t) || 0, base = censusBase.get(t) || 0, since = count - base;
 	const k = tr > eps ? "up" : tr < -eps ? "down" : "flat";
 	return h("div", { key: "c_" + t, style: { margin: "6px 0" } },
-		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, swatch(t), nameCell(t), badge(k === "up" ? "RISING" : k === "down" ? "FALLING" : "STEADY", k)),
+		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, pinStar(t), swatch(t), nameCell(t), badge(k === "up" ? "RISING" : k === "down" ? "FALLING" : "STEADY", k)),
 		h("div", { style: SUBLINE }, "≈", cspan("#c7d0da", fmtCount(count)), " on the map  ·  now ", cspan(kindCol(k), fmtSigned(tr) + "/s")),
 		h("div", { style: SUBLINE }, "since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since))));
 }
@@ -371,7 +389,7 @@ function Tracker() {
 	const loopTypes = new Set(); for (const k of cfgE.keys()) loopTypes.add(k); for (const k of cfgR.keys()) loopTypes.add(k);
 	kids.push(h("div", { key: "lh", style: SUB_HEAD }, h("span", null, "Your loop"), h("span", { style: SUB_DIM }, "Sources − Removers")));
 	if (loopTypes.size === 0) kids.push(h("div", { key: "ln", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500, margin: "1px 0 2px" } }, "No Source or Remover placed yet."));
-	else kids.push(h("div", { key: "lr" }, [...loopTypes].sort((a, b) => nameOf(a).localeCompare(nameOf(b))).map((t) => loopRow(t, cfgE, cfgR))));
+	else kids.push(h("div", { key: "lr" }, pinnedFirst([...loopTypes], (t) => t, (a, b) => nameOf(a).localeCompare(nameOf(b))).map((t) => loopRow(t, cfgE, cfgR))));
 
 	// ---- world census: every material actually on the map + its trend ----
 	if (censusOn()) {
@@ -380,11 +398,12 @@ function Tracker() {
 		if (!present.length) kids.push(h("div", { key: "cn", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Scanning the map… (first read takes a moment)"));
 		else {
 			const eps = censusInfo.eps || 0;
-			present.sort((a, b) => (Math.abs(censusTrend.get(b[0]) || 0) - Math.abs(censusTrend.get(a[0]) || 0)) || (b[1] - a[1]));
-			const top = present.slice(0, 12);
+			const ordered = pinnedFirst(present, (p) => p[0], (a, b) => (Math.abs(censusTrend.get(b[0]) || 0) - Math.abs(censusTrend.get(a[0]) || 0)) || (b[1] - a[1]));
+			const pinnedCount = ordered.filter((p) => pinned.has(p[0])).length;
+			const top = ordered.slice(0, Math.max(12, pinnedCount));   // always keep every pinned row visible
 			kids.push(h("div", { key: "cr", style: { maxHeight: "260px", overflowY: "auto" } }, top.map((p) => censusRow(p[0], p[1], eps))));
 			if (present.length > top.length) kids.push(h("div", { key: "cm", style: { fontSize: "9px", color: "#7f8b98", marginTop: "2px" } }, "+" + (present.length - top.length) + " more, near steady"));
-			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px" } }, "≈ counts are estimates from sampling — trust the badge and the trend more than the exact number."));
+			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px", lineHeight: 1.5 } }, "≈ counts are estimates from sampling — trust the badge and trend over the exact number.  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), " to pin a material to the top so it stops moving."));
 		}
 	}
 	return h("div", null, kids);
