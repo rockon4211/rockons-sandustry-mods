@@ -360,6 +360,40 @@ function Tracker() {
 	return h("div", null, kids);
 }
 
+// --- cleanup: remove every Source/Remover the mod knows about, including ones
+//     that render as blank/red "error" blocks (forEachOfType still finds them by
+//     type, and we hit a spread of footprint cells so it works whatever shape —
+//     basin, block, zone or tray — placed them). This is the reliable way to
+//     clear Removers you can't click on. ---------------------------------------
+function clearSandbox() {
+	let n = 0;
+	for (const id of [SRC_ID, SNK_ID]) {
+		for (const s of eachOf(id)) {
+			const cells = [[s.x, s.y], [s.x + 6, s.y + 6], [s.x + 11, s.y + 11], [s.x, s.y + 10], [s.x + 6, s.y + 11], [s.x + 1, s.y + 1]];
+			for (const c of cells) safe(() => api.structures.removeAtCellWhenIdle(c[0], c[1]));
+			cfgMap.delete(ikey(s.x, s.y));
+			n++;
+		}
+	}
+	saveCfg();
+	return n;
+}
+let clearArmed = 0, clearMsg = "";
+function doClear() {
+	const now = Date.now();
+	if (clearArmed < now) { clearArmed = now + 3000; clearMsg = ""; if (panelRepaint) panelRepaint((v) => v + 1); return; }
+	clearArmed = 0;
+	const n = clearSandbox();
+	clearMsg = "removed " + n + (n === 1 ? " structure" : " structures");
+	if (panelRepaint) panelRepaint((v) => v + 1);
+}
+function CleanupRow() {
+	const armed = clearArmed > Date.now();
+	return h("div", { style: { marginTop: "6px", paddingTop: "6px", borderTop: "1px solid rgba(255,255,255,.12)", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+		h("button", { onClick: doClear, style: { background: armed ? "#7a2f2f" : "#241b1b", color: "#ffd0d0", border: "1px solid #7a3a3a", borderRadius: "5px", fontSize: "11px", fontWeight: 700, padding: "3px 9px", cursor: "pointer" } }, armed ? "click again to confirm" : "Clear ALL Sources + Removers"),
+		clearMsg ? h("span", { style: { fontSize: "10px", color: "#8fb98f", fontWeight: 700 } }, clearMsg) : null);
+}
+
 function Panel() {
 	const [, b] = React.useState(0); panelRepaint = b;
 	if (!isEnabled() || !inWorld()) return null;
@@ -377,7 +411,8 @@ function Panel() {
 		Row("Source", emitCfg, "#8fe0aa"),
 		Row("Remover", removeCfg, "#e79b9b"),
 		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now."),
-		Tracker());
+		Tracker(),
+		CleanupRow());
 }
 safe(() => api.ui.inject("brandon-sandboxloop-panel", Panel));
 setInterval(() => { if (panelRepaint) panelRepaint((v) => v + 1); }, 1000);
