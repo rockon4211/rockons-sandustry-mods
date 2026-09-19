@@ -21,6 +21,12 @@
 			"default": true,
 			"labelKey": "Show balance tracker",
 			"descriptionKey": "Show the live Balance section on the panel: each material's effective emit/s, remove/s and net rate, with a surplus / deficit verdict. Turn off to hide it (the Source/Remover controls stay)."
+		},
+		"worldCensus": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Track ALL materials (map scan)",
+			"descriptionKey": "Also scan the whole map so materials the loop never touches — water, steam, gold, anything the game itself makes — show a real surplus/deficit trend. The scan is bounded and time-sliced (a few thousand cheap reads spread across each second, with a rest between passes), so it stays cheap on any world size. Turn off for zero extra cost."
 		}
 	}
 }

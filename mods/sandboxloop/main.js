@@ -94,6 +94,55 @@ function cfgTotals() {
 	for (const s of eachOf(SNK_ID)) { const c = cfgFor(s, { type: removeCfg.type, rate: removeCfg.rate }); if (c && c.type != null && c.rate > 0) r.set(c.type, (r.get(c.type) || 0) + c.rate); }
 	return { e, r };
 }
+
+// --- world census (samples the WHOLE map so materials the loop never touches —
+//     water, steam, gold, anything the game itself makes — still show a real
+//     surplus/deficit). Cost is bounded no matter how big the world is: each
+//     sweep reads a fixed ~TARGET coarse lattice points, time-sliced a few
+//     thousand per 150ms tick, with a rest between sweeps. Trend = the change in
+//     a material's estimated count from one completed sweep to the next.
+const TARGET = 16000, BUDGET = 3000, REST_MS = 1500;
+let census = new Map();        // type -> estimated cell count (last full sweep)
+let censusTrend = new Map();   // type -> estimated Δ cells / second
+let censusInfo = { step: 0, eps: 0, at: 0 };
+let _prevCensus = new Map(), _prevAt = 0, _restUntil = 0;
+let _sweep = null, _acc = new Map(), _cursor = 0;
+function censusOn() { return setting("worldCensus", true); }
+setInterval(() => {
+	if (!isEnabled() || !inWorld() || !setting("showTracker", true) || !censusOn()) { _sweep = null; return; }
+	const now = Date.now();
+	if (!_sweep) {
+		if (now < _restUntil) return;
+		const d = safe(() => api.world && api.world.getDimensions()) || {};
+		const W = d.widthCells | 0, H = d.heightCells | 0;
+		if (W <= 0 || H <= 0) { _restUntil = now + 500; return; }
+		const step = Math.max(1, Math.round(Math.sqrt((W * H) / TARGET)));
+		const cols = Math.ceil(W / step), rows = Math.ceil(H / step);
+		_sweep = { step, cols, total: cols * rows }; _acc = new Map(); _cursor = 0;
+	}
+	const { step, cols, total } = _sweep;
+	let n = 0;
+	while (_cursor < total && n < BUDGET) {
+		const cx = (_cursor % cols) * step, cy = ((_cursor / cols) | 0) * step;
+		const t = safe(() => api.elements.getResolvedTypeAtCell(cx, cy));
+		if (t !== null && t !== undefined) _acc.set(t, (_acc.get(t) || 0) + 1);
+		_cursor++; n++;
+	}
+	if (_cursor >= total) {
+		const scale = step * step, fresh = new Map();
+		for (const [t, c] of _acc) fresh.set(t, c * scale);
+		censusTrend = new Map();
+		if (_prevAt) {
+			const dt = Math.max(0.001, (now - _prevAt) / 1000);
+			const types = new Set(); for (const k of fresh.keys()) types.add(k); for (const k of _prevCensus.keys()) types.add(k);
+			for (const t of types) censusTrend.set(t, ((fresh.get(t) || 0) - (_prevCensus.get(t) || 0)) / dt);
+		}
+		const dtPrev = _prevAt ? Math.max(0.5, (now - _prevAt) / 1000) : 2.4;
+		_prevCensus = fresh; _prevAt = now; census = fresh;
+		censusInfo = { step, eps: (scale * 1.5) / dtPrev, at: now };
+		_sweep = null; _restUntil = now + REST_MS;
+	}
+}, 150);
 (function loadCfg() {
 	const raw = safe(() => window.localStorage.getItem(CFG_KEY));
 	const o = raw && safe(() => JSON.parse(raw));
@@ -215,6 +264,43 @@ function Row(label, cfg, accent) {
 let trackerOpen = true;
 (function loadTk() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.tkopen")) === "0") trackerOpen = false; })();
 function fmt1(n) { return (Math.round(n * 10) / 10).toFixed(1); }
+function fmtCount(n) { n = Math.abs(Math.round(n)); if (n >= 100000) return Math.round(n / 1000) + "k"; if (n >= 1000) return (n / 1000).toFixed(1) + "k"; return "" + n; }
+const SUB_HEAD = { marginTop: "6px", marginBottom: "1px", fontWeight: 800, fontSize: "11px", display: "flex", justifyContent: "space-between", alignItems: "baseline", color: "#cdd6df" };
+const SUB_DIM = { fontSize: "9px", color: "#7f8b98", fontWeight: 600 };
+function swatch(t) { return h("span", { style: { width: "11px", height: "11px", borderRadius: "3px", background: colorOf(t), border: "1px solid rgba(255,255,255,.3)", flexShrink: 0 } }); }
+function nameCell(t) { return h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, nameOf(t)); }
+// one row of the "your loop" section (mod emit/remove throughput)
+function loopRow(t, cfgE, cfgR) {
+	const s = rate.get(t) || { e: 0, r: 0 }, em = s.e, rm = s.r, net = em - rm;
+	const ce = cfgE.get(t) || 0, cr = cfgR.get(t) || 0;
+	let verdict, vcol;
+	if (net > 0.3) { verdict = "SURPLUS ↑"; vcol = "#8fe0aa"; }
+	else if (net < -0.3) { verdict = "DEFICIT ↓"; vcol = "#e79b9b"; }
+	else { verdict = "balanced"; vcol = "#c7d0da"; }
+	let tag = "";
+	if (ce > 0 && em < ce * 0.5) tag = "source backed up";
+	else if (cr > 0 && rm < cr * 0.5) tag = "remover starved";
+	return h("div", { key: "l_" + t, style: { margin: "3px 0" } },
+		h("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+			swatch(t), nameCell(t),
+			h("span", { style: { color: "#8fe0aa", width: "44px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, "+" + fmt1(em)),
+			h("span", { style: { color: "#e79b9b", width: "44px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, "−" + fmt1(rm)),
+			h("span", { style: { color: vcol, fontWeight: 800, width: "52px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, (net >= 0 ? "+" : "") + fmt1(net))),
+		h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: "9px", fontWeight: 600, marginLeft: "17px" } },
+			h("span", { style: { color: vcol } }, verdict),
+			h("span", { style: { color: "#7f8b98" } }, tag || ("target +" + fmt1(ce) + " / −" + fmt1(cr)))));
+}
+// one row of the "world census" section (sampled whole-map count + trend)
+function censusRow(t, count, eps) {
+	const tr = censusTrend.get(t) || 0;
+	let col = "#c7d0da", arrow = "–", word = "steady";
+	if (tr > eps) { col = "#8fe0aa"; arrow = "▲"; word = "surplus"; }
+	else if (tr < -eps) { col = "#e79b9b"; arrow = "▼"; word = "deficit"; }
+	return h("div", { key: "c_" + t, style: { display: "flex", alignItems: "center", gap: "6px", margin: "2px 0" } },
+		swatch(t), nameCell(t),
+		h("span", { style: { width: "42px", textAlign: "right", color: "#c7d0da", fontVariantNumeric: "tabular-nums" } }, "~" + fmtCount(count)),
+		h("span", { title: word, style: { width: "74px", textAlign: "right", color: col, fontWeight: 800, fontVariantNumeric: "tabular-nums" } }, arrow + " " + (tr >= 0 ? "+" : "−") + fmtCount(tr) + "/s"));
+}
 function Tracker() {
 	if (!setting("showTracker", true)) return null;
 	const header = h("div", {
@@ -223,35 +309,33 @@ function Tracker() {
 	},
 		h("span", { style: { display: "inline-block", transform: trackerOpen ? "rotate(90deg)" : "none", fontSize: "9px", color: "#93a1b0" } }, "▶"),
 		h("span", { style: { fontWeight: 800 } }, "Balance"),
-		h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } }, "emit − remove, live /s"));
+		h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } }, "surplus / deficit"));
 	if (!trackerOpen) return header;
+	const kids = [header];
+
+	// ---- your loop: what the Sources/Removers actually push, per material ----
 	const { e: cfgE, r: cfgR } = cfgTotals();
-	const types = new Set(); for (const k of cfgE.keys()) types.add(k); for (const k of cfgR.keys()) types.add(k);
-	if (types.size === 0)
-		return h("div", null, header, h("div", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500, margin: "4px 0 2px" } }, "Place a Source or Remover to see each material's surplus / deficit here."));
-	const rows = [...types].sort((a, b) => nameOf(a).localeCompare(nameOf(b))).map((t) => {
-		const s = rate.get(t) || { e: 0, r: 0 };
-		const em = s.e, rm = s.r, net = em - rm;
-		const ce = cfgE.get(t) || 0, cr = cfgR.get(t) || 0;
-		let verdict, vcol;
-		if (net > 0.3) { verdict = "SURPLUS ↑"; vcol = "#8fe0aa"; }
-		else if (net < -0.3) { verdict = "DEFICIT ↓"; vcol = "#e79b9b"; }
-		else { verdict = "balanced"; vcol = "#c7d0da"; }
-		let tag = "";
-		if (ce > 0 && em < ce * 0.5) tag = "source backed up";
-		else if (cr > 0 && rm < cr * 0.5) tag = "remover starved";
-		return h("div", { key: t, style: { margin: "3px 0" } },
-			h("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
-				h("span", { style: { width: "11px", height: "11px", borderRadius: "3px", background: colorOf(t), border: "1px solid rgba(255,255,255,.3)", flexShrink: 0 } }),
-				h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, nameOf(t)),
-				h("span", { style: { color: "#8fe0aa", width: "44px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, "+" + fmt1(em)),
-				h("span", { style: { color: "#e79b9b", width: "44px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, "−" + fmt1(rm)),
-				h("span", { style: { color: vcol, fontWeight: 800, width: "52px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, (net >= 0 ? "+" : "") + fmt1(net))),
-			h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: "9px", fontWeight: 600, marginLeft: "17px" } },
-				h("span", { style: { color: vcol } }, verdict),
-				h("span", { style: { color: "#7f8b98" } }, tag || ("target +" + fmt1(ce) + " / −" + fmt1(cr)))));
-	});
-	return h("div", null, header, h("div", { style: { maxHeight: "184px", overflowY: "auto", marginTop: "3px" } }, rows));
+	const loopTypes = new Set(); for (const k of cfgE.keys()) loopTypes.add(k); for (const k of cfgR.keys()) loopTypes.add(k);
+	kids.push(h("div", { key: "lh", style: SUB_HEAD }, h("span", null, "Your loop"), h("span", { style: SUB_DIM }, "emit − remove /s")));
+	if (loopTypes.size === 0) kids.push(h("div", { key: "ln", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500, margin: "1px 0 2px" } }, "No Source or Remover placed yet."));
+	else kids.push(h("div", { key: "lr" }, [...loopTypes].sort((a, b) => nameOf(a).localeCompare(nameOf(b))).map((t) => loopRow(t, cfgE, cfgR))));
+
+	// ---- world census: every material actually on the map + its trend ----
+	if (censusOn()) {
+		const present = [...census.entries()].filter((p) => p[1] > 0);
+		kids.push(h("div", { key: "ch", style: SUB_HEAD }, h("span", null, "World census"),
+			h("span", { style: SUB_DIM }, censusInfo.at ? "all materials · sampled ≈2s" : "scanning…")));
+		if (!present.length) kids.push(h("div", { key: "cn", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Scanning the map… (first read takes a moment)"));
+		else {
+			const eps = censusInfo.eps || 0;
+			present.sort((a, b) => (Math.abs(censusTrend.get(b[0]) || 0) - Math.abs(censusTrend.get(a[0]) || 0)) || (b[1] - a[1]));
+			const top = present.slice(0, 14);
+			kids.push(h("div", { key: "cr", style: { maxHeight: "196px", overflowY: "auto" } }, top.map((p) => censusRow(p[0], p[1], eps))));
+			if (present.length > top.length) kids.push(h("div", { key: "cm", style: { fontSize: "9px", color: "#7f8b98", marginTop: "2px" } }, "+" + (present.length - top.length) + " more, near steady"));
+			kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "3px" } }, "~ = estimated from sampling; watch the arrow (trend), not the exact number."));
+		}
+	}
+	return h("div", null, kids);
 }
 
 function Panel() {
