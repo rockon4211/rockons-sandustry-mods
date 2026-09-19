@@ -110,6 +110,26 @@ let trackerStart = Date.now();                  // when the running totals began
 let _prevCensus = new Map(), _prevAt = 0, _restUntil = 0;
 let _sweep = null, _acc = new Map(), _cursor = 0;
 function censusOn() { return setting("worldCensus", true); }
+
+// --- persist the running totals so they survive a mod/scene reload (they were
+//     memory-only, which is why "since reset" kept clearing itself). We restore
+//     the cumulative counters, the census baseline and the start time; only the
+//     reset button (or the user) zeroes them. -------------------------------
+const TOTALS_KEY = "brandon.sandboxloop.totals";
+function saveTotals() {
+	safe(() => window.localStorage.setItem(TOTALS_KEY, JSON.stringify({ e: [...emitTot], r: [...rmTot], b: [...censusBase], ba: censusBaseAt, st: trackerStart })));
+}
+(function loadTotals() {
+	const raw = safe(() => window.localStorage.getItem(TOTALS_KEY));
+	const o = raw && safe(() => JSON.parse(raw));
+	if (!o) return;
+	if (Array.isArray(o.e)) for (const kv of o.e) emitTot.set(+kv[0], kv[1]);
+	if (Array.isArray(o.r)) for (const kv of o.r) rmTot.set(+kv[0], kv[1]);
+	if (Array.isArray(o.b)) for (const kv of o.b) censusBase.set(+kv[0], kv[1]);
+	if (typeof o.ba === "number") censusBaseAt = o.ba;
+	if (typeof o.st === "number") trackerStart = o.st;
+})();
+setInterval(saveTotals, 4000);   // keep the persisted copy fresh as totals grow
 setInterval(() => {
 	if (!isEnabled() || !inWorld() || !setting("showTracker", true) || !censusOn()) { _sweep = null; return; }
 	const now = Date.now();
@@ -141,7 +161,7 @@ setInterval(() => {
 		}
 		const dtPrev = _prevAt ? Math.max(0.5, (now - _prevAt) / 1000) : 2.4;
 		_prevCensus = fresh; _prevAt = now; census = fresh;
-		if (!censusBaseAt) { censusBase = new Map(fresh); censusBaseAt = now; }   // first sweep sets the "since reset" baseline
+		if (!censusBaseAt) { censusBase = new Map(fresh); censusBaseAt = now; saveTotals(); }   // first sweep sets (and persists) the "since reset" baseline
 		censusInfo = { step, eps: (scale * 1.5) / dtPrev, at: now };
 		_sweep = null; _restUntil = now + REST_MS;
 	}
@@ -281,6 +301,7 @@ function resetTotals() {
 	emitTot.clear(); rmTot.clear(); rate.clear();
 	censusBase = new Map(census); censusBaseAt = census.size ? Date.now() : 0;
 	trackerStart = Date.now();
+	saveTotals();
 	if (panelRepaint) panelRepaint((v) => v + 1);
 }
 // --- draggable panel position (drag the title bar) --------------------------
