@@ -2,11 +2,11 @@
 	"manifestVersion": 1,
 	"id": "brandon.sandboxloop",
 	"name": "Sandbox Loop",
-	"version": "0.1.0",
+	"version": "0.3.0",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",
-	"description": "Sources and Removers for an endless, self-balancing system. A Source emits a chosen material at an adjustable particles/sec; a Remover deletes one chosen material at an adjustable rate. Set the material + rate on the on-screen panel, then place the structure — each one bakes in the settings that were showing when you placed it, so you can run many different sources and sinks at once.",
+	"description": "Sources and Removers for an endless, self-balancing system, plus a balance tracker. A Source emits a chosen material at an adjustable particles/sec (decimals OK, up to 100/s); a Remover is a single block that deletes one chosen material at an adjustable rate. Each placed structure bakes in the settings showing on the panel when you place it. The Balance panel counts every material on the whole map, shows surplus/deficit per material (from the map count, with what your machines eat derived), keeps running totals, logs a 30s history you can export and graph, can lock Thermal Buffers at their peak temperature, and freezes everything while the game is paused.",
 	"dependencies": [],
 	"loadOrder": 0,
 	"configSchema": {
@@ -20,13 +20,13 @@
 			"type": "boolean",
 			"default": true,
 			"labelKey": "Show balance tracker",
-			"descriptionKey": "Show the live Balance section on the panel: each material's effective emit/s, remove/s and net rate, with a surplus / deficit verdict. Turn off to hide it (the Source/Remover controls stay)."
+			"descriptionKey": "Show the Balance section on the panel: per-material surplus/deficit for your loop, the whole-map counts and trends, running totals, and the history log. Turn off to hide it (the Source/Remover controls stay). The map scan and history log also stop while it's hidden."
 		},
 		"worldCensus": {
 			"type": "boolean",
 			"default": true,
-			"labelKey": "Track ALL materials (map scan)",
-			"descriptionKey": "Also scan the whole map so materials the loop never touches — water, steam, gold, anything the game itself makes — show a real surplus/deficit trend. The scan is bounded and time-sliced (a few thousand cheap reads spread across each second, with a rest between passes), so it stays cheap on any world size. Turn off for zero extra cost."
+			"labelKey": "Track ALL materials (whole-map scan)",
+			"descriptionKey": "Count every cell on the map so every material — water, steam, gold, anything the game itself makes — gets an exact count, trend and running total, and the 30s history log has something to record. The scan is time-sliced so it never stalls a frame; a pass takes ~30s (NORMAL) or ~2 min (GENTLE, ~5x lighter — pick on the panel). Turn off for zero extra cost; the Your loop section then judges by sources − removers only."
 		}
 	}
 }

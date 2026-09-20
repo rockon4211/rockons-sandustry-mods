@@ -46,7 +46,7 @@ const CFG_KEY = "brandon.sandboxloop.instances";   // posKey -> {type,rate}
 const PANEL_KEY = "brandon.sandboxloop.panel";     // current panel selections
 
 // --- material palette (same enumeration the Matter Gun uses) ----------------
-let palette = [];
+let palette = [], paletteByType = new Map();
 function buildPalette() {
 	const types = safe(() => api.elements.getRegisteredTypes(), []) || [];
 	const MT = safe(() => sandkit.enums.MatterType) || {};
@@ -61,6 +61,7 @@ function buildPalette() {
 		};
 	}).filter((p) => p.matterType !== (safe(() => sandkit.enums.MatterType.Particle)))
 	  .sort((a, b) => a.name.localeCompare(b.name));
+	paletteByType = new Map(palette.map((p) => [p.type, p]));
 }
 buildPalette();
 setTimeout(buildPalette, 3000);
@@ -71,12 +72,14 @@ function defaultType() {
 	const sand = palette.find((p) => /^sand$/i.test(p.name)) || palette.find((p) => /redsand|sand/i.test(p.name));
 	return (sand || palette[0] || { type: null }).type;
 }
-function nameOf(type) { const p = palette.find((q) => q.type === type); return p ? p.name : ("type " + type); }
-function colorOf(type) { const p = palette.find((q) => q.type === type); return p ? p.color : "#8a8a8a"; }
+function nameOf(type) { const p = paletteByType.get(type); return p ? p.name : ("type " + type); }
+function colorOf(type) { const p = paletteByType.get(type); return p ? p.color : "#8a8a8a"; }
 
 // --- panel config (current selections, baked into the next placed structure) -
+const RATE_MAX = 100;   // particles/sec; decimals allowed (0.5/s = one every 2s)
 let emitCfg = { type: null, rate: 10 };
 let removeCfg = { type: null, rate: 8 };
+function clampRate(v) { v = +v; if (!isFinite(v) || v < 0) v = 0; if (v > RATE_MAX) v = RATE_MAX; return Math.round(v * 100) / 100; }
 (function loadPanel() {
 	const raw = safe(() => window.localStorage.getItem(PANEL_KEY));
 	const o = raw && safe(() => JSON.parse(raw));
@@ -88,6 +91,25 @@ function savePanel() { safe(() => window.localStorage.setItem(PANEL_KEY, JSON.st
 const cfgMap = new Map();   // "x,y" -> {type, rate}
 const runtime = new Map();  // "x,y" -> {accum, last}  (emit/remove pacing)
 function ikey(x, y) { return x + "," + y; }
+function cfgFor(s, fallback) { return cfgMap.get(ikey(s.x, s.y)) || fallback; }
+
+// --- structure cache ---------------------------------------------------------
+// api.structures.forEachOfType walks EVERY structure on the map (~29k here) on
+// every call — the game keeps no per-type index. The emit, remove and thermal
+// loops used to call it ~40×/s. Instead we cache the live structure objects for
+// the few types we care about and refresh when a building is placed or removed
+// (plus a 5s safety refresh, which also covers loading a different save).
+const structCache = new Map();   // id -> { ver, at, list }
+let _structVer = 0;
+function structsChanged() { _structVer++; }
+function eachOf(id) {
+	const c = structCache.get(id), now = Date.now();
+	if (c && c.ver === _structVer && now - c.at < 5000) return c.list;
+	const list = [];
+	safe(() => api.structures.forEachOfType(id, (s) => { if (typeof s.x === "number") list.push(s); }));
+	structCache.set(id, { ver: _structVer, at: now, list });
+	return list;
+}
 
 // --- throughput tracking (per material type) --------------------------------
 // emitTot/rmTot count what the loops ACTUALLY do (a place / delete that found
@@ -121,21 +143,20 @@ function cfgTotals() {
 
 // --- world census (counts EVERY material on the whole map, so materials the
 //     loop never touches — water, steam, prismite, anything the game itself
-//     makes — show a real surplus/deficit). Every cell is read for an exact
-//     count; the work is time-sliced across ticks so it never stalls a frame,
-//     and trend = the change in a material's count from one sweep to the next.
-// Exact full-map scan: every cell is read (so narrow/concentrated blobs like a
-// prismite column can't be stepped over the way coarse sampling did). It's time-
-// sliced — a bounded budget of cells per 100ms tick — so a whole sweep spreads
-// over ~SWEEP_SECS and never stalls a frame. Budget adapts to world size.
-// Ticks every 50ms. Exact aims to finish a sweep in ~SWEEP_SECS even on a huge
-// world (this one is 3840x3840 = 14.7M cells) by reading cells directly in a
-// tight loop (no per-cell wrapper); fast samples a ~TARGET-point lattice.
-const BUDGET_MAX = 25000, BUDGET_MIN = 4000, SWEEP_SECS = 30, REST_MS = 400;   // exact-mode scan (cells per 50ms tick)
-const TARGET = 100000, COARSE_BUDGET = 20000, COARSE_REST = 1200;              // fast-mode coarse sampling
+//     makes — show a real surplus/deficit). Every cell is read (an exact count;
+//     coarse sampling stepped over thin blobs like a prismite column). The work
+//     is time-sliced: a bounded budget of cells per 50ms tick in a tight loop
+//     (no per-cell wrapper — that was most of the cost on 14.7M cells), so a
+//     sweep never stalls a frame. Speed: NORMAL finishes a pass in ~30s,
+//     GENTLE spreads it over ~2 min at about a fifth of the CPU. Trend = the
+//     change in a material's count from one sweep to the next, per second of
+//     game time.
+const BUDGET_MAX = 25000, BUDGET_MIN = 1500, REST_MS = 400;
+const SWEEP_SECS_NORMAL = 30, SWEEP_SECS_GENTLE = 120;
+const EPS = 0.75;   // cells/s below which a trend counts as steady
 let census = new Map();        // type -> estimated cell count (last full sweep)
 let censusTrend = new Map();   // type -> estimated Δ cells / second
-let censusInfo = { step: 0, eps: 0, at: 0 };
+let censusInfo = { at: 0 };   // at = wall-clock ms of the last completed sweep (0 = none yet)
 let censusBase = new Map(), censusBaseAt = 0;   // baseline for the "since reset" running total
 let trackedBase = 0, trackerStartSim = simNow();   // game-time (not wall-clock) the running totals have been counting
 function trackedMs() { return trackedBase + (simNow() - trackerStartSim); }
@@ -162,25 +183,16 @@ function saveTotals() {
 	if (typeof o.tm === "number") { trackedBase = o.tm; trackerStartSim = simNow(); }
 })();
 setInterval(saveTotals, 4000);   // keep the persisted copy fresh as totals grow
-// --- exact vs fast census mode ----------------------------------------------
-// fast  = coarse sampling (cheap, ~2s refresh, estimates — can miss thin blobs)
-// exact = read every cell (heavier, ~20s refresh, exact — catches everything)
-// The "since reset" running total only makes sense with exact counts, so it's
-// hidden in fast mode. Default: fast.
-let censusExactMode = false;
-(function loadExact() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.exact")) === "1") censusExactMode = true; })();
-function censusExact() { return censusExactMode; }
-function setExact(v) {
-	censusExactMode = !!v;
-	safe(() => window.localStorage.setItem("brandon.sandboxloop.exact", censusExactMode ? "1" : "0"));
-	// switching modes: throw away the in-progress/last run so estimate and exact
-	// counts never mix, and re-baseline the "since reset" from the new mode.
-	_sweep = null; _prevAt = 0; _prevCensus = new Map(); census = new Map(); censusTrend = new Map();
-	censusBase = new Map(); censusBaseAt = 0; saveTotals();
-	censusInfo = { step: 0, eps: 0, at: 0 };   // "first scan not done yet" again — so the progress banner shows for the new mode
-	_restUntil = 0;                            // and start the new mode's first sweep immediately
+// --- scan speed ---------------------------------------------------------------
+let scanGentle = false;
+(function loadSpeed() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.scangentle")) === "1") scanGentle = true; safe(() => window.localStorage.removeItem("brandon.sandboxloop.exact")); })();
+function setGentle(v) {
+	scanGentle = !!v;
+	safe(() => window.localStorage.setItem("brandon.sandboxloop.scangentle", scanGentle ? "1" : "0"));
+	if (_sweep) _sweep.budget = sweepBudget(_sweep.total);   // takes effect on the running sweep too
 	if (panelRepaint) panelRepaint((x) => x + 1);
 }
+function sweepBudget(total) { return Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.ceil(total / ((scanGentle ? SWEEP_SECS_GENTLE : SWEEP_SECS_NORMAL) * 20)))); }
 // watchlist: show only the materials you've pinned (★) instead of the top movers
 let censusWatchOnly = false;
 (function loadWatch() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.watch")) === "1") censusWatchOnly = true; })();
@@ -198,17 +210,8 @@ setInterval(() => {
 	if (_sweep && (_sweep.W !== W || _sweep.H !== H)) _sweep = null;   // a different world loaded → start over
 	if (!_sweep) {
 		if (now < _restUntil) return;
-		const exact = censusExact();
-		let step, cols, total, budget;
-		if (exact) {
-			step = 1; cols = W; total = W * H;
-			budget = Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.ceil(total / (SWEEP_SECS * 20))));
-		} else {
-			step = Math.max(1, Math.round(Math.sqrt((W * H) / TARGET)));
-			cols = Math.ceil(W / step); total = cols * Math.ceil(H / step);
-			budget = COARSE_BUDGET;
-		}
-		_sweep = { W, H, step, cols, total, budget, exact }; _acc = new Map(); _cursor = 0;
+		const total = W * H;
+		_sweep = { W, H, cols: W, total, budget: sweepBudget(total) }; _acc = new Map(); _cursor = 0;
 	}
 	const s = _sweep, el = api.elements, acc = _acc;
 	let n = 0;
@@ -217,26 +220,24 @@ setInterval(() => {
 	// was most of the cost on a 14.7M-cell sweep.
 	try {
 		while (_cursor < s.total && n < s.budget) {
-			const cx = (_cursor % s.cols) * s.step, cy = ((_cursor / s.cols) | 0) * s.step;
+			const cx = _cursor % s.cols, cy = (_cursor / s.cols) | 0;
 			const t = el.getResolvedTypeAtCell(cx, cy);
 			if (t !== null && t !== undefined) acc.set(t, (acc.get(t) || 0) + 1);
 			_cursor++; n++;
 		}
 	} catch (e) { _cursor++; }   // skip a bad cell, keep going
 	if (_cursor >= s.total) {
-		const scale = s.step * s.step, fresh = new Map();
-		for (const [t, c] of acc) fresh.set(t, c * scale);
+		const fresh = acc;
 		censusTrend = new Map();
 		if (_prevAt && sn - _prevAt >= 1000) {   // trend per second of GAME time (a pause between sweeps doesn't dilute it)
 			const dt = (sn - _prevAt) / 1000;
 			const types = new Set(); for (const k of fresh.keys()) types.add(k); for (const k of _prevCensus.keys()) types.add(k);
 			for (const t of types) censusTrend.set(t, ((fresh.get(t) || 0) - (_prevCensus.get(t) || 0)) / dt);
 		}
-		const dtPrev = _prevAt ? Math.max(0.5, (sn - _prevAt) / 1000) : 2.4;
 		_prevCensus = fresh; _prevAt = sn; census = fresh;
 		if (!censusBaseAt) { censusBase = new Map(fresh); censusBaseAt = now; saveTotals(); }   // first sweep sets (and persists) the "since reset" baseline
-		censusInfo = { exact: s.exact, eps: s.exact ? 0.75 : (scale * 1.5) / dtPrev, at: now };
-		_sweep = null; _restUntil = now + (s.exact ? REST_MS : COARSE_REST);
+		censusInfo = { at: now };
+		_sweep = null; _restUntil = now + REST_MS;
 	}
 }, 50);
 
@@ -245,10 +246,11 @@ setInterval(() => {
 // loop's effective source/remover rates, is appended and persisted — so the
 // export can be graphed over hours or days. Fine 30s samples are kept for the
 // last 6h; older ones are thinned to one per 5 minutes and kept for 48h.
-// Reset / FAST↔EXACT switches don't touch the log; "clear log" is its own
+// Reset doesn't touch the log; "clear log" is its own
 // two-click button. Each sample: {t: ms, x: 1 if exact, c: {type: count},
 //                                 e: {type: emit/s}, r: {type: remove/s}, k: 1 = 5-min keeper,
 //                                 st: game-time ms — the clock that stops when the game is paused}
+// histExport() wraps it with the material names/colours and the loop config.
 const HIST_KEY = "brandon.sandboxloop.history";
 const HIST_MS = 30000, HIST_FINE_MS = 6 * 3600e3, HIST_KEEP_MS = 48 * 3600e3, HIST_COARSE_MS = 300e3;
 let hist = [];
@@ -271,7 +273,7 @@ function recordHist() {
 	const c = {}; for (const [t, n] of census) if (n > 0) c[t] = Math.round(n);
 	const e = {}, r = {};
 	for (const [t, s] of rate) { if (s.e > 0.05) e[t] = Math.round(s.e * 10) / 10; if (s.r > 0.05) r[t] = Math.round(s.r * 10) / 10; }
-	const s = { t: now, st: Math.round(simNow()), x: censusExact() ? 1 : 0, c, e, r };   // st = game-time ms (pauses excluded)
+	const s = { t: now, st: Math.round(simNow()), x: 1, c, e, r };   // st = game-time ms (pauses excluded); x: 1 = exact count
 	const bucket = Math.floor(now / HIST_COARSE_MS);
 	if (bucket !== _histBucket) { s.k = 1; _histBucket = bucket; }
 	hist.push(s); thinHist(now); saveHist();
@@ -324,9 +326,21 @@ function histClear() {
 function saveCfg() { const o = {}; for (const [k, v] of cfgMap) o[k] = v; safe(() => window.localStorage.setItem(CFG_KEY, JSON.stringify(o))); }
 
 safe(() => api.events.on("building:placed", (p) => {
+	structsChanged();
 	const s = p && p.structure; if (!s) return;
 	if (s.type === SRC_ID) { cfgMap.set(ikey(s.x, s.y), { type: (emitCfg.type != null ? emitCfg.type : defaultType()), rate: emitCfg.rate }); saveCfg(); }
 	else if (s.type === SNK_ID) { cfgMap.set(ikey(s.x, s.y), { type: (removeCfg.type != null ? removeCfg.type : defaultType()), rate: removeCfg.rate }); saveCfg(); }
+}));
+// a deconstructed Source/Remover forgets its baked settings (they used to linger in storage forever)
+function forgetAt(x, y) { const k = ikey(x, y); if (cfgMap.delete(k)) saveCfg(); runtime.delete(k); runtime.delete("r" + k); }
+safe(() => api.events.on("building:removed", (p) => {
+	structsChanged();
+	if (p && (p.structureId === SRC_ID || p.structureId === SNK_ID) && typeof p.x === "number") forgetAt(p.x, p.y);
+}));
+safe(() => api.events.on("structures:removed", (p) => {
+	structsChanged();
+	const list = p && p.structures; if (!Array.isArray(list)) return;
+	for (const s of list) if (s && (s.type === SRC_ID || s.type === SNK_ID) && typeof s.x === "number") forgetAt(s.x, s.y);
 }));
 
 // --- register the two structures --------------------------------------------
@@ -362,8 +376,6 @@ setInterval(() => {
 
 // --- emit loop --------------------------------------------------------------
 const TICK = 200;
-function eachOf(id) { const out = []; safe(() => api.structures.forEachOfType(id, (s) => { if (typeof s.x === "number") out.push({ x: s.x, y: s.y }); })); return out; }
-function cfgFor(s, fallback) { return cfgMap.get(ikey(s.x, s.y)) || fallback; }
 
 setInterval(() => {
 	if (!running()) return;                       // paused → no emitting, and no catch-up burst after (pacing runs on game time)
@@ -460,16 +472,15 @@ function setThermalLock(v) {
 }
 setInterval(() => {
 	if (!running()) return;
-	let n = 0;
-	safe(() => api.structures.forEachOfType(THERMAL_ID, (s) => {
-		n++;
-		if (!thermalLock || typeof s.x !== "number") return;
+	const list = eachOf(THERMAL_ID);
+	thermalCount = list.length;
+	if (!thermalLock) return;
+	for (const s of list) {
 		const t = (s.data && typeof s.data.temperature === "number") ? s.data.temperature : 0;
 		const k = ikey(s.x, s.y), pin = thermalPins.get(k);
 		if (pin === undefined || Math.abs(t) >= Math.abs(pin)) thermalPins.set(k, t);      // charging up (or first sight): follow it
 		else if (t !== pin) safe(() => api.structures.setData(s, { temperature: pin }));   // draining: put it back
-	}));
-	thermalCount = n;
+	}
 }, 50);
 
 // --- config panel (interactive) ---------------------------------------------
@@ -482,7 +493,7 @@ function resetTotals() {
 	// also restart the whole-map scan from scratch: drop the current/last sweep
 	// so the "since reset" baseline comes from a brand-new count, not a stale one
 	_sweep = null; _prevAt = 0; _prevCensus = new Map(); census = new Map(); censusTrend = new Map();
-	censusInfo = { step: 0, eps: 0, at: 0 }; _restUntil = 0;
+	censusInfo = { at: 0 }; _restUntil = 0;
 	censusBase = new Map(); censusBaseAt = 0;   // first sweep after the reset sets the baseline
 	trackedBase = 0; trackerStartSim = simNow();
 	saveTotals();
@@ -529,13 +540,16 @@ function pinnedFirst(arr, keyOf, restCmp) {
 function Row(label, cfg, accent) {
 	const opts = palette.map((p) => h("option", { value: p.type, key: p.type }, p.name));
 	const onMat = (e) => { cfg.type = +e.target.value; savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
-	const onRate = (e) => { cfg.rate = +e.target.value; savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
+	const onRate = (e) => { cfg.rate = clampRate(e.target.value); savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
+	const stop = (e) => { if (e.stopPropagation) e.stopPropagation(); };   // keep typing from reaching the game's hotkeys
 	return h("div", { style: { display: "flex", alignItems: "center", gap: "7px", margin: "3px 0" } },
 		h("span", { style: { width: "58px", color: accent, fontWeight: 700 } }, label),
 		h("span", { style: { width: "12px", height: "12px", borderRadius: "3px", background: colorOf(cfg.type), border: "1px solid rgba(255,255,255,.3)", flexShrink: 0 } }),
-		h("select", { value: cfg.type == null ? "" : cfg.type, onChange: onMat, style: { width: "108px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px" } }, opts),
-		h("input", { type: "range", min: "0", max: "60", value: cfg.rate, onChange: onRate, style: { width: "96px" } }),
-		h("span", { style: { width: "34px", textAlign: "right", fontVariantNumeric: "tabular-nums" } }, cfg.rate + "/s"));
+		h("select", { value: cfg.type == null ? "" : cfg.type, onChange: onMat, style: { width: "100px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px" } }, opts),
+		h("input", { type: "range", min: "0", max: String(RATE_MAX), step: "0.5", value: cfg.rate, onChange: onRate, onInput: onRate, title: "drag for a quick rate; type an exact one in the box", style: { width: "58px" } }),
+		h("input", { type: "number", min: "0", max: String(RATE_MAX), step: "0.1", value: cfg.rate, onChange: onRate, onKeyDown: stop, onKeyUp: stop, onKeyPress: stop, title: "particles per second — decimals OK (0.5 = one every 2s), up to " + RATE_MAX,
+			style: { width: "52px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px 3px", fontVariantNumeric: "tabular-nums" } }),
+		h("span", { style: { fontSize: "10px", color: "#93a1b0" } }, "/s"));
 }
 // --- balance tracker (per-material surplus / deficit) -----------------------
 let trackerOpen = true;
@@ -565,20 +579,18 @@ function loopRow(t, cfgE, cfgR) {
 	// (e.g. soil fed to shakers reads +30/s "surplus" forever while the map is flat).
 	const haveMap = censusInfo.at > 0 && (census.has(t) || censusTrend.has(t));
 	const mapTrend = haveMap ? (censusTrend.get(t) || 0) : null;
-	const eps = censusInfo.eps || 0.75;
-	const k = haveMap ? (mapTrend > eps ? "up" : mapTrend < -eps ? "down" : "flat")
+	const k = haveMap ? (mapTrend > EPS ? "up" : mapTrend < -EPS ? "down" : "flat")
 	                  : (modNet > 0.3 ? "up" : modNet < -0.3 ? "down" : "flat");
 	// what the game itself is doing to it = what we put in − what we took out − what the map gained
 	const machines = haveMap ? (modNet - mapTrend) : null;
 	let tag = "";
 	if (ce > 0 && em < ce * 0.5) tag = "source can't keep up — backing up";
 	else if (cr > 0 && rm < cr * 0.5) tag = "remover idle — nothing arriving";
-	const ex = censusExact(), since = haveMap ? ((census.get(t) || 0) - (censusBase.get(t) || 0)) : 0;
+	const since = haveMap ? ((census.get(t) || 0) - (censusBase.get(t) || 0)) : 0;
 	const line3 = [];
 	if (machines !== null && Math.abs(machines) > 0.3) line3.push(machines > 0 ? ["machines eat ≈ ", cspan("#c7a0e8", fmt1(machines) + "/s")] : ["machines make ≈ ", cspan("#c7a0e8", fmt1(-machines) + "/s")]);
-	if (haveMap && ex) line3.push(["since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since) + " on map")]);
-	else if (haveMap) line3.push([h("span", { style: { color: "#6f7b88" } }, "since-reset total needs EXACT")]);
-	else line3.push([h("span", { style: { color: "#6f7b88" } }, "map count pending…")]);
+	if (haveMap) line3.push(["since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since) + " on map")]);
+	else line3.push([h("span", { style: { color: "#6f7b88" } }, censusOn() ? "map count pending…" : "map scan is off (mod settings)")]);
 	return h("div", { key: "l_" + t, style: { margin: "6px 0" } },
 		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, pinStar(t), swatch(t), nameCell(t), badge(k === "up" ? "SURPLUS" : k === "down" ? "DEFICIT" : "BALANCED", k)),
 		h("div", { style: SUBLINE }, "sources ", cspan("#8fe0aa", "+" + fmt1(em) + "/s"), "  removers ", cspan("#e79b9b", "−" + fmt1(rm) + "/s"),
@@ -587,16 +599,12 @@ function loopRow(t, cfgE, cfgR) {
 			tag ? h("span", { style: { color: "#e0b060", display: "block" } }, "⚠ " + tag) : null));
 }
 // one material in the "Whole map" section (sampled count + trend)
-function censusRow(t, count, eps) {
-	const tr = censusTrend.get(t) || 0, base = censusBase.get(t) || 0, since = count - base;
-	const k = tr > eps ? "up" : tr < -eps ? "down" : "flat";
-	const rows = [
+function censusRow(t, count) {
+	const tr = censusTrend.get(t) || 0, since = count - (censusBase.get(t) || 0);
+	const k = tr > EPS ? "up" : tr < -EPS ? "down" : "flat";
+	return h("div", { key: "c_" + t, style: { margin: "6px 0" } },
 		h("div", { key: "h", style: { display: "flex", alignItems: "center", gap: "7px" } }, pinStar(t), swatch(t), nameCell(t), badge(k === "up" ? "RISING" : k === "down" ? "FALLING" : "STEADY", k)),
-		h("div", { key: "a", style: SUBLINE }, cspan("#c7d0da", fmtCount(count)), " on the map  ·  now ", cspan(kindCol(k), fmtSigned(tr) + "/s")),
-	];
-	// running total only makes sense with exact counts — hide it in fast mode
-	if (censusExact()) rows.push(h("div", { key: "b", style: SUBLINE }, "since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since))));
-	return h("div", { key: "c_" + t, style: { margin: "6px 0" } }, rows);
+		h("div", { key: "a", style: SUBLINE }, cspan("#c7d0da", fmtCount(count)), " on the map  ·  now ", cspan(kindCol(k), fmtSigned(tr) + "/s"), "  ·  since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since))));
 }
 function Tracker() {
 	if (!setting("showTracker", true)) return null;
@@ -622,40 +630,40 @@ function Tracker() {
 	// ---- your loop: what the Sources/Removers actually push, per material ----
 	const { e: cfgE, r: cfgR } = cfgTotals();
 	const loopTypes = new Set(); for (const k of cfgE.keys()) loopTypes.add(k); for (const k of cfgR.keys()) loopTypes.add(k);
-	kids.push(h("div", { key: "lh", style: SUB_HEAD }, h("span", null, "Your loop"), h("span", { style: SUB_DIM }, "Sources − Removers")));
+	kids.push(h("div", { key: "lh", style: SUB_HEAD }, h("span", null, "Your loop"), h("span", { style: SUB_DIM }, "materials your Sources / Removers touch")));
 	if (loopTypes.size === 0) kids.push(h("div", { key: "ln", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500, margin: "1px 0 2px" } }, "No Source or Remover placed yet."));
 	else kids.push(h("div", { key: "lr" }, pinnedFirst([...loopTypes], (t) => t, (a, b) => nameOf(a).localeCompare(nameOf(b))).map((t) => loopRow(t, cfgE, cfgR))));
 
 	// ---- world census: every material actually on the map + its trend ----
 	if (censusOn()) {
-		const ex = censusExact(), watch = censusWatchOnly, eps = censusInfo.eps || 0;
+		const gentle = scanGentle, watch = censusWatchOnly;
 		kids.push(h("div", { key: "ch", style: SUB_HEAD }, h("span", null, "Whole map"),
 			h("span", { style: { display: "flex", gap: "5px", alignItems: "center" } },
 				h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setWatch(!watch); },
 					title: watch ? "Watchlist: showing ONLY the materials you pinned (★). Tap to show top movers." : "Showing the top movers. Tap to show only your pinned (★) materials.",
 					style: pillStyle(watch, "#ffd166", "#3a2f12") }, watch ? "★ WATCH" : "TOP"),
-				h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setExact(!ex); },
-					title: ex ? "Exact: reads every cell (heavier, ~20s refresh, catches everything). Tap for fast." : "Fast: coarse sampling (cheap, ~2s refresh, can miss thin blobs, no running total). Tap for exact.",
-					style: pillStyle(ex, "#8fe0aa", "#16351f") }, ex ? "EXACT ✓" : "FAST"))));
-		// live scan status. Exact sweeps take ~30s EVERY time, so always show where
-		// the current sweep is; the first one gets a louder banner.
-		const scanning = !!_sweep, pct = censusProgress();
+				h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setGentle(!gentle); },
+					title: gentle ? "GENTLE: the exact scan is spread over ~2 min per pass, about a fifth of the CPU. Tap for NORMAL (~30s per pass)." : "NORMAL: an exact pass every ~30s. If the game stutters, tap for GENTLE (~2 min per pass, much lighter).",
+					style: pillStyle(gentle, "#8fe0aa", "#16351f") }, gentle ? "GENTLE" : "NORMAL"))));
+		// live scan status: a pass takes ~30s (NORMAL) or ~2 min (GENTLE) every
+		// time, so always show where the current one is; the first gets a louder banner.
+		const scanning = !!_sweep, pct = censusProgress(), passSecs = gentle ? SWEEP_SECS_GENTLE : SWEEP_SECS_NORMAL;
 		const ago = censusInfo.at ? Math.max(0, Math.round((Date.now() - censusInfo.at) / 1000)) : null;
 		if (!censusInfo.at) kids.push(h("div", { key: "cp", style: { fontSize: "10px", color: "#e0b060", fontWeight: 700, margin: "2px 0" } },
-			(ex ? "First exact scan of the whole map… " : "First scan… ") + pct + "%" + (ex ? "  (big world — ~30s)" : "")));
+			"First scan of the whole map… " + pct + "%  (~" + fmtDur(passSecs * 1000) + " per pass)"));
 		else kids.push(h("div", { key: "cs", style: { fontSize: "9.5px", color: scanning ? "#e0b060" : "#7f8b98", fontWeight: 600, margin: "1px 0 2px", display: "flex", alignItems: "center", gap: "6px" } },
 			scanning
 				? [h("span", { key: "b", style: { display: "inline-block", width: "90px", height: "5px", background: "#232a31", borderRadius: "3px", overflow: "hidden" } },
 						h("span", { style: { display: "block", width: pct + "%", height: "100%", background: "#e0b060" } })),
-				   h("span", { key: "t" }, (ex ? "rescanning… " : "sampling… ") + pct + "%")]
-				: h("span", null, simPaused ? "paused — scan resumes with the game" : "counts from " + ago + "s ago" + (ex ? " · next exact scan soon" : ""))));
+				   h("span", { key: "t" }, "rescanning… " + pct + "%")]
+				: h("span", null, simPaused ? "paused — scan resumes with the game" : "counts from " + ago + "s ago · next pass soon")));
 		if (watch) {
 			const pins = [...pinned];
 			if (!pins.length) kids.push(h("div", { key: "cw", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500, margin: "2px 0" } },
 				"Watchlist is empty — tap ", h("span", { style: { color: "#ffd166" } }, "★"), " on any material to add it (it'll show here even at 0)."));
 			else {
 				const rows = pins.map((t) => [t, census.get(t) || 0]).sort((a, b) => nameOf(a[0]).localeCompare(nameOf(b[0])));
-				kids.push(h("div", { key: "cr", style: { maxHeight: "320px", overflowY: "auto" } }, rows.map((p) => censusRow(p[0], p[1], eps))));
+				kids.push(h("div", { key: "cr", style: { maxHeight: "320px", overflowY: "auto" } }, rows.map((p) => censusRow(p[0], p[1]))));
 			}
 		} else if (!census.size) {
 			if (censusInfo.at) kids.push(h("div", { key: "cn", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "No loose material found on the map."));
@@ -664,12 +672,11 @@ function Tracker() {
 			const ordered = pinnedFirst(present, (p) => p[0], (a, b) => (Math.abs(censusTrend.get(b[0]) || 0) - Math.abs(censusTrend.get(a[0]) || 0)) || (b[1] - a[1]));
 			const pinnedCount = ordered.filter((p) => pinned.has(p[0])).length;
 			const top = ordered.slice(0, Math.max(12, pinnedCount));   // always keep every pinned row visible
-			kids.push(h("div", { key: "cr", style: { maxHeight: "260px", overflowY: "auto" } }, top.map((p) => censusRow(p[0], p[1], eps))));
+			kids.push(h("div", { key: "cr", style: { maxHeight: "260px", overflowY: "auto" } }, top.map((p) => censusRow(p[0], p[1]))));
 			if (present.length > top.length) kids.push(h("div", { key: "cm", style: { fontSize: "9px", color: "#7f8b98", marginTop: "2px" } }, "+" + (present.length - top.length) + " more, near steady — pin them or use ★ WATCH"));
 		}
 		kids.push(h("div", { key: "ce", style: { fontSize: "9px", color: "#6f7b88", marginTop: "4px", lineHeight: 1.5 } },
-			ex ? "Exact scans every material on the map (~20s)." : "Fast sampled estimate — running totals hidden (they'd be inexact).",
-			"  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), watch ? " to add/remove from the watchlist." : " to pin; ★ WATCH shows only pinned."));
+			"Every cell on the map is counted each pass.  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), watch ? " to add/remove from the watchlist." : " to pin; ★ WATCH shows only pinned."));
 	}
 	kids.push(HistoryRow());
 	return h("div", null, kids);
@@ -690,25 +697,24 @@ function HistoryRow() {
 				style: Object.assign({}, SMBTN, armed ? { background: "#7a2f2f", color: "#ffd0d0", border: "1px solid #a04040" } : { color: "#b39a9a", border: "1px solid #5a3a3a" }) }, armed ? "click again" : "clear")),
 		(histMsg || histErr) ? h("div", { style: { fontSize: "9.5px", color: histErr ? "#e79b9b" : "#8fb98f", fontWeight: 700, marginTop: "2px" } }, histErr || histMsg) : null,
 		h("div", { style: { fontSize: "9px", color: "#6f7b88", marginTop: "3px", lineHeight: 1.5 } },
-			"Logs every material's map count (+ your sources/removers) every 30s: last 6h in full, older thinned to 5-min points, kept 48h. Survives resets and restarts."));
+			"Logs every material's exact map count (+ your sources/removers) every 30s: last 6h in full, older thinned to 5-min points, kept 48h. Survives resets and restarts; pauses aren't logged."));
 }
 
 // --- cleanup: remove every Source/Remover the mod knows about, including ones
-//     that render as blank/red "error" blocks (forEachOfType still finds them by
-//     type, and we hit a spread of footprint cells so it works whatever shape —
-//     basin, block, zone or tray — placed them). This is the reliable way to
-//     clear Removers you can't click on. ---------------------------------------
+//     that render as blank/red "error" blocks. Only cells INSIDE each
+//     structure's own footprint are touched (Source 12×12, Remover 4×4), so a
+//     conveyor or machine next door is never removed by accident. -------------
+const FOOTPRINT = { [SRC_ID]: [[0, 0], [5, 5], [11, 9]], [SNK_ID]: [[0, 0], [3, 3]] };
 function clearSandbox() {
 	let n = 0;
 	for (const id of [SRC_ID, SNK_ID]) {
 		for (const s of eachOf(id)) {
-			const cells = [[s.x, s.y], [s.x + 1, s.y + 1], [s.x + 3, s.y + 3], [s.x + 6, s.y + 6], [s.x + 11, s.y + 11], [s.x, s.y + 10], [s.x + 6, s.y + 11]];
-			for (const c of cells) safe(() => api.structures.removeAtCellWhenIdle(c[0], c[1]));
-			cfgMap.delete(ikey(s.x, s.y));
+			for (const c of FOOTPRINT[id]) safe(() => api.structures.removeAtCellWhenIdle(s.x + c[0], s.y + c[1]));
+			forgetAt(s.x, s.y);
 			n++;
 		}
 	}
-	saveCfg();
+	structsChanged();
 	return n;
 }
 let clearArmed = 0, clearMsg = "";
