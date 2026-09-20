@@ -18,6 +18,28 @@ function inWorld() {
 	return a !== undefined && a !== null && (menus.length ? !menus.includes(a) : a > 2);
 }
 
+// --- pause detection + game clock -------------------------------------------
+// The sim tick (api.time.getTick) stops advancing while the game is paused
+// (pause menu, tech tree, build menu…). We poll it 10×/s: no advance for two
+// polls = paused. simMs is a clock that only runs while the sim runs (and is
+// persisted, so it keeps counting across restarts). Every rate, trend,
+// duration, the emit/remove pacing and the history log use it instead of the
+// wall clock — so pausing the game freezes all of them.
+const SIM_KEY = "brandon.sandboxloop.simclock";
+let simMs = safe(() => +window.localStorage.getItem(SIM_KEY)) || 0;
+let simPaused = false, _lastTick = -1, _lastPoll = Date.now(), _stillPolls = 0;
+setInterval(() => {
+	const now = Date.now(), dt = Math.min(1000, now - _lastPoll); _lastPoll = now;
+	if (!inWorld()) { simPaused = true; _lastTick = -1; return; }
+	const tick = safe(() => api.time.getTick());
+	if (typeof tick !== "number") { simPaused = false; simMs += dt; return; }   // no tick API → assume running while in a world
+	if (tick !== _lastTick) { if (!simPaused && _lastTick !== -1) simMs += dt; _lastTick = tick; _stillPolls = 0; simPaused = false; }
+	else if (++_stillPolls >= 2) simPaused = true;
+}, 100);
+setInterval(() => safe(() => window.localStorage.setItem(SIM_KEY, String(Math.round(simMs)))), 4000);
+function simNow() { return simMs; }
+function running() { return isEnabled() && inWorld() && !simPaused; }
+
 const SRC_ID = "brandonSandboxSource", SRC_SPRITE = "brandonSandboxSourceSprite";
 const SNK_ID = "brandonSandboxSink",   SNK_SPRITE = "brandonSandboxSinkSprite";
 const CFG_KEY = "brandon.sandboxloop.instances";   // posKey -> {type,rate}
@@ -75,9 +97,11 @@ function ikey(x, y) { return x + "," + y; }
 const emitTot = new Map(), rmTot = new Map();
 function bump(m, type) { if (type == null) return; m.set(type, (m.get(type) || 0) + 1); }
 const rate = new Map();      // type -> {e, r, _le, _lr}
-let lastSample = Date.now();
+let lastSample = simNow();
 setInterval(() => {
-	const now = Date.now(), dt = Math.max(0.001, (now - lastSample) / 1000); lastSample = now;
+	if (simPaused) { lastSample = simNow(); return; }   // paused: hold every rate where it is
+	const now = simNow(), dt = (now - lastSample) / 1000; lastSample = now;
+	if (dt < 0.25) return;
 	const types = new Set(); for (const k of emitTot.keys()) types.add(k); for (const k of rmTot.keys()) types.add(k); for (const k of rate.keys()) types.add(k);
 	const A = 0.4; // EMA smoothing on the per-second rate
 	for (const t of types) {
@@ -113,7 +137,8 @@ let census = new Map();        // type -> estimated cell count (last full sweep)
 let censusTrend = new Map();   // type -> estimated Δ cells / second
 let censusInfo = { step: 0, eps: 0, at: 0 };
 let censusBase = new Map(), censusBaseAt = 0;   // baseline for the "since reset" running total
-let trackerStart = Date.now();                  // when the running totals began
+let trackedBase = 0, trackerStartSim = simNow();   // game-time (not wall-clock) the running totals have been counting
+function trackedMs() { return trackedBase + (simNow() - trackerStartSim); }
 let _prevCensus = new Map(), _prevAt = 0, _restUntil = 0;
 let _sweep = null, _acc = new Map(), _cursor = 0;
 function censusOn() { return setting("worldCensus", true); }
@@ -124,7 +149,7 @@ function censusOn() { return setting("worldCensus", true); }
 //     reset button (or the user) zeroes them. -------------------------------
 const TOTALS_KEY = "brandon.sandboxloop.totals";
 function saveTotals() {
-	safe(() => window.localStorage.setItem(TOTALS_KEY, JSON.stringify({ e: [...emitTot], r: [...rmTot], b: [...censusBase], ba: censusBaseAt, st: trackerStart })));
+	safe(() => window.localStorage.setItem(TOTALS_KEY, JSON.stringify({ e: [...emitTot], r: [...rmTot], b: [...censusBase], ba: censusBaseAt, tm: trackedMs() })));
 }
 (function loadTotals() {
 	const raw = safe(() => window.localStorage.getItem(TOTALS_KEY));
@@ -134,7 +159,7 @@ function saveTotals() {
 	if (Array.isArray(o.r)) for (const kv of o.r) rmTot.set(+kv[0], kv[1]);
 	if (Array.isArray(o.b)) for (const kv of o.b) censusBase.set(+kv[0], kv[1]);
 	if (typeof o.ba === "number") censusBaseAt = o.ba;
-	if (typeof o.st === "number") trackerStart = o.st;
+	if (typeof o.tm === "number") { trackedBase = o.tm; trackerStartSim = simNow(); }
 })();
 setInterval(saveTotals, 4000);   // keep the persisted copy fresh as totals grow
 // --- exact vs fast census mode ----------------------------------------------
@@ -165,8 +190,8 @@ setInterval(() => {
 	// Not in a state to scan? PAUSE (keep the in-progress sweep) rather than
 	// discard it — on a big world a sweep takes tens of seconds, and throwing it
 	// away on every brief "not in world" flicker meant it never finished.
-	if (!isEnabled() || !inWorld() || !setting("showTracker", true) || !censusOn()) return;
-	const now = Date.now();
+	if (!running() || !setting("showTracker", true) || !censusOn()) return;   // paused → the sweep waits too
+	const now = Date.now(), sn = simNow();
 	const d = safe(() => api.world && api.world.getDimensions()) || {};
 	const W = d.widthCells | 0, H = d.heightCells | 0;
 	if (W <= 0 || H <= 0) return;
@@ -202,13 +227,13 @@ setInterval(() => {
 		const scale = s.step * s.step, fresh = new Map();
 		for (const [t, c] of acc) fresh.set(t, c * scale);
 		censusTrend = new Map();
-		if (_prevAt) {
-			const dt = Math.max(0.001, (now - _prevAt) / 1000);
+		if (_prevAt && sn - _prevAt >= 1000) {   // trend per second of GAME time (a pause between sweeps doesn't dilute it)
+			const dt = (sn - _prevAt) / 1000;
 			const types = new Set(); for (const k of fresh.keys()) types.add(k); for (const k of _prevCensus.keys()) types.add(k);
 			for (const t of types) censusTrend.set(t, ((fresh.get(t) || 0) - (_prevCensus.get(t) || 0)) / dt);
 		}
-		const dtPrev = _prevAt ? Math.max(0.5, (now - _prevAt) / 1000) : 2.4;
-		_prevCensus = fresh; _prevAt = now; census = fresh;
+		const dtPrev = _prevAt ? Math.max(0.5, (sn - _prevAt) / 1000) : 2.4;
+		_prevCensus = fresh; _prevAt = sn; census = fresh;
 		if (!censusBaseAt) { censusBase = new Map(fresh); censusBaseAt = now; saveTotals(); }   // first sweep sets (and persists) the "since reset" baseline
 		censusInfo = { exact: s.exact, eps: s.exact ? 0.75 : (scale * 1.5) / dtPrev, at: now };
 		_sweep = null; _restUntil = now + (s.exact ? REST_MS : COARSE_REST);
@@ -222,7 +247,8 @@ setInterval(() => {
 // last 6h; older ones are thinned to one per 5 minutes and kept for 48h.
 // Reset / FAST↔EXACT switches don't touch the log; "clear log" is its own
 // two-click button. Each sample: {t: ms, x: 1 if exact, c: {type: count},
-//                                 e: {type: emit/s}, r: {type: remove/s}, k: 1 = 5-min keeper}
+//                                 e: {type: emit/s}, r: {type: remove/s}, k: 1 = 5-min keeper,
+//                                 st: game-time ms — the clock that stops when the game is paused}
 const HIST_KEY = "brandon.sandboxloop.history";
 const HIST_MS = 30000, HIST_FINE_MS = 6 * 3600e3, HIST_KEEP_MS = 48 * 3600e3, HIST_COARSE_MS = 300e3;
 let hist = [];
@@ -237,7 +263,7 @@ function saveHist() {
 	}
 }
 function recordHist() {
-	if (!isEnabled() || !inWorld() || !setting("showTracker", true) || !censusOn() || !censusInfo.at) return;
+	if (!running() || !setting("showTracker", true) || !censusOn() || !censusInfo.at) return;   // paused → nothing is logged
 	const now = Date.now();
 	if (now - _histLastAt < HIST_MS - 500) return;
 	if (censusInfo.at <= _histLastAt) return;   // wait until the map count has refreshed since the last sample
@@ -245,7 +271,7 @@ function recordHist() {
 	const c = {}; for (const [t, n] of census) if (n > 0) c[t] = Math.round(n);
 	const e = {}, r = {};
 	for (const [t, s] of rate) { if (s.e > 0.05) e[t] = Math.round(s.e * 10) / 10; if (s.r > 0.05) r[t] = Math.round(s.r * 10) / 10; }
-	const s = { t: now, x: censusExact() ? 1 : 0, c, e, r };
+	const s = { t: now, st: Math.round(simNow()), x: censusExact() ? 1 : 0, c, e, r };   // st = game-time ms (pauses excluded)
 	const bucket = Math.floor(now / HIST_COARSE_MS);
 	if (bucket !== _histBucket) { s.k = 1; _histBucket = bucket; }
 	hist.push(s); thinHist(now); saveHist();
@@ -340,8 +366,8 @@ function eachOf(id) { const out = []; safe(() => api.structures.forEachOfType(id
 function cfgFor(s, fallback) { return cfgMap.get(ikey(s.x, s.y)) || fallback; }
 
 setInterval(() => {
-	if (!isEnabled() || !inWorld()) return;
-	const now = Date.now();
+	if (!running()) return;                       // paused → no emitting, and no catch-up burst after (pacing runs on game time)
+	const now = simNow();
 	for (const s of eachOf(SRC_ID)) {
 		const cfg = cfgFor(s, { type: emitCfg.type, rate: emitCfg.rate });
 		if (cfg.type == null || cfg.rate <= 0) continue;
@@ -382,13 +408,13 @@ setInterval(() => {
 // --- remove loop (rate-limited: deletes only cfg.type, slowly) --------------
 const rmRecent = new Map();
 setInterval(() => {
-	if (!isEnabled() || !inWorld()) return;
-	const now = Date.now();
+	if (!running()) return;                       // paused → no removing
+	const now = Date.now(), sn = simNow();        // sn paces the rate; now only expires the "just removed" cell guard
 	for (const s of eachOf(SNK_ID)) {
 		const cfg = cfgFor(s, { type: removeCfg.type, rate: removeCfg.rate });
 		if (cfg.type == null || cfg.rate <= 0) continue;
-		const k = "r" + ikey(s.x, s.y); let rt = runtime.get(k); if (!rt) { rt = { accum: 0, last: now }; runtime.set(k, rt); }
-		const dt = Math.min(now - rt.last, 1000); rt.last = now;
+		const k = "r" + ikey(s.x, s.y); let rt = runtime.get(k); if (!rt) { rt = { accum: 0, last: sn }; runtime.set(k, rt); }
+		const dt = Math.min(sn - rt.last, 1000); rt.last = sn;
 		rt.accum += (cfg.rate * dt) / 1000; const rcap = Math.max(12, cfg.rate); if (rt.accum > rcap) rt.accum = rcap;
 		let guard = 0;
 		// Eat zone for a one-block (4x4) solid remover: the column ABOVE it (rows
@@ -433,7 +459,7 @@ function setThermalLock(v) {
 	if (panelRepaint) panelRepaint((x) => x + 1);
 }
 setInterval(() => {
-	if (!isEnabled() || !inWorld()) return;
+	if (!running()) return;
 	let n = 0;
 	safe(() => api.structures.forEachOfType(THERMAL_ID, (s) => {
 		n++;
@@ -458,7 +484,7 @@ function resetTotals() {
 	_sweep = null; _prevAt = 0; _prevCensus = new Map(); census = new Map(); censusTrend = new Map();
 	censusInfo = { step: 0, eps: 0, at: 0 }; _restUntil = 0;
 	censusBase = new Map(); censusBaseAt = 0;   // first sweep after the reset sets the baseline
-	trackerStart = Date.now();
+	trackedBase = 0; trackerStartSim = simNow();
 	saveTotals();
 	if (panelRepaint) panelRepaint((v) => v + 1);
 }
@@ -581,7 +607,7 @@ function Tracker() {
 		h("span", { style: { display: "inline-block", transform: trackerOpen ? "rotate(90deg)" : "none", fontSize: "9px", color: "#93a1b0" } }, "▶"),
 		h("span", { style: { fontWeight: 800, fontSize: "13px" } }, "Balance"),
 		h("span", { style: { flex: "1 1 auto" } }),
-		h("span", { style: SUB_DIM }, "tracking " + fmtDur(Date.now() - trackerStart)),
+		h("span", { style: SUB_DIM }, "tracking " + fmtDur(trackedMs()) + " of game time"),
 		(function () { const armed = resetArmed > Date.now();
 			return h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); doReset(); },
 				title: "Zeroes the running totals AND restarts the whole-map scan from scratch. Click twice to confirm.",
@@ -622,7 +648,7 @@ function Tracker() {
 				? [h("span", { key: "b", style: { display: "inline-block", width: "90px", height: "5px", background: "#232a31", borderRadius: "3px", overflow: "hidden" } },
 						h("span", { style: { display: "block", width: pct + "%", height: "100%", background: "#e0b060" } })),
 				   h("span", { key: "t" }, (ex ? "rescanning… " : "sampling… ") + pct + "%")]
-				: h("span", null, "counts from " + ago + "s ago" + (ex ? " · next exact scan soon" : ""))));
+				: h("span", null, simPaused ? "paused — scan resumes with the game" : "counts from " + ago + "s ago" + (ex ? " · next exact scan soon" : ""))));
 		if (watch) {
 			const pins = [...pinned];
 			if (!pins.length) kids.push(h("div", { key: "cw", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500, margin: "2px 0" } },
@@ -652,11 +678,11 @@ function Tracker() {
 const SMBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "10px", fontWeight: 700, padding: "2px 8px", cursor: "pointer", whiteSpace: "nowrap" };
 function HistoryRow() {
 	const n = hist.length, span = histSpan(), armed = histClearArmed > Date.now();
-	const logging = censusOn() && censusInfo.at > 0;
+	const logging = censusOn() && censusInfo.at > 0 && !simPaused;
 	return h("div", { key: "hist", style: { marginTop: "8px", paddingTop: "6px", borderTop: "1px solid rgba(255,255,255,.12)" } },
 		h("div", { style: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" } },
 			h("span", { style: { fontWeight: 800, fontSize: "11px", color: "#dbe3ec" } }, "📈 History log"),
-			h("span", { style: SUB_DIM }, n ? (n + " samples · " + fmtDur(span) + (logging ? " · logging every 30s" : " · paused")) : (logging ? "first sample in ~30s" : "waiting for a map count")),
+			h("span", { style: SUB_DIM }, n ? (n + " samples · " + fmtDur(span) + (logging ? " · logging every 30s" : simPaused ? " · paused with the game" : " · paused")) : (logging ? "first sample in ~30s" : "waiting for a map count")),
 			h("span", { style: { flex: "1 1 auto" } }),
 			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); histDownload(); }, title: "Download the whole log as a .json file (lands in your Downloads, like the game's own Export Save). Open it on the Resource History page to graph it.", style: SMBTN }, "⤓ Export"),
 			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); histCopy(); }, title: "Copy the log to the clipboard instead — paste it into the Resource History page.", style: SMBTN }, "Copy"),
@@ -717,6 +743,7 @@ function TitleBar() {
 		h("span", { style: { color: "#5b6470", fontSize: "13px", lineHeight: 1 } }, "⠿"),
 		h("span", null, "Sandbox Loop" + (regErr ? "  (err: " + regErr.slice(0, 20) + ")" : "")),
 		h("span", { style: { flex: "1 1 auto" } }),
+		simPaused ? h("span", { title: "Game is paused: sources, removers, rates, the map scan, the running totals and the history log are all frozen until it resumes.", style: { background: "#3a2f12", color: "#e0b060", fontSize: "9px", fontWeight: 800, letterSpacing: ".06em", padding: "2px 8px", borderRadius: "10px", whiteSpace: "nowrap", flexShrink: 0 } }, "⏸ PAUSED") : null,
 		h("button", { title: panelMin ? "expand" : "minimize", onMouseDown: (e) => { if (e.stopPropagation) e.stopPropagation(); }, onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setMin(!panelMin); }, style: MINBTN }, panelMin ? "▢" : "–"));
 }
 function Panel() {
