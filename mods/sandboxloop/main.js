@@ -456,17 +456,32 @@ function badge(text, k) {
 function pillStyle(on, onColor, onBg) { return { background: on ? onBg : "#232a31", color: on ? onColor : "#9aa6b2", border: "1px solid " + (on ? onColor : "#3a4550"), borderRadius: "9px", fontSize: "8.5px", fontWeight: 800, letterSpacing: ".03em", padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }; }
 // one material in the "Your loop" section (what your Sources/Removers push)
 function loopRow(t, cfgE, cfgR) {
-	const s = rate.get(t) || { e: 0, r: 0 }, em = s.e, rm = s.r, net = em - rm;
+	const s = rate.get(t) || { e: 0, r: 0 }, em = s.e, rm = s.r, modNet = em - rm;
 	const ce = cfgE.get(t) || 0, cr = cfgR.get(t) || 0;
-	const total = (emitTot.get(t) || 0) - (rmTot.get(t) || 0);
-	const k = net > 0.3 ? "up" : net < -0.3 ? "down" : "flat";
+	// Ground truth is the MAP: is this material actually piling up or draining?
+	// Sources − Removers alone is wrong for anything the game's machines consume
+	// (e.g. soil fed to shakers reads +30/s "surplus" forever while the map is flat).
+	const haveMap = censusInfo.at > 0 && (census.has(t) || censusTrend.has(t));
+	const mapTrend = haveMap ? (censusTrend.get(t) || 0) : null;
+	const eps = censusInfo.eps || 0.75;
+	const k = haveMap ? (mapTrend > eps ? "up" : mapTrend < -eps ? "down" : "flat")
+	                  : (modNet > 0.3 ? "up" : modNet < -0.3 ? "down" : "flat");
+	// what the game itself is doing to it = what we put in − what we took out − what the map gained
+	const machines = haveMap ? (modNet - mapTrend) : null;
 	let tag = "";
 	if (ce > 0 && em < ce * 0.5) tag = "source can't keep up — backing up";
 	else if (cr > 0 && rm < cr * 0.5) tag = "remover idle — nothing arriving";
+	const ex = censusExact(), since = haveMap ? ((census.get(t) || 0) - (censusBase.get(t) || 0)) : 0;
+	const line3 = [];
+	if (machines !== null && Math.abs(machines) > 0.3) line3.push(machines > 0 ? ["machines eat ≈ ", cspan("#c7a0e8", fmt1(machines) + "/s")] : ["machines make ≈ ", cspan("#c7a0e8", fmt1(-machines) + "/s")]);
+	if (haveMap && ex) line3.push(["since reset: ", cspan(since >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(since) + " on map")]);
+	else if (haveMap) line3.push([h("span", { style: { color: "#6f7b88" } }, "since-reset total needs EXACT")]);
+	else line3.push([h("span", { style: { color: "#6f7b88" } }, "map count pending…")]);
 	return h("div", { key: "l_" + t, style: { margin: "6px 0" } },
 		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } }, pinStar(t), swatch(t), nameCell(t), badge(k === "up" ? "SURPLUS" : k === "down" ? "DEFICIT" : "BALANCED", k)),
-		h("div", { style: SUBLINE }, "making ", cspan("#8fe0aa", fmt1(em) + "/s"), "  removing ", cspan("#e79b9b", fmt1(rm) + "/s"), "  net ", cspan(kindCol(k), fmtSigned(net) + "/s")),
-		h("div", { style: SUBLINE }, "net since reset: ", cspan(total >= 0 ? "#8fe0aa" : "#e79b9b", fmtSigned(total) + " grains"),
+		h("div", { style: SUBLINE }, "sources ", cspan("#8fe0aa", "+" + fmt1(em) + "/s"), "  removers ", cspan("#e79b9b", "−" + fmt1(rm) + "/s"),
+			"  on map ", haveMap ? cspan(kindCol(k), fmtSigned(mapTrend) + "/s") : cspan("#6f7b88", "—")),
+		h("div", { style: SUBLINE }, ...line3.flatMap((seg, i) => (i ? ["  ·  "] : []).concat(seg)),
 			tag ? h("span", { style: { color: "#e0b060", display: "block" } }, "⚠ " + tag) : null));
 }
 // one material in the "Whole map" section (sampled count + trend)
@@ -500,7 +515,7 @@ function Tracker() {
 	const kids = [header];
 	// legend — spell out what the words mean
 	kids.push(h("div", { key: "leg", style: { fontSize: "9.5px", color: "#8a94a0", fontWeight: 600, margin: "3px 0 2px", lineHeight: 1.5 } },
-		cspan("#8fe0aa", "SURPLUS / RISING"), " = being made faster than it's removed.  ", cspan("#e79b9b", "DEFICIT / FALLING"), " = leaving faster than it's made."));
+		cspan("#8fe0aa", "SURPLUS / RISING"), " = piling up on the map.  ", cspan("#e79b9b", "DEFICIT / FALLING"), " = draining off the map.  Verdicts come from the map count, not just your sources/removers."));
 
 	// ---- your loop: what the Sources/Removers actually push, per material ----
 	const { e: cfgE, r: cfgR } = cfgTotals();
