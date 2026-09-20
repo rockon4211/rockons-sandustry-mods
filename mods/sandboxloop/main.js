@@ -214,6 +214,82 @@ setInterval(() => {
 		_sweep = null; _restUntil = now + (s.exact ? REST_MS : COARSE_REST);
 	}
 }, 50);
+
+// --- long-term history log ---------------------------------------------------
+// Every HIST_MS (30s) a sample of every material's whole-map count, plus your
+// loop's effective source/remover rates, is appended and persisted — so the
+// export can be graphed over hours or days. Fine 30s samples are kept for the
+// last 6h; older ones are thinned to one per 5 minutes and kept for 48h.
+// Reset / FAST↔EXACT switches don't touch the log; "clear log" is its own
+// two-click button. Each sample: {t: ms, x: 1 if exact, c: {type: count},
+//                                 e: {type: emit/s}, r: {type: remove/s}, k: 1 = 5-min keeper}
+const HIST_KEY = "brandon.sandboxloop.history";
+const HIST_MS = 30000, HIST_FINE_MS = 6 * 3600e3, HIST_KEEP_MS = 48 * 3600e3, HIST_COARSE_MS = 300e3;
+let hist = [];
+(function loadHist() { const raw = safe(() => window.localStorage.getItem(HIST_KEY)); const a = raw && safe(() => JSON.parse(raw)); if (Array.isArray(a)) hist = a.filter((s) => s && typeof s.t === "number"); })();
+let _histBucket = -1, _histLastAt = 0, histMsg = "", histErr = "";
+function thinHist(now) { hist = hist.filter((s) => (now - s.t) <= HIST_KEEP_MS && ((now - s.t) <= HIST_FINE_MS || s.k)); }
+function saveHist() {
+	try { window.localStorage.setItem(HIST_KEY, JSON.stringify(hist)); histErr = ""; }
+	catch (e) {   // storage quota — drop the oldest quarter and retry once
+		hist = hist.slice(Math.floor(hist.length / 4));
+		try { window.localStorage.setItem(HIST_KEY, JSON.stringify(hist)); histErr = ""; } catch (e2) { histErr = "log not saved (storage full)"; }
+	}
+}
+function recordHist() {
+	if (!isEnabled() || !inWorld() || !setting("showTracker", true) || !censusOn() || !censusInfo.at) return;
+	const now = Date.now();
+	if (now - _histLastAt < HIST_MS - 500) return;
+	if (censusInfo.at <= _histLastAt) return;   // wait until the map count has refreshed since the last sample
+	_histLastAt = now;
+	const c = {}; for (const [t, n] of census) if (n > 0) c[t] = Math.round(n);
+	const e = {}, r = {};
+	for (const [t, s] of rate) { if (s.e > 0.05) e[t] = Math.round(s.e * 10) / 10; if (s.r > 0.05) r[t] = Math.round(s.r * 10) / 10; }
+	const s = { t: now, x: censusExact() ? 1 : 0, c, e, r };
+	const bucket = Math.floor(now / HIST_COARSE_MS);
+	if (bucket !== _histBucket) { s.k = 1; _histBucket = bucket; }
+	hist.push(s); thinHist(now); saveHist();
+}
+setInterval(recordHist, 5000);
+function histSpan() { return hist.length ? (hist[hist.length - 1].t - hist[0].t) : 0; }
+function histExport() {
+	const types = {}; for (const p of palette) types[p.type] = { name: p.name, color: p.color };
+	for (const s of hist) for (const t of Object.keys(s.c || {})) if (!types[t]) types[t] = { name: nameOf(+t), color: colorOf(+t) };
+	const d = safe(() => api.world && api.world.getDimensions()) || {};
+	const loop = { sources: [], removers: [] };
+	for (const s of eachOf(SRC_ID)) { const c = cfgFor(s, { type: emitCfg.type, rate: emitCfg.rate }); if (c) loop.sources.push({ x: s.x, y: s.y, type: c.type, rate: c.rate }); }
+	for (const s of eachOf(SNK_ID)) { const c = cfgFor(s, { type: removeCfg.type, rate: removeCfg.rate }); if (c) loop.removers.push({ x: s.x, y: s.y, type: c.type, rate: c.rate }); }
+	return { format: "sandbox-loop-history", version: 1, exportedAt: new Date().toISOString(), sampleMs: HIST_MS,
+		world: { widthCells: d.widthCells || 0, heightCells: d.heightCells || 0 }, types, loop, samples: hist };
+}
+function histStamp() { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()); }
+function histDownload() {
+	if (!hist.length) { histMsg = "nothing logged yet"; return; }
+	const name = "sandbox-loop-history-" + histStamp() + ".json";
+	try {   // same mechanism the game itself uses for "export save"
+		const blob = new Blob([JSON.stringify(histExport())], { type: "application/json" });
+		const url = URL.createObjectURL(blob), a = document.createElement("a");
+		a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+		setTimeout(() => URL.revokeObjectURL(url), 5000);
+		histMsg = "saved " + name + " (check your Downloads)";
+		safe(() => api.ui.toast("Sandbox Loop: exported " + hist.length + " samples → " + name));
+	} catch (e) { histMsg = "export failed: " + (e && e.message ? e.message : e); }
+	if (panelRepaint) panelRepaint((v) => v + 1);
+}
+function histCopy() {
+	if (!hist.length) { histMsg = "nothing logged yet"; return; }
+	const json = JSON.stringify(histExport());
+	const done = () => { histMsg = "copied " + hist.length + " samples — paste into the Resource History page"; if (panelRepaint) panelRepaint((v) => v + 1); };
+	const fail = (e) => { histMsg = "copy failed: " + (e && e.message ? e.message : e); if (panelRepaint) panelRepaint((v) => v + 1); };
+	try { navigator.clipboard.writeText(json).then(done, fail); } catch (e) { fail(e); }
+}
+let histClearArmed = 0;
+function histClear() {
+	const now = Date.now();
+	if (histClearArmed < now) { histClearArmed = now + 3000; if (panelRepaint) panelRepaint((v) => v + 1); return; }
+	histClearArmed = 0; hist = []; _histBucket = -1; saveHist(); histMsg = "log cleared";
+	if (panelRepaint) panelRepaint((v) => v + 1);
+}
 (function loadCfg() {
 	const raw = safe(() => window.localStorage.getItem(CFG_KEY));
 	const o = raw && safe(() => JSON.parse(raw));
@@ -569,7 +645,26 @@ function Tracker() {
 			ex ? "Exact scans every material on the map (~20s)." : "Fast sampled estimate — running totals hidden (they'd be inexact).",
 			"  Tap ", h("span", { style: { color: "#ffd166" } }, "★"), watch ? " to add/remove from the watchlist." : " to pin; ★ WATCH shows only pinned."));
 	}
+	kids.push(HistoryRow());
 	return h("div", null, kids);
+}
+// --- history log row: what's logged + Export / Copy / clear ------------------
+const SMBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "10px", fontWeight: 700, padding: "2px 8px", cursor: "pointer", whiteSpace: "nowrap" };
+function HistoryRow() {
+	const n = hist.length, span = histSpan(), armed = histClearArmed > Date.now();
+	const logging = censusOn() && censusInfo.at > 0;
+	return h("div", { key: "hist", style: { marginTop: "8px", paddingTop: "6px", borderTop: "1px solid rgba(255,255,255,.12)" } },
+		h("div", { style: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" } },
+			h("span", { style: { fontWeight: 800, fontSize: "11px", color: "#dbe3ec" } }, "📈 History log"),
+			h("span", { style: SUB_DIM }, n ? (n + " samples · " + fmtDur(span) + (logging ? " · logging every 30s" : " · paused")) : (logging ? "first sample in ~30s" : "waiting for a map count")),
+			h("span", { style: { flex: "1 1 auto" } }),
+			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); histDownload(); }, title: "Download the whole log as a .json file (lands in your Downloads, like the game's own Export Save). Open it on the Resource History page to graph it.", style: SMBTN }, "⤓ Export"),
+			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); histCopy(); }, title: "Copy the log to the clipboard instead — paste it into the Resource History page.", style: SMBTN }, "Copy"),
+			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); histClear(); }, title: "Wipe the history log (export first!). Click twice to confirm.",
+				style: Object.assign({}, SMBTN, armed ? { background: "#7a2f2f", color: "#ffd0d0", border: "1px solid #a04040" } : { color: "#b39a9a", border: "1px solid #5a3a3a" }) }, armed ? "click again" : "clear")),
+		(histMsg || histErr) ? h("div", { style: { fontSize: "9.5px", color: histErr ? "#e79b9b" : "#8fb98f", fontWeight: 700, marginTop: "2px" } }, histErr || histMsg) : null,
+		h("div", { style: { fontSize: "9px", color: "#6f7b88", marginTop: "3px", lineHeight: 1.5 } },
+			"Logs every material's map count (+ your sources/removers) every 30s: last 6h in full, older thinned to 5-min points, kept 48h. Survives resets and restarts."));
 }
 
 // --- cleanup: remove every Source/Remover the mod knows about, including ones

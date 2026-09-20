@@ -1,0 +1,434 @@
+<title>Loamcrest Resource History</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #eef1f4; --panel: #ffffff; --panel2: #e4e9ee; --line: #cfd6dd; --ink: #182028; --muted: #5d6a77; --dim: #8a95a0;
+    --accent: #b8862e; --good: #2f8f57; --bad: #c24a4a; --warn: #b07a1c; --star: #d9a21b;
+    --grid: rgba(24,32,40,.08); --hatch: rgba(176,122,28,.10); --shadow: 0 6px 24px rgba(20,30,40,.10);
+    --sel: rgba(184,134,46,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c1118; --panel: #131a23; --panel2: #1b2430; --line: #2a3542; --ink: #e8edf3; --muted: #9aa6b2; --dim: #6f7b88;
+      --accent: #e0b060; --good: #8fe0aa; --bad: #e79b9b; --warn: #e0b060; --star: #ffd166;
+      --grid: rgba(232,237,243,.07); --hatch: rgba(224,176,96,.10); --shadow: 0 6px 24px rgba(0,0,0,.45);
+      --sel: rgba(224,176,96,.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c1118; --panel: #131a23; --panel2: #1b2430; --line: #2a3542; --ink: #e8edf3; --muted: #9aa6b2; --dim: #6f7b88;
+    --accent: #e0b060; --good: #8fe0aa; --bad: #e79b9b; --warn: #e0b060; --star: #ffd166;
+    --grid: rgba(232,237,243,.07); --hatch: rgba(224,176,96,.10); --shadow: 0 6px 24px rgba(0,0,0,.45);
+    --sel: rgba(224,176,96,.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 22px 40px; padding-inline: 16px; display: grid; gap: 16px; }
+  h1, h2, h3 { font-family: "Chakra Petch", "IBM Plex Sans", sans-serif; letter-spacing: .01em; text-wrap: balance; margin: 0; }
+  h1 { font-size: 26px; font-weight: 700; line-height: 1.15; }
+  h2 { font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .mono, .num { font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+  header p { margin: 4px 0 0; color: var(--muted); max-width: 62ch; }
+  .eyebrow { font: 600 11px/1 "Chakra Petch", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+
+  /* load box */
+  .load { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; box-shadow: var(--shadow); }
+  .load-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .drop { flex: 1 1 320px; border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px 14px; color: var(--muted); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; transition: border-color .15s, background .15s; }
+  .drop.over { border-color: var(--accent); background: var(--sel); }
+  .drop strong { color: var(--ink); font-weight: 600; }
+  .btn { font: 600 12.5px "IBM Plex Sans", sans-serif; letter-spacing: .01em; color: var(--ink); background: var(--panel2); border: 1px solid var(--line); border-radius: 7px; padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+  .btn:hover { border-color: var(--accent); }
+  .btn:focus-visible, .seg button:focus-visible, textarea:focus-visible, tr.row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn.primary { background: var(--accent); color: #0c1118; border-color: transparent; }
+  .btn.ghost { background: transparent; }
+  textarea { width: 100%; min-height: 64px; resize: vertical; background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; font: 12px "IBM Plex Mono", monospace; }
+  .status { font-size: 12.5px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .status .pill { background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 600; color: var(--muted); }
+  .status .pill.ex { color: var(--warn); border-color: var(--warn); }
+  .status .pill.err { color: var(--bad); border-color: var(--bad); }
+
+  /* summary strip */
+  .strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+  .stat .k { font: 600 10.5px/1 "Chakra Petch", sans-serif; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  .stat .v { font: 500 20px/1.2 "Chakra Petch", sans-serif; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .stat .s { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+  /* chart card */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; box-shadow: var(--shadow); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { font: 600 12px "IBM Plex Sans", sans-serif; background: transparent; color: var(--muted); border: 0; padding: 6px 11px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #0c1118; }
+  .chart-wrap { position: relative; width: 100%; }
+  canvas { display: block; width: 100%; height: 380px; }
+  .tip { position: absolute; pointer-events: none; background: var(--panel2); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; font-size: 12px; box-shadow: var(--shadow); min-width: 170px; max-width: 300px; z-index: 2; }
+  .tip .t { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  .tip .r { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .tip .r i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .legend .hatch i { background: var(--hatch); border: 1px solid var(--warn); }
+  .hint { font-size: 12px; color: var(--dim); }
+
+  /* materials table */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font: 600 10.5px/1 "Chakra Petch", sans-serif; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th.num, td.num { text-align: right; }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--grid); vertical-align: middle; white-space: nowrap; }
+  tr.row { cursor: pointer; }
+  tr.row:hover td { background: var(--sel); }
+  tr.row.on td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+  .mat { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(128,128,128,.4); flex-shrink: 0; }
+  .chk { width: 14px; height: 14px; border: 1.5px solid var(--line); border-radius: 3px; flex-shrink: 0; display: inline-grid; place-items: center; font-size: 10px; color: #0c1118; }
+  tr.on .chk { background: var(--accent); border-color: var(--accent); }
+  .badge { display: inline-block; font: 700 9.5px/1 "Chakra Petch", sans-serif; letter-spacing: .08em; padding: 4px 8px; border-radius: 999px; border: 1px solid; }
+  .badge.up { color: var(--good); border-color: var(--good); }
+  .badge.down { color: var(--bad); border-color: var(--bad); }
+  .badge.flat { color: var(--muted); border-color: var(--line); }
+  .up { color: var(--good); } .down { color: var(--bad); } .flat { color: var(--muted); }
+  .spark { width: 96px; height: 24px; display: block; }
+  .loop { font-size: 11.5px; color: var(--muted); }
+  .loop b { font-weight: 600; }
+  .foot { font-size: 12px; color: var(--dim); max-width: 78ch; line-height: 1.55; }
+  @media (prefers-reduced-motion: reduce) { .drop { transition: none; } }
+  @media (max-width: 560px) { canvas { height: 280px; } h1 { font-size: 22px; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Sandbox Loop · history log</div>
+      <h1>Loamcrest Resource History</h1>
+      <p>Every material's whole-map count over time, from the log the Sandbox Loop mod keeps. Load an export to see what's piling up, what's draining, and what your machines are actually eating.</p>
+    </div>
+  </header>
+
+  <section class="load" aria-label="Load an export">
+    <div class="load-row">
+      <div class="drop" id="drop">
+        <div><strong>Drop a <span class="mono">sandbox-loop-history-….json</span> here</strong><br>or choose the file — it stays in your browser, nothing is uploaded.</div>
+        <input type="file" id="file" accept=".json,application/json" hidden>
+        <button class="btn primary" id="pick" type="button">Choose file</button>
+        <button class="btn ghost" id="pasteToggle" type="button">Paste instead</button>
+      </div>
+    </div>
+    <div id="pasteBox" hidden>
+      <textarea id="paste" placeholder='Used "Copy" on the in-game panel? Paste the log here.'></textarea>
+      <div class="load-row" style="margin-top:8px"><button class="btn primary" id="pasteLoad" type="button">Load pasted log</button><span class="hint">Tip: in game, Balance ▸ History log ▸ Export (file) or Copy (clipboard).</span></div>
+    </div>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section class="strip" id="strip" aria-label="Summary"></section>
+
+  <section class="card" aria-label="Chart">
+    <div class="toolbar">
+      <div class="seg" id="mode" role="group" aria-label="What to plot">
+        <button type="button" data-m="delta" aria-pressed="true" id="m-delta" title="Cells gained or lost since the start of the range — a rising line is surplus, falling is deficit">Change since start</button>
+        <button type="button" data-m="rate" aria-pressed="false" id="m-rate" title="Cells per minute, smoothed over ~5 minutes — above zero is surplus, below is deficit">Rate /min</button>
+        <button type="button" data-m="count" aria-pressed="false" id="m-count" title="Raw whole-map cell count">Map count</button>
+      </div>
+      <div class="seg" id="range" role="group" aria-label="Time range">
+        <button type="button" data-r="1" aria-pressed="false" id="r-1">1h</button>
+        <button type="button" data-r="6" aria-pressed="false" id="r-6">6h</button>
+        <button type="button" data-r="24" aria-pressed="false" id="r-24">24h</button>
+        <button type="button" data-r="0" aria-pressed="true" id="r-all">All</button>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="chart" aria-label="Resource history chart" role="img"></canvas><div class="tip" id="tip" hidden></div></div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <section class="card" aria-label="Materials">
+    <div class="toolbar">
+      <h2>Materials in this range</h2>
+      <div class="load-row">
+        <button class="btn" id="selTop" type="button">Select top movers</button>
+        <button class="btn" id="selNone" type="button">Clear selection</button>
+        <button class="btn" id="copyCsv" type="button">Copy table as CSV</button>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table id="tbl">
+      <thead><tr>
+        <th></th><th>Material</th><th>Trend</th><th class="num">Start</th><th class="num">Now</th><th class="num">Change</th><th class="num">Rate /min</th><th>Verdict</th><th>Your loop</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table></div>
+    <p class="foot">Verdicts come from the map count over the selected range: <b class="up">SURPLUS</b> = piling up, <b class="down">DEFICIT</b> = draining, <b class="flat">BALANCED</b> = holding within ~1% (or 20 cells). "Your loop" is the average of what your Sources put in and Removers took out over the range; the gap between that and the map trend is what machines ate (or made). Shaded bands on the chart mark FAST-scan samples, which are estimates — EXACT counts are solid.</p>
+  </section>
+</div>
+
+<script id="example" type="application/json">__EXAMPLE_JSON__</script>
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const LS_KEY = "loamcrest.history.v1", LS_SEL = "loamcrest.history.sel";
+  let data = null, isExample = false, mode = "delta", rangeH = 0, selected = new Set(), hover = null;
+
+  // ---------- parsing ----------
+  function parse(text) {
+    const o = typeof text === "string" ? JSON.parse(text) : text;
+    if (!o || !Array.isArray(o.samples)) throw new Error("That isn't a Sandbox Loop history export (no samples array).");
+    const samples = o.samples.filter((s) => s && typeof s.t === "number").sort((a, b) => a.t - b.t);
+    if (!samples.length) throw new Error("The export has no samples yet — let the game log for a minute and export again.");
+    const types = o.types || {};
+    const ids = new Set(); for (const s of samples) for (const k of Object.keys(s.c || {})) ids.add(k);
+    const mats = [...ids].map((id) => ({ id, name: (types[id] && types[id].name) || ("type " + id), color: (types[id] && types[id].color) || "#8a8a8a" }));
+    mats.sort((a, b) => a.name.localeCompare(b.name));
+    return { samples, mats, loop: o.loop || { sources: [], removers: [] }, exportedAt: o.exportedAt || null, world: o.world || null, example: !!o.example };
+  }
+
+  // ---------- derived series ----------
+  function rangeSamples() {
+    const all = data.samples; if (!rangeH) return all;
+    const cutoff = all[all.length - 1].t - rangeH * 3600e3;
+    const r = all.filter((s) => s.t >= cutoff);
+    return r.length >= 2 ? r : all.slice(-2);
+  }
+  function series(id, smp) {
+    // count, delta from first, rate per minute (smoothed over ~5 min or 3 samples, whichever is longer)
+    const n = smp.length, t = new Array(n), c = new Array(n), d = new Array(n), r = new Array(n);
+    for (let i = 0; i < n; i++) { t[i] = smp[i].t; c[i] = (smp[i].c && smp[i].c[id]) || 0; }
+    for (let i = 0; i < n; i++) d[i] = c[i] - c[0];
+    for (let i = 0; i < n; i++) {
+      let j = i; while (j > 0 && (t[i] - t[j] < 300e3 || i - j < 3)) j--;
+      const dt = (t[i] - t[j]) / 60000;
+      r[i] = dt > 0 ? (c[i] - c[j]) / dt : 0;
+    }
+    return { t, c, d, r };
+  }
+  function loopAvg(id, smp) {
+    let e = 0, r = 0, ne = 0, nr = 0;
+    for (const s of smp) { if (s.e && s.e[id] != null) { e += s.e[id]; ne++; } if (s.r && s.r[id] != null) { r += s.r[id]; nr++; } }
+    return { e: ne ? e / smp.length : 0, r: nr ? r / smp.length : 0, any: ne > 0 || nr > 0 };
+  }
+  // Verdict from a straight-line fit over the range: the fitted change must beat
+  // the noise (2× the residual spread) AND a floor of 20 cells / 1% — so a
+  // material that just wobbles (steam, florinol) or has one spike reads BALANCED.
+  function verdict(s) {
+    const t = s.t, c = s.c, n = c.length; if (n < 2) return "flat";
+    let mt = 0, mc = 0; for (let i = 0; i < n; i++) { mt += t[i]; mc += c[i]; } mt /= n; mc /= n;
+    let sxy = 0, sxx = 0; for (let i = 0; i < n; i++) { sxy += (t[i] - mt) * (c[i] - mc); sxx += (t[i] - mt) * (t[i] - mt); }
+    const slope = sxx ? sxy / sxx : 0, fitted = slope * (t[n - 1] - t[0]);
+    let ss = 0; for (let i = 0; i < n; i++) { const e = c[i] - (mc + slope * (t[i] - mt)); ss += e * e; }
+    const noise = Math.sqrt(ss / Math.max(1, n - 2));
+    const tol = Math.max(20, 0.01 * mc, 2 * noise);
+    return fitted > tol ? "up" : fitted < -tol ? "down" : "flat";
+  }
+  const fmtN = (n) => { const a = Math.abs(n); if (a >= 1e6) return (n / 1e6).toFixed(2) + "M"; if (a >= 1e4) return (n / 1e3).toFixed(1) + "k"; return Math.round(n).toLocaleString(); };
+  const fmtS = (n) => (n > 0 ? "+" : n < 0 ? "−" : "") + fmtN(Math.abs(n));
+  const fmtRate = (n) => (n > 0 ? "+" : n < 0 ? "−" : "") + (Math.abs(n) < 10 ? Math.abs(n).toFixed(1) : fmtN(Math.abs(n)));
+  const fmt1 = (n) => (Math.round(n * 10) / 10).toFixed(1);
+  const fmtDur = (ms) => { const m = Math.round(ms / 60000), h = Math.floor(m / 60); return h ? h + "h " + String(m % 60).padStart(2, "0") + "m" : m + "m"; };
+  const fmtT = (ms) => { const d = new Date(ms); return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }); };
+
+  // ---------- table + summary ----------
+  let rowsCache = [];
+  function computeRows() {
+    const smp = rangeSamples();
+    rowsCache = data.mats.map((m) => {
+      const s = series(m.id, smp), start = s.c[0], end = s.c[s.c.length - 1];
+      const mins = Math.max(1 / 60, (s.t[s.t.length - 1] - s.t[0]) / 60000);
+      return { m, s, start, end, dlt: end - start, rate: (end - start) / mins, k: verdict(s), loop: loopAvg(m.id, smp) };
+    }).filter((r) => r.start > 0 || r.end > 0);
+    rowsCache.sort((a, b) => Math.abs(b.dlt) - Math.abs(a.dlt));
+  }
+  function spark(s, k) {
+    const w = 96, h = 24, B = 48, n = s.c.length, pts = [];
+    if (n <= B) for (let i = 0; i < n; i++) pts.push(s.c[i]);
+    else for (let b = 0; b < B; b++) { const i0 = Math.floor((b * n) / B), i1 = Math.max(i0 + 1, Math.floor(((b + 1) * n) / B)); let a = 0; for (let i = i0; i < i1; i++) a += s.c[i]; pts.push(a / (i1 - i0)); }
+    const mn = Math.min(...pts), mx = Math.max(...pts), span = Math.max(1, mx - mn), m = pts.length;
+    let d = ""; for (let i = 0; i < m; i++) { const x = (i / Math.max(1, m - 1)) * (w - 2) + 1, y = h - 2 - ((pts[i] - mn) / span) * (h - 4); d += (i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1); }
+    const col = k === "up" ? "var(--good)" : k === "down" ? "var(--bad)" : "var(--muted)";
+    return '<svg class="spark" viewBox="0 0 96 24" aria-hidden="true"><path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+  }
+  function renderTable() {
+    const tb = $("tbody"); tb.innerHTML = "";
+    for (const r of rowsCache) {
+      const tr = document.createElement("tr"); tr.className = "row" + (selected.has(r.m.id) ? " on" : ""); tr.tabIndex = 0; tr.dataset.id = r.m.id;
+      const vb = r.k === "up" ? "SURPLUS" : r.k === "down" ? "DEFICIT" : "BALANCED";
+      let loop = "—";
+      if (r.loop.any) {
+        const mapRate = r.rate / 60, machines = (r.loop.e - r.loop.r) - mapRate;   // per second
+        loop = '<span class="loop">' + (r.loop.e > 0.05 ? '<b class="up">+' + fmt1(r.loop.e) + '/s</b> in ' : '') + (r.loop.r > 0.05 ? '<b class="down">−' + fmt1(r.loop.r) + '/s</b> out ' : '') +
+          (Math.abs(machines) > 0.3 ? '· machines ' + (machines > 0 ? 'eat ≈ ' + fmt1(machines) : 'make ≈ ' + fmt1(-machines)) + '/s' : '') + '</span>';
+      }
+      tr.innerHTML = '<td><span class="chk">' + (selected.has(r.m.id) ? "✓" : "") + '</span></td>' +
+        '<td><span class="mat"><span class="sw" style="background:' + r.m.color + '"></span>' + escapeHtml(r.m.name) + '</span></td>' +
+        '<td>' + spark(r.s, r.k) + '</td>' +
+        '<td class="num">' + fmtN(r.start) + '</td><td class="num">' + fmtN(r.end) + '</td>' +
+        '<td class="num ' + r.k + '">' + fmtS(r.dlt) + '</td><td class="num ' + r.k + '">' + fmtRate(r.rate) + '</td>' +
+        '<td><span class="badge ' + r.k + '">' + vb + '</span></td><td>' + loop + '</td>';
+      const toggle = () => { if (selected.has(r.m.id)) selected.delete(r.m.id); else selected.add(r.m.id); saveSel(); renderTable(); draw(); };
+      tr.addEventListener("click", toggle);
+      tr.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(); } });
+      tb.appendChild(tr);
+    }
+  }
+  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function renderStrip() {
+    const smp = rangeSamples(), all = data.samples;
+    const exact = smp.filter((s) => s.x).length, up = rowsCache.filter((r) => r.k === "up").length, down = rowsCache.filter((r) => r.k === "down").length;
+    const src = data.loop.sources.length, rm = data.loop.removers.length;
+    const stat = (k, v, s) => '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></div>';
+    $("strip").innerHTML =
+      stat("Range shown", fmtDur(smp[smp.length - 1].t - smp[0].t), fmtT(smp[0].t) + " → " + fmtT(smp[smp.length - 1].t)) +
+      stat("Samples", smp.length.toLocaleString(), (all.length !== smp.length ? all.length.toLocaleString() + " in the whole log · " : "") + Math.round((100 * exact) / smp.length) + "% exact scans") +
+      stat("Materials", rowsCache.length, '<span class="up">' + up + " surplus</span> · <span class=\"down\">" + down + " deficit</span> · " + (rowsCache.length - up - down) + " balanced") +
+      stat("Your loop", src + " src · " + rm + " rmv", data.loop.sources.map((s) => "+" + s.rate + "/s " + matName(s.type)).concat(data.loop.removers.map((s) => "−" + s.rate + "/s " + matName(s.type))).join(", ") || "no Sources or Removers placed");
+  }
+  function matName(id) { const m = data.mats.find((x) => x.id == id); return m ? m.name : "type " + id; }
+  function renderStatus(msg, kind) {
+    const el = $("status");
+    const pills = [];
+    if (isExample) pills.push('<span class="pill ex">EXAMPLE DATA — load your own export</span>');
+    else if (data && data.exportedAt) pills.push('<span class="pill">exported ' + fmtT(Date.parse(data.exportedAt)) + '</span>');
+    if (data && data.world && data.world.widthCells) pills.push('<span class="pill">world ' + data.world.widthCells + "×" + data.world.heightCells + '</span>');
+    if (msg) pills.push('<span class="pill' + (kind === "err" ? " err" : "") + '">' + escapeHtml(msg) + '</span>');
+    el.innerHTML = pills.join("");
+  }
+
+  // ---------- chart ----------
+  const cv = $("chart"), ctx = cv.getContext("2d");
+  function draw() {
+    const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const ink = css("--ink"), muted = css("--muted"), dim = css("--dim"), grid = css("--grid"), hatch = css("--hatch"), accent = css("--accent");
+    const smp = rangeSamples();
+    const sel = rowsCache.filter((r) => selected.has(r.m.id));
+    const P = { l: 64, r: 22, t: 14, b: 30 }, x0 = P.l, x1 = W - P.r, y0 = P.t, y1 = H - P.b;
+    if (!sel.length) {
+      ctx.fillStyle = muted; ctx.font = '500 13px "IBM Plex Sans", sans-serif'; ctx.textAlign = "center";
+      ctx.fillText("Select materials in the table below to plot them.", W / 2, H / 2); return;
+    }
+    const key = mode === "delta" ? "d" : mode === "rate" ? "r" : "c";
+    let mn = Infinity, mx = -Infinity;
+    for (const r of sel) for (const v of r.s[key]) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    if (mode !== "count") { mn = Math.min(mn, 0); mx = Math.max(mx, 0); }
+    if (mx === mn) { mx += 1; mn -= 1; }
+    const pad = (mx - mn) * 0.06; mn -= pad; mx += pad;
+    const tA = smp[0].t, tB = smp[smp.length - 1].t;
+    const X = (t) => x0 + ((t - tA) / Math.max(1, tB - tA)) * (x1 - x0), Y = (v) => y1 - ((v - mn) / (mx - mn)) * (y1 - y0);
+    // hatched FAST bands
+    ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
+    let bandStart = null;
+    for (let i = 0; i <= smp.length; i++) {
+      const fast = i < smp.length && !smp[i].x;
+      if (fast && bandStart === null) bandStart = smp[i].t;
+      if (!fast && bandStart !== null) { const a = X(bandStart), b = X(smp[Math.min(i, smp.length - 1)].t); ctx.fillStyle = hatch; ctx.fillRect(a, y0, Math.max(2, b - a), y1 - y0); bandStart = null; }
+    }
+    ctx.restore();
+    // y grid + labels
+    const ticks = niceTicks(mn, mx, 6);
+    ctx.font = '500 11px "IBM Plex Mono", monospace'; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const v of ticks) {
+      const y = Y(v); ctx.strokeStyle = grid; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+      ctx.fillStyle = dim; ctx.fillText(mode === "count" ? fmtN(v) : fmtS(v), x0 - 8, y);
+    }
+    if (mode !== "count") { const y = Y(0); ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); }
+    // x labels
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    const nx = Math.max(2, Math.min(8, Math.floor((x1 - x0) / 110)));
+    for (let i = 0; i <= nx; i++) { const t = tA + ((tB - tA) * i) / nx; ctx.fillStyle = dim; ctx.textAlign = i === 0 ? "left" : i === nx ? "right" : "center"; ctx.fillText(xLabel(t, tB - tA), X(t), y1 + 8); }
+    // lines
+    for (const r of sel) {
+      const s = r.s, v = s[key]; ctx.strokeStyle = r.m.color; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.beginPath();
+      for (let i = 0; i < v.length; i++) { const x = X(s.t[i]), y = Y(v[i]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+      ctx.stroke();
+      // end marker
+      const xe = X(s.t[s.t.length - 1]), ye = Y(v[v.length - 1]);
+      ctx.fillStyle = r.m.color; ctx.beginPath(); ctx.arc(xe, ye, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = css("--panel"); ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    // hover crosshair
+    if (hover !== null) {
+      const t = hover; const x = X(t); ctx.strokeStyle = accent; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // legend
+    $("legend").innerHTML = sel.map((r) => '<span><i style="background:' + r.m.color + '"></i>' + escapeHtml(r.m.name) + '</span>').join("") +
+      (smp.some((s) => !s.x) ? '<span class="hatch"><i></i>FAST-scan estimate</span>' : "") +
+      '<span class="hint">' + (mode === "delta" ? "cells gained (+) or lost (−) since " + fmtT(tA) : mode === "rate" ? "cells per minute, ~5 min smoothing" : "whole-map cell count") + "</span>";
+  }
+  function xLabel(t, span) { const d = new Date(t); return span > 36 * 3600e3 ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }); }
+  function niceTicks(a, b, n) {
+    const span = b - a, raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), norm = raw / mag;
+    const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag, out = [];
+    for (let v = Math.ceil(a / step) * step; v <= b + 1e-9; v += step) out.push(Math.abs(v) < step / 1e6 ? 0 : v);
+    return out;
+  }
+  // hover tooltip
+  cv.addEventListener("mousemove", (e) => {
+    if (!data) return;
+    const smp = rangeSamples(), rect = cv.getBoundingClientRect(), W = cv.clientWidth, x0 = 64, x1 = W - 22;
+    const tA = smp[0].t, tB = smp[smp.length - 1].t, fx = (e.clientX - rect.left - x0) / (x1 - x0);
+    if (fx < 0 || fx > 1) { hover = null; $("tip").hidden = true; draw(); return; }
+    const t = tA + fx * (tB - tA);
+    // nearest sample index
+    let lo = 0, hi = smp.length - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (smp[mid].t < t) lo = mid; else hi = mid; }
+    const i = (t - smp[lo].t < smp[hi].t - t) ? lo : hi;
+    hover = smp[i].t;
+    const sel = rowsCache.filter((r) => selected.has(r.m.id)), key = mode === "delta" ? "d" : mode === "rate" ? "r" : "c";
+    const tip = $("tip");
+    tip.innerHTML = '<div class="t">' + fmtT(smp[i].t) + (smp[i].x ? "" : " · FAST estimate") + '</div>' +
+      sel.map((r) => '<div class="r"><span><i style="background:' + r.m.color + '"></i>' + escapeHtml(r.m.name) + '</span><span class="num">' + (mode === "count" ? fmtN(r.s[key][i]) : fmtS(r.s[key][i])) + '</span></div>').join("");
+    tip.hidden = false;
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    tip.style.left = Math.min(px + 14, W - tip.offsetWidth - 4) + "px"; tip.style.top = Math.max(4, py - tip.offsetHeight - 10) + "px";
+    draw();
+  });
+  cv.addEventListener("mouseleave", () => { hover = null; $("tip").hidden = true; draw(); });
+
+  // ---------- load / persist ----------
+  function load(text, note) {
+    try {
+      const parsed = parse(text);
+      data = parsed; isExample = parsed.example;
+      if (!isExample) { try { if (typeof text === "string" && text.length < 4.5e6) localStorage.setItem(LS_KEY, text); } catch (e) {} }
+      const savedSel = loadSel();
+      selected = new Set(savedSel.filter((id) => data.mats.some((m) => m.id === id)));
+      refresh();
+      if (!selected.size) selectTop();
+      renderStatus(note || ("loaded " + data.samples.length.toLocaleString() + " samples"), "ok");
+    } catch (e) { renderStatus(e.message || String(e), "err"); }
+  }
+  function refresh() { computeRows(); renderStrip(); renderTable(); draw(); }
+  function selectTop() { selected = new Set(rowsCache.filter((r) => r.k !== "flat").slice(0, 6).map((r) => r.m.id)); if (!selected.size) selected = new Set(rowsCache.slice(0, 4).map((r) => r.m.id)); saveSel(); renderTable(); draw(); }
+  function saveSel() { try { localStorage.setItem(LS_SEL, JSON.stringify([...selected])); } catch (e) {} }
+  function loadSel() { try { const a = JSON.parse(localStorage.getItem(LS_SEL) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+
+  $("pick").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; if (f) readFile(f); });
+  function readFile(f) { const rd = new FileReader(); rd.onload = () => load(String(rd.result), "loaded " + f.name); rd.onerror = () => renderStatus("Couldn't read " + f.name, "err"); rd.readAsText(f); }
+  const drop = $("drop");
+  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", (e) => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) readFile(f); });
+  $("pasteToggle").addEventListener("click", () => { $("pasteBox").hidden = !$("pasteBox").hidden; if (!$("pasteBox").hidden) $("paste").focus(); });
+  $("pasteLoad").addEventListener("click", () => { const t = $("paste").value.trim(); if (t) { load(t, "loaded pasted log"); $("paste").value = ""; $("pasteBox").hidden = true; } });
+  $("mode").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; mode = b.dataset.m; for (const x of $("mode").children) x.setAttribute("aria-pressed", x === b ? "true" : "false"); draw(); });
+  $("range").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; rangeH = +b.dataset.r; for (const x of $("range").children) x.setAttribute("aria-pressed", x === b ? "true" : "false"); refresh(); });
+  $("selTop").addEventListener("click", selectTop);
+  $("selNone").addEventListener("click", () => { selected.clear(); saveSel(); renderTable(); draw(); });
+  $("copyCsv").addEventListener("click", () => {
+    const lines = ["material,start,now,change,rate_per_min,verdict,sources_per_s,removers_per_s"].concat(rowsCache.map((r) => [JSON.stringify(r.m.name), r.start, r.end, r.dlt, r.rate.toFixed(3), r.k === "up" ? "SURPLUS" : r.k === "down" ? "DEFICIT" : "BALANCED", r.loop.e.toFixed(2), r.loop.r.toFixed(2)].join(",")));
+    navigator.clipboard.writeText(lines.join("\n")).then(() => renderStatus("table copied as CSV", "ok"), () => renderStatus("copy failed — your browser blocked clipboard access", "err"));
+  });
+  window.addEventListener("resize", draw);
+  if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  // boot: last real export if this browser has one, else the built-in example
+  let booted = false;
+  try { const saved = localStorage.getItem(LS_KEY); if (saved) { load(saved, "restored your last export from this browser"); booted = true; } } catch (e) {}
+  if (!booted) load($("example").textContent, "showing example data");
+})();
+</script>
