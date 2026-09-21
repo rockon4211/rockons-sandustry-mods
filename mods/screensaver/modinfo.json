@@ -2,7 +2,7 @@
 	"manifestVersion": 1,
 	"id": "brandon.screensaver",
 	"name": "Screensaver",
-	"version": "0.14.0",
+	"version": "0.14.1",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",
@@ -87,6 +87,12 @@
 			"default": true,
 			"labelKey": "Show the tracker panel",
 			"descriptionKey": "While the screensaver runs, a panel in the top-right shows what the tracer is doing, counts journeys, marks, losses, jumps and stray tracers, and lists every time it lost the grain and why. Also shown whenever the debug overlay is on. Turn off for a clean screen."
+		},
+		"saveLogOnStop": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Save the tracker log when it stops",
+			"descriptionKey": "If the tracer lost its grain (or anything else went wrong) during a run, save tracer-log-….json to Downloads automatically when the screensaver stops, so there's always something to look at. Turn off once you're happy with it."
 		},
 		"moveSeconds": {
 			"type": "number",

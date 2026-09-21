@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.14.0";
+const BUILD = "0.14.1";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -133,6 +133,8 @@ let dbg = { phase: "idle", note: "-", tracers: 0, belts: 0, cells: 0, near: -1, 
 // appears. That's how one journey runs soil → wet soil → gold → liquid gold.
 const CHAIN = {"wetSand":["gold","residue"],"sand":["wetSand"],"residue":["burntResidue"],"gold":["liquidGold"],"copper":["liquidCopper"],"water":["steam","freezingIce"],"steam":["water"],"sunsand":["wetSand"],"seed":["wetSeed"],"wetSeed":["seedling"],"seedling":["petalium"],"petalium":["dryPetalium"],"dryPetalium":["florin"],"florin":["florinol","gold"],"lava":["basalt"],"fire":["flame"],"moonhop":["prismite"],"prismite":["prismaline"],"voidSeeds":["growingVoidSeed"],"burntResidue":["seed","gold"],"florinol":["aurixite"],"aurixite":["auralite"]};
 const TRACER_KINDS = [["brandonTracerPowder", "Powder", 1600], ["brandonTracerLiquid", "Liquid", 1000], ["brandonTracerGas", "Gas", 2], ["brandonTracerSolid", "Solid", 2000], ["brandonTracerSlushy", "Slushy", 1300]];
+const IN_CHAIN = new Set(Object.keys(CHAIN).concat(...Object.values(CHAIN)));
+function isGasType(t) { const d = safe(() => api.elements.getDefinitionByType(t)); const G = safe(() => sandkit.enums.MatterType.Gas); return !!d && typeof G === "number" && d.matterType === G; }
 const tracerFor = new Map();      // matterType -> our element type
 const tracerTypes = new Set();    // every tracer element type
 (function registerTracers() {
@@ -359,15 +361,33 @@ function handoff(now) {
 	const b = snapArea(s.x, s.y, R);
 	// don't walk the chain backwards into what we just came from
 	const recent = new Set((trc.hopTypes || []).slice(-2));
-	let hinted = null, hd = Infinity, other = null, od = Infinity;
+	let hinted = null, hd = Infinity, other = null, od = Infinity, same = null, sd = Infinity;
+	// LOST (not handed back): the grain most likely just slipped out of sight, so the
+	// best guess is the nearest grain of the SAME material. Before, same-material was
+	// skipped here, so it grabbed whatever changed nearby — usually rising steam or
+	// cloud — and the camera drifted upwards after it.
+	const lostIt = !!s.lostWhy;
 	for (const [k, t] of b) {
-		if (t === s.orig || tracerTypes.has(t)) continue;
+		if (tracerTypes.has(t)) continue;
+		if (t === s.orig) {
+			if (lostIt) { const x = +k.slice(0, k.indexOf(",")), y = +k.slice(k.indexOf(",") + 1), d = Math.hypot(x - s.x, y - s.y); if (d < sd) { sd = d; same = { x: x, y: y, t: t }; } }
+			continue;
+		}
+		// never jump to a gas (steam, cloud…) or anything outside the known crafting
+		// chain unless it is exactly what this material turns into
+		if (!want.has(t) && (isGasType(t) || !IN_CHAIN.has(idOf(t)))) continue;
 		if (recent.has(t) && !want.has(t) && now - s.t0 < 3000) continue;
 		const x = +k.slice(0, k.indexOf(",")), y = +k.slice(k.indexOf(",") + 1), d = Math.hypot(x - s.x, y - s.y);
 		if (want.has(t) && d < hd) { hd = d; hinted = { x: x, y: y, t: t }; }
 		if (s.before.get(k) !== t && d < od) { od = d; other = { x: x, y: y, t: t }; }
 	}
 	const settled = (c) => c && !safe(() => api.elements.isFreeFallingAtCell(c.x, c.y));
+	const atMachine = lostIt && /gone into|sitting on/.test(s.lostWhy);
+	if (lostIt && same && sd <= 12 && (!atMachine || (!hinted && now - s.t0 > 3000))) {
+		stats.pickups++; track("lost it, so picked up the nearest " + matName(same.t) + " " + Math.round(sd) + " cells away at " + same.x + "," + same.y);
+		logEvt("pickup", { became: matName(same.t), how: "same material", at: same.x + "," + same.y, cells: Math.round(sd) });
+		possess(same.x, same.y, same.t); return;
+	}
 	const pick = (settled(hinted) ? hinted : null) || (settled(other) && now - s.t0 > 800 ? other : null) || hinted || (now - s.t0 > 1800 ? other : null);
 	if (pick) { stats.pickups++; track((s.lostWhy ? "lost it, so " : "") + "picked up " + matName(pick.t) + (hinted ? " (next in the chain)" : " (something new nearby)") + " at " + pick.x + "," + pick.y); dbg.note = "picked up " + matName(pick.t) + (hinted ? " (chain)" : " (new material)"); logEvt("pickup", { became: matName(pick.t), how: hinted ? "chain" : "new material", at: pick.x + "," + pick.y }); possess(pick.x, pick.y, pick.t); return; }
 	const waitMs = setting("handoffSeconds", 8) * 1000;
@@ -479,6 +499,15 @@ function tracerTick(now) {
 		lossReason("vanished while " + kind);
 		track("LOST " + matName(trc.orig) + " at " + trc.x + "," + trc.y + " — it had " + why + " (rode " + ((now - trc.since) / 1000).toFixed(1) + "s)", true);
 		logEvt("LOST", { why: why, speed: trc.vel, maxStep: trc.maxStep || 0, stillMs: now - trc.lastMove, rodeMs: now - trc.since, onStructure: structIdAt(trc.x, trc.y), trail: (trc.trail || []).slice(-15), area: areaReport(trc.x, trc.y, 6) });
+		// the same spot keeps eating it? stop re-picking grains there and start fresh
+		lossSpots = lossSpots.filter((p) => now - p.t < 90000); lossSpots.push({ x: trc.x, y: trc.y, t: now });
+		const here = lossSpots.filter((p) => Math.abs(p.x - trc.x) <= 16 && Math.abs(p.y - trc.y) <= 16).length;
+		if (here >= 3) {
+			lossReason("hot spot — lost 3+ times in the same place");
+			logEvt("hotspot", { at: trc.x + "," + trc.y, times: here, area: areaReport(trc.x, trc.y, 8) });
+			track("keeps losing it around " + trc.x + "," + trc.y + " (" + here + "× in 90s) — starting a new journey", true);
+			trc = null; return null;
+		}
 		trc.search = { x: trc.x, y: trc.y, orig: trc.orig, at: now, t0: now, before: snapArea(trc.x, trc.y, 20), lostWhy: why };
 	}
 	if (!trc) return null;
@@ -486,7 +515,7 @@ function tracerTick(now) {
 }
 // census: any OTHER tracer cells near the one we follow? (late stamps can leave strays,
 // and the camera would jump to them)
-let lastCensus = 0;
+let lastCensus = 0, lossSpots = [];
 function censusTick(now) {
 	if (!trc || trc.search || trc.pending || now - lastCensus < 700) return;
 	lastCensus = now;
@@ -748,6 +777,9 @@ function start(reason) {
 }
 function stop(reason) {
 	if (!active) return;
+	// hand over the evidence automatically if anything went wrong during this run
+	const troubles = tlog.filter((e) => e.t >= startedAt && /LOST|jump|ghost|mark-missed|giveup/.test(e.kind)).length;
+	if (troubles && setting("saveLogOnStop", true)) setTimeout(() => safe(exportLog), 300);
 	active = false; tour = null; fol = null; cam = null; path = null; sweepTracers();
 	safe(() => { state.session.overrideCamera = saved && saved.override ? saved.override : false; });
 	safe(() => { state.session.ui.hudHidden = saved ? saved.hud : false; }); safe(() => api.ui.update(ComponentId.Root));
