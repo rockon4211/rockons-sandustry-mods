@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.15.1";
+const BUILD = "0.15.2";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -220,7 +220,7 @@ function possess(x, y, matType) {
 	// make the tracer look and behave like the grain it is replacing, a shade brighter
 	safe(() => api.elements.updateDefinition(tt, {
 		nameKey: undefined, name: "· " + (def.name || "tracer"),
-		density: def.density, metaColor: brightenMeta(def.metaColor),
+		density: typeof def.density === "number" ? def.density - 1 : def.density,   // a hair lighter: it rides on top of its own kind instead of getting buried metaColor: brightenMeta(def.metaColor),
 		colors: def.colors && def.colors.variants ? { variants: brightenVariants(def.colors.variants) } : undefined,
 	}));
 	const stray = findTracer(x, y, 130);   // leave no second tracer behind
@@ -307,7 +307,7 @@ function dressTracer(tt, matType) {
 	const def = safe(() => api.elements.getDefinitionByType(matType)) || {};
 	safe(() => api.elements.updateDefinition(tt, {
 		nameKey: undefined, name: "· " + (def.name || "tracer"),
-		density: def.density, metaColor: brightenMeta(def.metaColor),
+		density: typeof def.density === "number" ? def.density - 1 : def.density,   // a hair lighter: it rides on top of its own kind instead of getting buried metaColor: brightenMeta(def.metaColor),
 		colors: def.colors && def.colors.variants ? { variants: brightenVariants(def.colors.variants) } : undefined,
 	}));
 }
