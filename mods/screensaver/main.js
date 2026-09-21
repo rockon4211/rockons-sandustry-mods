@@ -126,7 +126,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.17.0";
+const BUILD = "0.17.1";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -147,7 +147,9 @@ let dbg = { phase: "idle", note: "-", tracers: 0, belts: 0, cells: 0, near: -1, 
 // it normally), watch the spot, and possess whatever comes out: a material the
 // crafting chain says it should become, or failing that whatever new material
 // appears. That's how one journey runs soil → wet soil → gold → liquid gold.
-const CHAIN = {"wetSand":["gold","residue"],"sand":["wetSand"],"residue":["burntResidue"],"gold":["liquidGold"],"copper":["liquidCopper"],"water":["steam","freezingIce"],"steam":["water"],"sunsand":["wetSand"],"seed":["wetSeed"],"wetSeed":["seedling"],"seedling":["petalium"],"petalium":["dryPetalium"],"dryPetalium":["florin"],"florin":["florinol","gold"],"lava":["basalt"],"fire":["flame"],"moonhop":["prismite"],"prismite":["prismaline"],"voidSeeds":["growingVoidSeed"],"burntResidue":["seed","gold"],"florinol":["aurixite"],"aurixite":["auralite"]};
+// where a step makes gold AND something else, follow the something else — gold is
+// just banked, the other material keeps the chain going
+const CHAIN = {"wetSand":["residue"],"sand":["wetSand"],"residue":["burntResidue"],"gold":["liquidGold"],"copper":["liquidCopper"],"water":["steam","freezingIce"],"steam":["water"],"sunsand":["wetSand"],"seed":["wetSeed"],"wetSeed":["seedling"],"seedling":["petalium"],"petalium":["dryPetalium"],"dryPetalium":["florin"],"florin":["florinol"],"lava":["basalt"],"fire":["flame"],"moonhop":["prismite"],"prismite":["prismaline"],"voidSeeds":["growingVoidSeed"],"burntResidue":["seed"],"florinol":["aurixite"],"aurixite":["auralite"]};
 const TRACER_KINDS = [["brandonTracerPowder", "Powder", 1600], ["brandonTracerLiquid", "Liquid", 1000], ["brandonTracerGas", "Gas", 2], ["brandonTracerSolid", "Solid", 2000], ["brandonTracerSlushy", "Slushy", 1300]];
 const PASSIVE = /clearingFrame|launcher|frame|platform|ladder|support|scaffold|wall|pipe|chute|door|light|sign|button/i;
 const IN_CHAIN = new Set(Object.keys(CHAIN).concat(...Object.values(CHAIN)));
@@ -220,7 +222,7 @@ const CLONE_CONTACTS = [["sand", "water", "wetSand", "wetSand"], ["seed", "water
 // Machine recipes (from the game's own recipe tables)
 const CLONE_RECIPES = [
 	["smelter", "gold", [["liquidGold", 0.5]]], ["smelter", "copper", [["liquidCopper", 1]]],
-	["condenser", "florin", [["florinol", 0.5], ["gold", 0.5]]], ["condenser", "steam", [["water", 1]]],
+	["condenser", "florin", [["florinol", 1]]], ["condenser", "steam", [["water", 1]]],
 	["steamDryer", "petalium", [["dryPetalium", 1]]],
 ];
 const covered = new Map();      // real type -> Set of partner real types the clone reacts with by itself
@@ -241,11 +243,12 @@ function armCloneReactions() {
 		const ok = safe(() => { api.structures.recipes.register(machine, { input: I, outputs: O }); return true; });
 		if (ok) { n++; const ri = realT(inp); if (!cloneMachines.has(ri)) cloneMachines.set(ri, new Set()); cloneMachines.get(ri).add(machine.toLowerCase()); }
 	}
-	// the Shaker: wet soil → gold below (~25%), residue above
+	// the Shaker: our wet soil always comes out as our RESIDUE; the gold it can shake
+	// out alongside is ordinary gold, as for any grain
 	{
-		const I = cloneT("wetSand"), G = cloneT("gold"), R = cloneT("residue");
-		if (I !== undefined && G !== undefined && R !== undefined) {
-			const rec = { input: I, outputsBelow: [{ elementType: G, chance: 0.25 }], outputsAbove: [{ elementType: R, chance: 0.75 }] };
+		const I = cloneT("wetSand"), G = realT("gold"), R = cloneT("residue");
+		if (I !== undefined && typeof G === "number" && R !== undefined) {
+			const rec = { input: I, outputsBelow: [{ elementType: G, chance: 0.25 }], outputsAbove: [{ elementType: R, chance: 1 }] };
 			const ok = safe(() => { api.structures.recipes.register("shaker", rec); return true; }) || safe(() => { api.structures.processing.registerShaker(rec); return true; });
 			if (ok) { n++; const ri = realT("wetSand"); if (!cloneMachines.has(ri)) cloneMachines.set(ri, new Set()); cloneMachines.get(ri).add("shaker"); }
 		}
@@ -499,6 +502,7 @@ function handoff(now) {
 		// never jump to a gas (steam, cloud…) or anything outside the known crafting
 		// chain unless it is exactly what this material turns into
 		if (!want.has(t) && (isGasType(t) || !IN_CHAIN.has(idOf(t)))) continue;
+		if (!want.has(t) && idOf(t) === "gold") continue;   // never switch to gold — follow the other product
 		if (recent.has(t) && !want.has(t) && now - s.t0 < 3000) continue;
 		const x = +k.slice(0, k.indexOf(",")), y = +k.slice(k.indexOf(",") + 1), d = Math.hypot(x - s.x, y - s.y);
 		if (want.has(t) && d < hd) { hd = d; hinted = { x: x, y: y, t: t }; }
