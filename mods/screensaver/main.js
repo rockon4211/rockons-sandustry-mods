@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.15.0";
+const BUILD = "0.15.1";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -133,6 +133,7 @@ let dbg = { phase: "idle", note: "-", tracers: 0, belts: 0, cells: 0, near: -1, 
 // appears. That's how one journey runs soil → wet soil → gold → liquid gold.
 const CHAIN = {"wetSand":["gold","residue"],"sand":["wetSand"],"residue":["burntResidue"],"gold":["liquidGold"],"copper":["liquidCopper"],"water":["steam","freezingIce"],"steam":["water"],"sunsand":["wetSand"],"seed":["wetSeed"],"wetSeed":["seedling"],"seedling":["petalium"],"petalium":["dryPetalium"],"dryPetalium":["florin"],"florin":["florinol","gold"],"lava":["basalt"],"fire":["flame"],"moonhop":["prismite"],"prismite":["prismaline"],"voidSeeds":["growingVoidSeed"],"burntResidue":["seed","gold"],"florinol":["aurixite"],"aurixite":["auralite"]};
 const TRACER_KINDS = [["brandonTracerPowder", "Powder", 1600], ["brandonTracerLiquid", "Liquid", 1000], ["brandonTracerGas", "Gas", 2], ["brandonTracerSolid", "Solid", 2000], ["brandonTracerSlushy", "Slushy", 1300]];
+const PASSIVE = /clearingFrame|launcher|frame|platform|ladder|support|scaffold|wall|pipe|chute|door|light|sign|button/i;
 const IN_CHAIN = new Set(Object.keys(CHAIN).concat(...Object.values(CHAIN)));
 function isGasType(t) { const d = safe(() => api.elements.getDefinitionByType(t)); const G = safe(() => sandkit.enums.MatterType.Gas); return !!d && typeof G === "number" && d.matterType === G; }
 const tracerFor = new Map();      // matterType -> our element type
@@ -317,8 +318,18 @@ function startTracer(now) {
 	if (waitEmit) {   // already asked — see whether it has been emitted yet
 		const r = safe(() => hook && hook.emitOnceResult && hook.emitOnceResult());
 		if (r && r.at >= waitEmit.asked) {
-			const name = matName(waitEmit.material);
-			trc = { t: waitEmit.tt, orig: waitEmit.material, x: r.x, y: r.y, lastMove: now, since: now, pending: false, tries: 0, hops: [name], hopTypes: [waitEmit.material], search: null };
+			// trust what actually happened: which Source emitted it, and as what material
+			// (an older Sandbox Loop swapped a grain at whichever Source fired first —
+			// the camera then flew hundreds of cells through the terrain to it)
+			const material = typeof r.material === "number" ? r.material : waitEmit.material;
+			if (r.src && (r.src.x !== waitEmit.src.x || r.src.y !== waitEmit.src.y)) {
+				track("asked the Source at " + waitEmit.src.x + "," + waitEmit.src.y + " but the one at " + r.src.x + "," + r.src.y + " emitted it", true);
+				logEvt("wrong-source", { asked: waitEmit.src.x + "," + waitEmit.src.y, got: r.src.x + "," + r.src.y });
+				if (r.src) waitEmit.src = { x: r.src.x, y: r.src.y };
+			}
+			if (material !== waitEmit.material) dressTracer(waitEmit.tt, material);
+			const name = matName(material);
+			trc = { t: waitEmit.tt, orig: material, x: r.x, y: r.y, lastMove: now, since: now, pending: false, tries: 0, hops: [name], hopTypes: [material], search: null };
 			dbg.note = "tracer emitted at " + r.x + "," + r.y + " as " + name;
 			logEvt("emitted", { src: waitEmit.src.x + "," + waitEmit.src.y, area: areaReport(r.x, r.y, 3) });
 			stats.journeys++; track("journey #" + stats.journeys + ": " + name + " from the Source at " + waitEmit.src.x + "," + waitEmit.src.y);
@@ -333,7 +344,7 @@ function startTracer(now) {
 	const tt = tracerTypeFor(s.type);
 	if (tt === undefined) { dbg.note = "no tracer element for that matter type"; return false; }
 	dressTracer(tt, s.type);
-	safe(() => hook.emitOnce(tt));
+	safe(() => hook.emitOnce(tt, { x: s.x, y: s.y }));
 	waitEmit = { asked: now, tt: tt, material: s.type, src: s };
 	dbg.note = "asked " + s.x + "," + s.y + " to emit a " + matName(s.type) + " tracer";
 	return false;
@@ -452,7 +463,10 @@ function tracerTick(now) {
 		// once it has actually travelled somewhere — an output grain STARTS on the machine
 		const settledIn = now - trc.since > 3000, arrived = (trc.moved || 0) >= 4;
 		const reacting = settledIn && trc.touchSince && now - trc.touchSince > 1200;
-		const onMachine = settledIn && arrived && still > stillFor && !!safe(() => api.structures.getAtCell(trc.x, trc.y)) && !beltAt(trc.x, trc.y);
+		// only a structure that PROCESSES material counts — frames, launchers and the like
+		// just hold or move it (handing back on a clearing frame lost the grain for nothing)
+		const sid = still > stillFor ? structIdAt(trc.x, trc.y) : null;
+		const onMachine = settledIn && arrived && !!sid && !beltAt(trc.x, trc.y) && !PASSIVE.test(sid);
 		const pileMs = setting("pileSeconds", 25) * 1000;
 		if (reacting) dbg.phase = "touching " + matName(touch) + " — handing back to react";
 		else if (onMachine) dbg.phase = "at a machine — handing the grain back";

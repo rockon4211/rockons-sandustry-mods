@@ -118,7 +118,7 @@ function eachOf(id) {
 // lower effective rate than its configured rate, which is exactly the surplus /
 // deficit signal. rate{} smooths those into effective particles/sec.
 const emitTot = new Map(), rmTot = new Map();
-let emitOnceType = null, emitOnceAt = null;   // one-shot element swap for the Screensaver mod
+let emitOnceType = null, emitOnceAt = null, emitOnceSrc = null;   // one-shot element swap for the Screensaver mod
 function bump(m, type) { if (type == null) return; m.set(type, (m.get(type) || 0) + 1); }
 const rate = new Map();      // type -> {e, r, _le, _lr}
 let lastSample = simNow();
@@ -419,7 +419,9 @@ setInterval(() => {
 					if (safe(() => api.world && api.world.isTerrainAtCell(ox, oy))) break; // pile rests on ground — stop this column
 					const t = safe(() => api.elements.getResolvedTypeAtCell(ox, oy));
 					if (EMPTY !== undefined && t === EMPTY) {
-						const useType = (emitOnceType != null) ? emitOnceType : cfg.type;
+						// the one-shot swap only applies at the Source the Screensaver asked for
+						const mine = emitOnceType != null && (!emitOnceSrc || (emitOnceSrc.x === s.x && emitOnceSrc.y === s.y));
+						const useType = mine ? emitOnceType : cfg.type;
 						safe(() => api.elements.createAtCellWhenIdle(ox, oy, useType));
 						if (useType !== cfg.type) { emitOnceAt = { x: ox, y: oy, at: Date.now(), src: { x: s.x, y: s.y }, material: cfg.type }; emitOnceType = null; }
 						claimed.add(key); placed = true; bump(emitTot, cfg.type); break;
@@ -828,9 +830,9 @@ safe(() => {
 	window.__brandonSandboxLoop = {
 		sources: () => eachOf(SRC_ID).map((s) => { const c = cfgFor(s, { type: emitCfg.type, rate: emitCfg.rate }); return { x: s.x, y: s.y, type: c.type, rate: c.rate }; }),
 		// emit ONE grain of `type` instead of the next normal grain, and report where it landed
-		emitOnce: (type) => { emitOnceType = type; emitOnceAt = null; return true; },
+		emitOnce: (type, src) => { emitOnceType = type; emitOnceSrc = src && typeof src.x === "number" ? { x: src.x, y: src.y } : null; emitOnceAt = null; return true; },
 		emitOnceResult: () => emitOnceAt,
-		cancelEmitOnce: () => { emitOnceType = null; },
+		cancelEmitOnce: () => { emitOnceType = null; emitOnceSrc = null; },
 	};
 });
 safe(() => api.ui.inject("brandon-sandboxloop-panel", Panel));
