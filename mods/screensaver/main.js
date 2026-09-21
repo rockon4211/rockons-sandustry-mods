@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.15.2";
+const BUILD = "0.16.0";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -154,6 +154,89 @@ function brightenVariants(vs) { return (vs || []).map((c) => [brightChan(c[0]), 
 function brightenMeta(n) {
 	if (typeof n !== "number") return 0xffffff;
 	return (brightChan((n >> 16) & 255) << 16) | (brightChan((n >> 8) & 255) << 8) | brightChan(n & 255);
+}
+// --- clones: one tracer element PER MATERIAL -----------------------------------
+// Each clone copies its material's whole definition (physics, matter type, flags…)
+// so the grain behaves exactly like its neighbours, a shade brighter. The game's own
+// reaction tables are then taught the clones' reactions — clone soil + water → clone
+// wet soil, clone copper in a Smelter → clone liquid copper — so the grain keeps
+// being OUR grain through the chain instead of being handed back and re-guessed.
+const CLONE_IDS = [...new Set(["sand", "copper", "water"].concat([...IN_CHAIN]))];
+const cloneOf = new Map();   // real type -> clone type
+const realOf = new Map();    // clone type -> real type
+const cloneDefs = new Map(); // clone type -> the definition we keep re-applying
+const SKIP_KEYS = new Set(["id", "elementType", "type", "nameKey", "descriptionKey", "mixes", "name"]);
+function cloneDefFor(realType, id) {
+	const d = safe(() => api.elements.getDefinitionByType(realType));
+	if (!d || typeof d !== "object") return null;
+	const def = {};
+	for (const k of Object.keys(d)) { const v = d[k]; if (SKIP_KEYS.has(k) || typeof v === "function") continue; def[k] = v; }
+	def.name = "· " + (d.name || matName(realType) || id);
+	if (typeof d.density === "number") def.density = d.density - 1;   // a hair lighter: rides on top of its own kind
+	def.metaColor = brightenMeta(d.metaColor);
+	if (d.colors && Array.isArray(d.colors.variants)) def.colors = Object.assign({}, d.colors, { variants: brightenVariants(d.colors.variants) });
+	return def;
+}
+(function registerClones() {
+	for (const id of CLONE_IDS) {
+		const rt = safe(() => api.elements.getTypeFromId(id));
+		if (typeof rt !== "number") continue;
+		const def = cloneDefFor(rt, id);
+		if (!def || typeof def.matterType !== "number") continue;
+		let r = safe(() => api.elements.register(Object.assign({ id: "brandonTrc_" + id }, def)));
+		if (!(r && typeof r.elementType === "number")) {   // fall back to the basics, then patch the rest in
+			r = safe(() => api.elements.register({ id: "brandonTrc_" + id, name: def.name, matterType: def.matterType, density: def.density, metaColor: def.metaColor, colors: def.colors, isGrabbable: true, isTransportable: true }));
+		}
+		if (r && typeof r.elementType === "number") {
+			cloneOf.set(rt, r.elementType); realOf.set(r.elementType, rt); cloneDefs.set(r.elementType, def); tracerTypes.add(r.elementType);
+		}
+	}
+	dbg.tracers = tracerTypes.size;
+	console.log("[" + MOD_ID + "] tracer clones registered: " + cloneOf.size + " materials");
+})();
+// updateDefinition only reaches the render/sim workers once they exist, so re-apply
+function applyCloneDefs() { for (const [t, def] of cloneDefs) safe(() => api.elements.updateDefinition(t, Object.assign({ nameKey: undefined }, def))); }
+const cloneT = (id) => { const rt = typeOfId(id); return typeof rt === "number" ? cloneOf.get(rt) : undefined; };
+const realT = (id) => typeOfId(id);
+// Touch reactions the game itself would do to the real material (the game's
+// hard-coded mixing table): [material, touching, material becomes, partner becomes]
+const CLONE_CONTACTS = [["sand", "water", "wetSand", "wetSand"], ["seed", "water", "wetSeed", null], ["water", "lava", "steam", "lava"], ["water", "flame", "steam", null], ["lava", "water", "lava", "steam"]];
+// Machine recipes (from the game's own recipe tables)
+const CLONE_RECIPES = [
+	["smelter", "gold", [["liquidGold", 0.5]]], ["smelter", "copper", [["liquidCopper", 1]]],
+	["condenser", "florin", [["florinol", 0.5], ["gold", 0.5]]], ["condenser", "steam", [["water", 1]]],
+	["steamDryer", "petalium", [["dryPetalium", 1]]],
+];
+const covered = new Map();      // real type -> Set of partner real types the clone reacts with by itself
+const cloneMachines = new Map(); // real type -> Set of machine ids with a clone recipe
+let reactionsArmed = 0;
+function armCloneReactions() {
+	if (!cloneOf.size) return;
+	let n = 0;
+	for (const [a, b, ao, bo] of CLONE_CONTACTS) {
+		const A = cloneT(a), B = realT(b), AO = cloneT(ao), BO = bo === null ? null : realT(bo);
+		if (A === undefined || typeof B !== "number" || AO === undefined || BO === undefined) continue;
+		const ok = safe(() => { api.reactions.registerContact({ inputA: A, inputB: B, outputA: AO, outputB: BO, orientation: "any" }); return true; });
+		if (ok) { n++; const ra = realT(a); if (!covered.has(ra)) covered.set(ra, new Set()); covered.get(ra).add(B); }
+	}
+	for (const [machine, inp, outs] of CLONE_RECIPES) {
+		const I = cloneT(inp), O = outs.map(([id, c]) => ({ elementType: cloneT(id), chance: c }));
+		if (I === undefined || O.some((o) => o.elementType === undefined)) continue;
+		const ok = safe(() => { api.structures.recipes.register(machine, { input: I, outputs: O }); return true; });
+		if (ok) { n++; const ri = realT(inp); if (!cloneMachines.has(ri)) cloneMachines.set(ri, new Set()); cloneMachines.get(ri).add(machine.toLowerCase()); }
+	}
+	// the Shaker: wet soil → gold below (~25%), residue above
+	{
+		const I = cloneT("wetSand"), G = cloneT("gold"), R = cloneT("residue");
+		if (I !== undefined && G !== undefined && R !== undefined) {
+			const rec = { input: I, outputsBelow: [{ elementType: G, chance: 0.25 }], outputsAbove: [{ elementType: R, chance: 0.75 }] };
+			const ok = safe(() => { api.structures.recipes.register("shaker", rec); return true; }) || safe(() => { api.structures.processing.registerShaker(rec); return true; });
+			if (ok) { n++; const ri = realT("wetSand"); if (!cloneMachines.has(ri)) cloneMachines.set(ri, new Set()); cloneMachines.get(ri).add("shaker"); }
+		}
+	}
+	reactionsArmed = n;
+	applyCloneDefs();
+	console.log("[" + MOD_ID + "] tracer clone reactions armed: " + n);
 }
 // --- flight recorder ----------------------------------------------------------
 // Guessing at why the tracer vanishes hasn't worked, so let the game tell us:
@@ -215,16 +298,17 @@ function exportLog() {
 let trc = null, possessFails = 0;   // { t, orig, x, y, lastMove, since, hops[], search }
 function possess(x, y, matType) {
 	const def = safe(() => api.elements.getDefinitionByType(matType)) || {};
-	const tt = tracerFor.get(def.matterType) !== undefined ? tracerFor.get(def.matterType) : tracerFor.values().next().value;
+	const tt = tracerTypeFor(matType);
 	if (tt === undefined) return false;
 	// make the tracer look and behave like the grain it is replacing, a shade brighter
-	safe(() => api.elements.updateDefinition(tt, {
+	if (!realOf.has(tt)) safe(() => api.elements.updateDefinition(tt, {
 		nameKey: undefined, name: "· " + (def.name || "tracer"),
-		density: typeof def.density === "number" ? def.density - 1 : def.density,   // a hair lighter: it rides on top of its own kind instead of getting buried metaColor: brightenMeta(def.metaColor),
+		density: typeof def.density === "number" ? def.density - 1 : def.density,   // a hair lighter: rides on top of its own kind
+		metaColor: brightenMeta(def.metaColor),
 		colors: def.colors && def.colors.variants ? { variants: brightenVariants(def.colors.variants) } : undefined,
 	}));
 	const stray = findTracer(x, y, 130);   // leave no second tracer behind
-	if (stray && trc) safe(() => api.elements.replaceAtCell(stray.x, stray.y, trc.orig));
+	if (stray && trc) safe(() => api.elements.replaceAtCell(stray.x, stray.y, realOf.get(stray.t) !== undefined ? realOf.get(stray.t) : trc.orig));
 	const ok = safe(() => { api.elements.replaceAtCell(x, y, tt); return true; });
 	if (!ok) return false;
 	const name = matName(matType);
@@ -244,7 +328,7 @@ function release() {
 	const at = { x: trc.x, y: trc.y }, orig = trc.orig;
 	trc = null;
 	// the queued swap only applies if the cell hasn't moved on, so sweep a few times
-	const put = () => { const f = findTracer(at.x, at.y, 60); if (f) { at.x = f.x; at.y = f.y; safe(() => api.elements.replaceAtCell(f.x, f.y, orig)); return true; } return false; };
+	const put = () => { const f = findTracer(at.x, at.y, 60); if (f) { at.x = f.x; at.y = f.y; const real = realOf.get(f.t) !== undefined ? realOf.get(f.t) : orig; safe(() => api.elements.replaceAtCell(f.x, f.y, real)); return true; } return false; };
 	put();
 	for (const ms of [200, 600, 1200, 2500]) setTimeout(() => safe(put), ms);
 }
@@ -253,7 +337,7 @@ function findTracer(cx, cy, R) {
 		for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
 			if (r && Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
 			const t = typeAt(cx + dx, cy + dy);
-			if (t !== undefined && t !== null && tracerTypes.has(t)) return { x: cx + dx, y: cy + dy };
+			if (t !== undefined && t !== null && tracerTypes.has(t)) return { x: cx + dx, y: cy + dy, t: t };
 		}
 	}
 	return null;
@@ -299,15 +383,18 @@ function grainNearSource(s) {
 // material either (that grain simply isn't emitted).
 let waitEmit = null;
 function tracerTypeFor(matType) {
+	if (cloneOf.has(matType)) return cloneOf.get(matType);
 	const def = safe(() => api.elements.getDefinitionByType(matType)) || {};
 	const tt = tracerFor.get(def.matterType);
 	return tt !== undefined ? tt : tracerFor.values().next().value;
 }
 function dressTracer(tt, matType) {
+	if (realOf.has(tt)) return;   // clones already ARE that material
 	const def = safe(() => api.elements.getDefinitionByType(matType)) || {};
 	safe(() => api.elements.updateDefinition(tt, {
 		nameKey: undefined, name: "· " + (def.name || "tracer"),
-		density: typeof def.density === "number" ? def.density - 1 : def.density,   // a hair lighter: it rides on top of its own kind instead of getting buried metaColor: brightenMeta(def.metaColor),
+		density: typeof def.density === "number" ? def.density - 1 : def.density,   // a hair lighter: rides on top of its own kind
+		metaColor: brightenMeta(def.metaColor),
 		colors: def.colors && def.colors.variants ? { variants: brightenVariants(def.colors.variants) } : undefined,
 	}));
 }
@@ -430,6 +517,19 @@ function tracerTick(now) {
 	}
 	if (f) trc.miss = 0;
 	if (f) {
+		// the grain changed INTO another clone (a touch reaction or a machine recipe
+		// did it, exactly as it would the real material) — follow the new material
+		if (f.t !== undefined && f.t !== trc.t && realOf.has(f.t)) {
+			const was = matName(trc.orig), nowReal = realOf.get(f.t), name = matName(nowReal);
+			trc.t = f.t;
+			if (nowReal !== trc.orig) {
+				trc.orig = nowReal; trc.since = now; trc.moved = 0; trc.touchSince = 0;
+				if (trc.hops[trc.hops.length - 1] !== name) { trc.hops.push(name); trc.hopTypes.push(nowReal); while (trc.hops.length > 6) { trc.hops.shift(); trc.hopTypes.shift(); } }
+				stats.transforms = (stats.transforms || 0) + 1;
+				logEvt("became", { from: was, to: name, onStructure: structIdAt(f.x, f.y) });
+				track(was + " became " + name + " — still our grain");
+			}
+		}
 		if (trc.pending) { stats.marksLanded++; logEvt("marked", { afterMs: now - (trc.pendingAt || now), tries: trc.tries }); track("marked a " + matName(trc.orig) + " grain" + (trc.tries ? " (took " + (trc.tries + 1) + " tries)" : "")); }
 		trc.pending = false;
 		const step = Math.max(Math.abs(f.x - trc.x), Math.abs(f.y - trc.y));
@@ -462,11 +562,16 @@ function tracerTick(now) {
 		// a newly picked-up grain gets a grace period, and only counts as "at a machine"
 		// once it has actually travelled somewhere — an output grain STARTS on the machine
 		const settledIn = now - trc.since > 3000, arrived = (trc.moved || 0) >= 4;
-		const reacting = settledIn && trc.touchSince && now - trc.touchSince > 1200;
+		// a clone reacts by itself with the partners the game's mixing table covers —
+		// only step in (hand it back) if that somehow hasn't happened after a while
+		const selfReacts = realOf.has(trc.t) && touch && covered.has(trc.orig) && covered.get(trc.orig).has(touch);
+		const reacting = settledIn && trc.touchSince && now - trc.touchSince > (selfReacts ? 6000 : 1200);
 		// only a structure that PROCESSES material counts — frames, launchers and the like
 		// just hold or move it (handing back on a clearing frame lost the grain for nothing)
 		const sid = still > stillFor ? structIdAt(trc.x, trc.y) : null;
-		const onMachine = settledIn && arrived && !!sid && !beltAt(trc.x, trc.y) && !PASSIVE.test(sid);
+		// a machine that has a clone recipe for this material processes the grain itself
+		const selfMachine = !!sid && realOf.has(trc.t) && cloneMachines.has(trc.orig) && [...cloneMachines.get(trc.orig)].some((m) => sid.toLowerCase().indexOf(m.toLowerCase()) >= 0);
+		const onMachine = settledIn && arrived && !!sid && !beltAt(trc.x, trc.y) && !PASSIVE.test(sid) && (!selfMachine || still > 12000);
 		const pileMs = setting("pileSeconds", 25) * 1000;
 		if (reacting) dbg.phase = "touching " + matName(touch) + " — handing back to react";
 		else if (onMachine) dbg.phase = "at a machine — handing the grain back";
@@ -537,14 +642,14 @@ function censusTick(now) {
 	for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
 		if (!dx && !dy) continue;
 		const t = typeAt(trc.x + dx, trc.y + dy);
-		if (t !== undefined && t !== null && tracerTypes.has(t)) extra.push({ x: trc.x + dx, y: trc.y + dy });
+		if (t !== undefined && t !== null && tracerTypes.has(t)) extra.push({ x: trc.x + dx, y: trc.y + dy, t: t });
 	}
 	if (!extra.length) return;
 	stats.ghosts += extra.length;
 	logEvt("ghost", { cells: extra.map((c) => c.x + "," + c.y) });
 	track(extra.length + " extra tracer grain" + (extra.length > 1 ? "s" : "") + " near it (e.g. " + extra[0].x + "," + extra[0].y + ") — turned back into " + matName(trc.orig), true);
 	const orig = trc.orig;
-	for (const c of extra) safe(() => api.elements.replaceAtCell(c.x, c.y, orig));
+	for (const c of extra) { const real = realOf.get(c.t) !== undefined ? realOf.get(c.t) : orig; safe(() => api.elements.replaceAtCell(c.x, c.y, real)); }
 }
 // safety: never leave our element in the world
 function sweepTracers() {
@@ -921,6 +1026,7 @@ function Tracker() {
 		row("TRACKER  ·  build " + BUILD, "#8fb3d9", 700),
 		row("now: " + state, trc && !trc.search && !trc.miss && !trc.pending ? "#9fe0a8" : "#f2c46b"),
 		row("journeys " + stats.journeys + " · grains marked " + stats.marksLanded + "/" + stats.marksAsked + " · lost " + lost + " · re-found " + stats.refound),
+		row("clones " + cloneOf.size + " · reactions armed " + reactionsArmed + " · changes followed " + (stats.transforms || 0)),
 		row("jumps " + stats.jumps + " · extra tracers " + stats.ghosts + " · hand-backs " + stats.handbacks + " · longest ride " + secs(stats.longestMs)),
 	];
 	const reasons = Object.entries(stats.losses).sort((a, b2) => b2[1] - a[1]);
@@ -944,6 +1050,8 @@ function Pill() {
 }
 if (h) { safe(() => api.ui.inject("brandon-screensaver-pill", Pill)); setInterval(() => { if (repaint) repaint((v) => v + 1); }, 15000); }
 
-safe(() => api.events.on("game:ready", () => indexBelts(true)));
+safe(() => api.events.on("game:ready", () => { indexBelts(true); safe(armCloneReactions); }));
+for (const ms of [3000, 9000, 20000]) setTimeout(() => safe(() => { if (inWorld()) { if (reactionsArmed === 0) armCloneReactions(); else applyCloneDefs(); } }), ms);
+setInterval(() => safe(() => { if (inWorld() && reactionsArmed === 0) armCloneReactions(); }), 15000);
 setTimeout(() => safe(() => indexBelts(true)), 8000);
 console.log("[" + MOD_ID + "] loaded — build " + BUILD);
