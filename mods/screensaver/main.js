@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.13.0";
+const BUILD = "0.13.1";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -333,36 +333,22 @@ function handoff(now) {
 	const alive = findTracer(s.x, s.y, 130);
 	if (alive) { logEvt("refound", { at: alive.x + "," + alive.y }); trc.x = alive.x; trc.y = alive.y; trc.miss = 0; trc.search = null; trc.lastMove = now; dbg.note = "found it again at " + alive.x + "," + alive.y; return; }
 	const want = new Set();
-	if (s.expect !== undefined) want.add(s.expect);   // through a filter: it's still the same material
-	else for (const id of (CHAIN[idOf(s.orig)] || [])) { const t = typeOfId(id); if (typeof t === "number") want.add(t); }
-	// through a filter, look where it comes OUT: the far end of the (possibly chained) filters
-	let cx = s.x;
-	if (s.expect !== undefined && s.dir) { let n = 0; while (filterAt(cx, s.y) && n++ < 400) cx += s.dir; cx += s.dir * 10; }
-	const b = snapArea(cx, s.y, R);
+	for (const id of (CHAIN[idOf(s.orig)] || [])) { const t = typeOfId(id); if (typeof t === "number") want.add(t); }
+	const b = snapArea(s.x, s.y, R);
 	// don't walk the chain backwards into what we just came from
 	const recent = new Set((trc.hopTypes || []).slice(-2));
 	let hinted = null, hd = Infinity, other = null, od = Infinity;
-	const viaFilter = s.expect !== undefined;
 	for (const [k, t] of b) {
-		if (tracerTypes.has(t)) continue;
-		if (t === s.orig && !viaFilter) continue;
-		if (!viaFilter && recent.has(t) && !want.has(t) && now - s.t0 < 3000) continue;
-		const x = +k.slice(0, k.indexOf(",")), y = +k.slice(k.indexOf(",") + 1), d = Math.hypot(x - cx, y - s.y);
-		// through a filter: only pick the grain up again once it is PAST the filter,
-		// or it would be marked, hit the filter, be handed back, marked… forever
-		if (viaFilter && filterAt(x, y)) continue;
-		// …and only AHEAD of where it was released (in the belt's direction), on the
-		// same line — never the grain queued up behind it
-		if (viaFilter && (s.dir ? s.dir * (x - s.x) <= 0 : false)) continue;
-		if (viaFilter && Math.abs(y - s.y) > 6) continue;
+		if (t === s.orig || tracerTypes.has(t)) continue;
+		if (recent.has(t) && !want.has(t) && now - s.t0 < 3000) continue;
+		const x = +k.slice(0, k.indexOf(",")), y = +k.slice(k.indexOf(",") + 1), d = Math.hypot(x - s.x, y - s.y);
 		if (want.has(t) && d < hd) { hd = d; hinted = { x: x, y: y, t: t }; }
-		if (!viaFilter && s.before.get(k) !== t && d < od) { od = d; other = { x: x, y: y, t: t }; }
+		if (s.before.get(k) !== t && d < od) { od = d; other = { x: x, y: y, t: t }; }
 	}
 	const settled = (c) => c && !safe(() => api.elements.isFreeFallingAtCell(c.x, c.y));
 	const pick = (settled(hinted) ? hinted : null) || (settled(other) && now - s.t0 > 800 ? other : null) || hinted || (now - s.t0 > 1800 ? other : null);
 	if (pick) { dbg.note = "picked up " + matName(pick.t) + (hinted ? " (chain)" : " (new material)"); logEvt("pickup", { became: matName(pick.t), how: hinted ? "chain" : "new material", at: pick.x + "," + pick.y }); possess(pick.x, pick.y, pick.t); return; }
-	// a filter that doesn't let this material through: nothing will come out the far side
-	const waitMs = viaFilter && s.passes === false ? 2500 : setting("handoffSeconds", 8) * 1000;
+	const waitMs = setting("handoffSeconds", 8) * 1000;
 	dbg.phase = "waiting for what it becomes (" + Math.ceil((waitMs - (now - s.t0)) / 1000) + "s)";
 	if (now - s.t0 > waitMs) { dbg.note = "nothing came out at " + s.x + "," + s.y + " — new journey"; logEvt("giveup", { area: areaReport(s.x, s.y, 6) }); trc = null; }
 }
@@ -406,16 +392,6 @@ function tracerTick(now) {
 		//   · it is sitting on a machine (a machine will never consume our element)
 		// Just being settled in a pile of its own kind is NOT a reason — we keep the
 		// tracer and wait for the pile to move, which is what "keep track of it" means.
-		const fz = filterAt(trc.x, trc.y);
-		if (fz) {
-			const x = trc.x, y = trc.y, orig = trc.orig;
-			safe(() => api.elements.replaceAtCell(x, y, orig));
-			const passes = fz.allow ? (fz.mode === "block" ? !fz.allow.includes(orig) : fz.allow.includes(orig)) : true;
-			trc.search = { x: x, y: y, orig: orig, at: now, t0: now, before: snapArea(x, y, 20), expect: orig, why: "filter", dir: fz.dir || 0, passes: passes };
-			dbg.note = "filter at " + fz.sx + "," + fz.sy + " — " + (passes ? "passing through as real " : "it doesn't allow ") + matName(orig);
-			logEvt("filter", { at: fz.sx + "," + fz.sy, mode: fz.mode, allow: fz.allow, passes: passes });
-			return { x: x * CELL + CELL / 2, y: y * CELL + CELL / 2 };
-		}
 		const touch = touchingOther(trc.x, trc.y, trc.orig);
 		if (touch) { if (!trc.touchSince) trc.touchSince = now; } else trc.touchSince = 0;
 		const still = now - trc.lastMove, stillFor = setting("handBackSeconds", 2) * 1000;
@@ -474,11 +450,11 @@ function sweepTracers() {
 // from whichever belt is nearest the Source and walk the chain from there.
 const BELT_IDS = [["conveyorLeft", -1], ["conveyorRight", 1], ["conveyorLeftMk2", -1], ["conveyorRightMk2", 1],
 	["burnerBeltLeft", -1], ["burnerBeltRight", 1], ["filterLeft", -1], ["filterRight", 1], ["filterLeftMk2", -1], ["filterRightMk2", 1]];
-let beltCells = new Map(), beltsAt = 0, filterZones = [];   // "x,y" -> direction (-1 / +1)
+let beltCells = new Map(), beltsAt = 0;   // "x,y" -> direction (-1 / +1)
 function indexBelts(force) {
 	const now = Date.now();
 	if (!force && beltCells.size && now - beltsAt < 30000) return beltCells.size;
-	const m = new Map(), zones = [];
+	const m = new Map();
 	let kinds = 0;
 	for (const [id, d] of BELT_IDS) {
 		let n = 0;
@@ -487,27 +463,14 @@ function indexBelts(force) {
 			// belts are 4x4 structures: index the whole footprint, not just the origin
 			for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 4; dx++) m.set((s.x + dx) + "," + (s.y + dy), d);
 			n++;
-			// A filter only lets its allowed materials through. Our tracer is its own
-			// element, so no filter ever allows it — it was being stopped at every
-			// filter exactly like a disallowed grain. Remember where filters are so the
-			// tracer can turn back into its real material before it reaches one.
-			if (id.indexOf("filter") === 0) {
-				const f = s.filter || (s.data && s.data.filter) || null;
-				zones.push({ x0: s.x - 2, x1: s.x + 5, y0: s.y - 5, y1: s.y + 3, sx: s.x, sy: s.y, dir: d,
-					mode: f && f.mode, allow: f && Array.isArray(f.elementType) ? f.elementType.slice() : null });
-			}
 		}));
 		if (n) kinds++;
 	}
-	beltCells = m; beltsAt = now; filterZones = zones;
+	beltCells = m; beltsAt = now;
 	dbg.belts = kinds; dbg.cells = m.size;
 	return m.size;
 }
 function beltAt(x, y) { return beltCells.get(x + "," + y) || 0; }
-function filterAt(x, y) {
-	for (const z of filterZones) if (x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1) return z;
-	return null;
-}
 // the belt to start a journey from: nearest to the Source, preferring one below it
 function beltNear(s) {
 	let best = null, bd = Infinity;
