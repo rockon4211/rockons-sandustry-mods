@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.14.1";
+const BUILD = "0.15.0";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -644,7 +644,7 @@ function pathTick(now, dt) {
 	dbg.pos = pathI; dbg.phase = now < holdUntil ? dbg.phase : "following the line";
 	if (pathI >= path.length - 1 && now >= holdUntil) {   // finished: take another route
 		path = null;
-		if (setting("mixTour", true)) return null;         // let a tour stop happen, then a new path
+		if (setting("tourStops", false)) return null;         // let a tour stop happen, then a new path
 		if (newPath(now)) return ptAt(0);
 		return null;
 	}
@@ -721,12 +721,15 @@ function tick() {
 	const now = Date.now();
 	// follow mode: ride a grain; after followMaxSeconds hand over to one tour leg (if mixing) or a fresh grain
 	if (setting("followGrain", true) && !tour) {
-		const maxMs = setting("followMaxSeconds", 90) * 1000;
+		// 0 = follow a grain for as long as it lasts (the default now: the old 90s limit
+		// glided the camera off to a tour stop in a straight line through the terrain,
+		// always at about the same point on the route, which looked like losing it)
+		const maxSec = setting("rideLimitSeconds", 0), maxMs = maxSec > 0 ? maxSec * 1000 : Infinity;
 		const longRide = trc && now - trc.since > maxMs;
 		if (longRide || (path && now - pathAt > maxMs)) {
-			if (longRide) release();
+			if (longRide) { track("ride limit (" + maxSec + "s) reached — letting go of the grain"); release(); }
 			path = null; fol = null;
-			if (setting("mixTour", true)) { tour = nextLeg(); cam = null; }
+			if (setting("tourStops", false)) { tour = nextLeg(); cam = null; if (tour) track("gliding to a tour stop — straight line, not following anything", true); }
 		}
 		const t = !tour ? followTick(now) : null;
 		if (t) {
@@ -735,6 +738,10 @@ function tick() {
 			state.session.overrideCamera = toCam(cam);
 			return;
 		}
+		// nothing to follow for a moment (between journeys): hold still rather than
+		// gliding off to a tour stop — unless tour stops are switched on
+		if (!tour && !setting("tourStops", false)) return;
+		if (!tour) { tour = nextLeg(); if (tour) track("nothing to follow — gliding to a tour stop", true); }
 	}
 	if (!tour) tour = nextLeg();
 	if (!tour) return;
@@ -888,7 +895,8 @@ function Tracker() {
 	if (!setting("showTracker", true) || !inWorld() || !(active || setting("debugOverlay", false))) return null;
 	const now = Date.now(), secs = (ms) => (ms / 1000).toFixed(1) + "s";
 	let state;
-	if (!trc) state = waitEmit ? "waiting for a Source to emit the tracer" : "between journeys";
+	if (tour) state = "TOUR STOP — gliding in a straight line, not following a grain";
+	else if (!trc) state = waitEmit ? "waiting for a Source to emit the tracer" : "between journeys";
 	else if (trc.search) state = (trc.search.lostWhy ? "LOST — searching" : "handed back — watching the machine") + " at " + trc.search.x + "," + trc.search.y + " (" + secs(now - trc.search.t0) + ")";
 	else if (trc.pending) state = "marking a " + matName(trc.orig) + " grain… (try " + (trc.tries + 1) + ")";
 	else if (trc.miss) state = "can't see it — looking (" + trc.miss + "/8) near " + trc.x + "," + trc.y;

@@ -2,7 +2,7 @@
 	"manifestVersion": 1,
 	"id": "brandon.screensaver",
 	"name": "Screensaver",
-	"version": "0.14.1",
+	"version": "0.15.0",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",
@@ -64,17 +64,17 @@
 			"labelKey": "Trace speed (cells per second)",
 			"descriptionKey": "How fast the camera travels along the belts, in cells per second. Default 14 (roughly belt speed); raise it to keep up with a fast line, lower it to linger."
 		},
-		"followMaxSeconds": {
+		"rideLimitSeconds": {
 			"type": "number",
-			"default": 90,
-			"labelKey": "Follow one route for up to (seconds)",
-			"descriptionKey": "After this long on one route, hand over (to a tour stop if mixing is on, otherwise start another route). Default 90."
+			"default": 0,
+			"labelKey": "Let go of a grain after (seconds, 0 = never)",
+			"descriptionKey": "Stop following a grain after this long and start a new journey. 0 (default) = follow it for as long as it lasts."
 		},
-		"mixTour": {
+		"tourStops": {
 			"type": "boolean",
-			"default": true,
+			"default": false,
 			"labelKey": "Mix in tour stops",
-			"descriptionKey": "Between grains, glide to one of the busiest spots on the map and linger there, then pick a new grain. Off = grains only."
+			"descriptionKey": "Between grains, glide to one of the busiest spots on the map and linger there. The glide is a straight line (it passes through terrain) and isn't following anything. Off by default."
 		},
 		"showCaption": {
 			"type": "boolean",
