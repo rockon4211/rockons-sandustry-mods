@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.11.0";
+const BUILD = "0.12.0";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -238,11 +238,27 @@ function findTracer(cx, cy, R) {
 	}
 	return null;
 }
+// Only real reagents count. "Touching any other material" was far too broad: a
+// grain picked up at a machine's output is surrounded by the machine's OTHER
+// outputs, so it was handed straight back, the next output picked up, handed
+// back… — the camera hopping from pixel to pixel. These are the touch reactions
+// from the Material Studio chain.
+const PARTNERS = { sand: ["water"], residue: ["fire", "flame", "lava"], seed: ["water"], water: ["lava", "fire"], lava: ["water"], snow: ["lava", "fire", "flame"], wetSand: [], gold: [] };
+const partnerTypes = new Map();   // material type -> Set of reagent types (resolved lazily)
+function reagentsOf(orig) {
+	if (partnerTypes.has(orig)) return partnerTypes.get(orig);
+	const set = new Set();
+	for (const id of (PARTNERS[idOf(orig)] || [])) { const t = typeOfId(id); if (typeof t === "number") set.add(t); }
+	partnerTypes.set(orig, set);
+	return set;
+}
 function touchingOther(x, y, orig) {
+	const want = reagentsOf(orig);
+	if (!want.size) return 0;
 	for (let i = 0; i < 8; i++) {
 		const dx = [0, 0, 1, -1, 1, 1, -1, -1][i], dy = [1, -1, 0, 0, 1, -1, 1, -1][i];
 		const t = typeAt(x + dx, y + dy);
-		if (isMat(t) && t !== orig && !tracerTypes.has(t)) return t;
+		if (want.has(t)) return t;
 	}
 	return 0;
 }
@@ -366,6 +382,7 @@ function tracerTick(now) {
 			if (!trc.trail) trc.trail = [];
 			trc.trail.push(f.x + "," + f.y + "@" + (Math.round((now - trc.since) / 100) / 10) + "s");
 			if (trc.trail.length > 30) trc.trail.shift();
+			trc.moved = (trc.moved || 0) + Math.max(Math.abs(f.x - trc.x), Math.abs(f.y - trc.y));
 			trc.x = f.x; trc.y = f.y; trc.lastMove = now;
 		}
 		dbg.phase = "riding " + matName(trc.orig);
@@ -378,8 +395,11 @@ function tracerTick(now) {
 		const touch = touchingOther(trc.x, trc.y, trc.orig);
 		if (touch) { if (!trc.touchSince) trc.touchSince = now; } else trc.touchSince = 0;
 		const still = now - trc.lastMove, stillFor = setting("handBackSeconds", 2) * 1000;
-		const reacting = trc.touchSince && now - trc.touchSince > 1200;
-		const onMachine = still > stillFor && !!safe(() => api.structures.getAtCell(trc.x, trc.y)) && !beltAt(trc.x, trc.y);
+		// a newly picked-up grain gets a grace period, and only counts as "at a machine"
+		// once it has actually travelled somewhere — an output grain STARTS on the machine
+		const settledIn = now - trc.since > 3000, arrived = (trc.moved || 0) >= 4;
+		const reacting = settledIn && trc.touchSince && now - trc.touchSince > 1200;
+		const onMachine = settledIn && arrived && still > stillFor && !!safe(() => api.structures.getAtCell(trc.x, trc.y)) && !beltAt(trc.x, trc.y);
 		const pileMs = setting("pileSeconds", 25) * 1000;
 		if (reacting) dbg.phase = "touching " + matName(touch) + " — handing back to react";
 		else if (onMachine) dbg.phase = "at a machine — handing the grain back";
