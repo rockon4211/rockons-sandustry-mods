@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.16.0";
+const BUILD = "0.16.1";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -331,6 +331,15 @@ function release() {
 	const put = () => { const f = findTracer(at.x, at.y, 60); if (f) { at.x = f.x; at.y = f.y; const real = realOf.get(f.t) !== undefined ? realOf.get(f.t) : orig; safe(() => api.elements.replaceAtCell(f.x, f.y, real)); return true; } return false; };
 	put();
 	for (const ms of [200, 600, 1200, 2500]) setTimeout(() => safe(put), ms);
+}
+// the screensaver is over: just delete our grain (no need to give it back)
+function discard() {
+	if (!trc) return;
+	const at = { x: trc.x, y: trc.y };
+	trc = null;
+	const del = () => { let f, n = 0; while ((f = findTracer(at.x, at.y, 60)) && n++ < 8) { at.x = f.x; at.y = f.y; safe(() => api.elements.removeAtCell(f.x, f.y)); } };
+	del();
+	for (const ms of [200, 600, 1200, 2500]) setTimeout(() => safe(del), ms);
 }
 function findTracer(cx, cy, R) {
 	for (let r = 0; r <= R; r++) {
@@ -655,7 +664,7 @@ function censusTick(now) {
 function sweepTracers() {
 	safe(() => { const hook = window.__brandonSandboxLoop; if (hook && hook.cancelEmitOnce) hook.cancelEmitOnce(); });
 	waitEmit = null;
-	if (trc) release();
+	if (trc) discard();
 }
 
 // --- belt index ----------------------------------------------------------------
@@ -943,8 +952,8 @@ setInterval(() => {
 	if (idleMs() > setting("idleMinutes", 10) * 60000) start("idle");
 }, 1000);
 setInterval(tick, 33);
-setInterval(() => { if (!active && trc) { dbg.note = "cleanup: handing the grain back"; release(); } }, 2000);
-safe(() => window.addEventListener("beforeunload", () => safe(release)));
+setInterval(() => { if (!active && trc) { dbg.note = "cleanup: removing the tracer grain"; discard(); } }, 2000);
+safe(() => window.addEventListener("beforeunload", () => safe(discard)));
 // safety: if the page is hidden (alt-tabbed / minimized) the wake lock is released by the browser; re-take it when visible
 safe(() => document.addEventListener("visibilitychange", () => { if (active && document.visibilityState === "visible" && !wakeLock) safe(() => navigator.wakeLock.request("screen").then((l) => { wakeLock = l; }).catch(() => {})); }));
 
