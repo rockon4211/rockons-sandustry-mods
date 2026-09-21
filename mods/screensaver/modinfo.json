@@ -1,0 +1,140 @@
+{
+	"manifestVersion": 1,
+	"id": "brandon.screensaver",
+	"name": "Screensaver",
+	"version": "0.9.0",
+	"apiVersion": 1,
+	"entry": "main.js",
+	"author": "Brandon",
+	"description": "Turns the running world into a screensaver. After N minutes without input the HUD and cursor hide and the camera follows a single grain through your factory: the mod borrows one real grain, marks it as a unique tracer element (same physics, a shade brighter), and rides it along the belts; when it reaches a machine the grain is handed back so the machine processes it normally, and the camera picks up whatever comes out — following the crafting chain from material to material. The frame rate is capped (and the simulation optionally slowed) to save power, and the screen is kept awake. Any key, click or mouse movement puts everything back. Left alone at the main menu it presses Continue and starts by itself, so a Windows 'on idle' task can launch the game into it.",
+	"dependencies": [],
+	"loadOrder": 0,
+	"configSchema": {
+		"enabled": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Mod enabled",
+			"descriptionKey": "Turn the screensaver off without unsubscribing."
+		},
+		"idleMinutes": {
+			"type": "number",
+			"default": 10,
+			"labelKey": "Start after (minutes idle)",
+			"descriptionKey": "Minutes without keyboard/mouse input, while in a world, before the screensaver starts. Default 10."
+		},
+		"menuIdleSeconds": {
+			"type": "number",
+			"default": 20,
+			"labelKey": "Auto-Continue at main menu after (seconds)",
+			"descriptionKey": "If the game sits untouched at the main menu this long (e.g. launched by the idle task), press Continue and start the screensaver once the world is in. 0 = never."
+		},
+		"useTracer": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Follow a real grain (tracer)",
+			"descriptionKey": "Borrow one grain from a Sandbox Loop Source and follow it exactly: it is marked as the mod's own element so it can never be confused with its neighbours, and handed back to its real material whenever it reaches a machine so the factory behaves normally. Turn off to fall back to following the belt route instead."
+		},
+		"handBackSeconds": {
+			"type": "number",
+			"default": 2,
+			"labelKey": "Consider it settled after (seconds still)",
+			"descriptionKey": "How long the grain must sit still before the mod treats it as settled. It is only handed back to its real material if there's a reason — it's on a machine (which would never consume our element) or touching something it should react with. Default 2."
+		},
+		"pileSeconds": {
+			"type": "number",
+			"default": 25,
+			"labelKey": "Give up on a settled grain after (seconds)",
+			"descriptionKey": "If the grain settles in a pile of its own material and nothing moves it, keep watching it this long before releasing it and starting a new journey. Raise it to stay with one grain through a slow backlog. Default 25."
+		},
+		"handoffSeconds": {
+			"type": "number",
+			"default": 8,
+			"labelKey": "Wait for the machine's output (seconds)",
+			"descriptionKey": "How long to watch a machine for the material the grain turns into before giving up and starting a new journey from a Source. Default 8."
+		},
+		"followGrain": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Follow the factory (master switch)",
+			"descriptionKey": "Follow material through your factory while the screensaver runs. With the tracer on it rides one real grain; with it off it travels the belt route instead. Turn this off for a plain camera tour of the map."
+		},
+		"followSpeed": {
+			"type": "number",
+			"default": 14,
+			"labelKey": "Trace speed (cells per second)",
+			"descriptionKey": "How fast the camera travels along the belts, in cells per second. Default 14 (roughly belt speed); raise it to keep up with a fast line, lower it to linger."
+		},
+		"followMaxSeconds": {
+			"type": "number",
+			"default": 90,
+			"labelKey": "Follow one route for up to (seconds)",
+			"descriptionKey": "After this long on one route, hand over (to a tour stop if mixing is on, otherwise start another route). Default 90."
+		},
+		"mixTour": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Mix in tour stops",
+			"descriptionKey": "Between grains, glide to one of the busiest spots on the map and linger there, then pick a new grain. Off = grains only."
+		},
+		"showCaption": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Show 'following …' caption",
+			"descriptionKey": "A small caption at the bottom naming the material being followed and what the camera is doing (following the line, at a machine, end of the line)."
+		},
+		"moveSeconds": {
+			"type": "number",
+			"default": 30,
+			"labelKey": "Camera travel time (seconds)",
+			"descriptionKey": "How long the camera takes to glide from one spot to the next (shorter for nearby spots). Default 30."
+		},
+		"dwellSeconds": {
+			"type": "number",
+			"default": 20,
+			"labelKey": "Dwell at each spot (seconds)",
+			"descriptionKey": "How long the camera lingers (with a slow drift) at each point of interest before moving on. Default 20."
+		},
+		"fpsCap": {
+			"type": "number",
+			"default": 30,
+			"labelKey": "Frame-rate cap while active",
+			"descriptionKey": "Caps rendering to this many frames per second while the screensaver runs, to save power. 0 = leave the game's own setting. Default 30."
+		},
+		"simSpeed": {
+			"type": "number",
+			"default": 1,
+			"labelKey": "Simulation speed while active",
+			"descriptionKey": "Multiplier for the simulation while the screensaver runs: 1 = normal, 0.5 = half speed (about half the CPU). Restored to 1 when it stops. Default 1."
+		},
+		"hideHud": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Hide the HUD",
+			"descriptionKey": "Hide hotbar, resources, minimap and the mod panels while active (same as the game's HUD toggle). Restored afterwards."
+		},
+		"hideCursor": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Hide the mouse cursor",
+			"descriptionKey": "Hide the cursor while active."
+		},
+		"fullscreen": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Go fullscreen while active",
+			"descriptionKey": "Switch to fullscreen when the screensaver starts and back to windowed when it stops (only if the game was windowed)."
+		},
+		"showStatus": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Show countdown pill",
+			"descriptionKey": "A tiny 'screensaver in Xm' note in the bottom-right corner while you play. Turn off to hide it."
+		},
+		"debugOverlay": {
+			"type": "boolean",
+			"default": false,
+			"labelKey": "Debug overlay",
+			"descriptionKey": "Shows what the follow-cam is doing in the top-left (build number, phase, how many belt types and path cells it found, the Sources it can see, and what structure/material is under the camera). Visible whenever it's on, in or out of the screensaver. For troubleshooting."
+		}
+	}
+}

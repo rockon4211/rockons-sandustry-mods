@@ -39,6 +39,7 @@ setInterval(() => {
 setInterval(() => safe(() => window.localStorage.setItem(SIM_KEY, String(Math.round(simMs)))), 4000);
 function simNow() { return simMs; }
 function running() { return isEnabled() && inWorld() && !simPaused; }
+function saverActive() { const s = safe(() => window.__brandonScreensaver); return !!(s && s.isActive && s.isActive()); }   // live answer from the Screensaver mod (a stored flag went stale and hid the panel)
 
 const SRC_ID = "brandonSandboxSource", SRC_SPRITE = "brandonSandboxSourceSprite";
 const SNK_ID = "brandonSandboxSink",   SNK_SPRITE = "brandonSandboxSinkSprite";
@@ -117,6 +118,7 @@ function eachOf(id) {
 // lower effective rate than its configured rate, which is exactly the surplus /
 // deficit signal. rate{} smooths those into effective particles/sec.
 const emitTot = new Map(), rmTot = new Map();
+let emitOnceType = null, emitOnceAt = null;   // one-shot element swap for the Screensaver mod
 function bump(m, type) { if (type == null) return; m.set(type, (m.get(type) || 0) + 1); }
 const rate = new Map();      // type -> {e, r, _le, _lr}
 let lastSample = simNow();
@@ -192,7 +194,7 @@ function setGentle(v) {
 	if (_sweep) _sweep.budget = sweepBudget(_sweep.total);   // takes effect on the running sweep too
 	if (panelRepaint) panelRepaint((x) => x + 1);
 }
-function sweepBudget(total) { return Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.ceil(total / ((scanGentle ? SWEEP_SECS_GENTLE : SWEEP_SECS_NORMAL) * 20)))); }
+function sweepBudget(total) { return Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.ceil(total / (((scanGentle || saverActive()) ? SWEEP_SECS_GENTLE : SWEEP_SECS_NORMAL) * 20)))); }   // screensaver → always gentle
 // watchlist: show only the materials you've pinned (★) instead of the top movers
 let censusWatchOnly = false;
 (function loadWatch() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.watch")) === "1") censusWatchOnly = true; })();
@@ -254,7 +256,17 @@ setInterval(() => {
 const HIST_KEY = "brandon.sandboxloop.history";
 const HIST_MS = 30000, HIST_FINE_MS = 6 * 3600e3, HIST_KEEP_MS = 48 * 3600e3, HIST_COARSE_MS = 300e3;
 let hist = [];
-(function loadHist() { const raw = safe(() => window.localStorage.getItem(HIST_KEY)); const a = raw && safe(() => JSON.parse(raw)); if (Array.isArray(a)) hist = a.filter((s) => s && typeof s.t === "number"); })();
+(function loadHist() {
+	const raw = safe(() => window.localStorage.getItem(HIST_KEY)); const a = raw && safe(() => JSON.parse(raw));
+	if (!Array.isArray(a)) return;
+	hist = a.filter((s) => s && typeof s.t === "number");
+	// Samples logged before the game clock existed have no `st`. Backfill them from
+	// the wall clock (relative to the first clocked sample) so one log never mixes
+	// two clocks — the graph page would otherwise refuse the game-time axis.
+	const first = hist.find((s) => typeof s.st === "number");
+	if (first) for (const s of hist) { if (typeof s.st !== "number") s.st = first.st - (first.t - s.t); }
+	else for (const s of hist) s.st = simMs - (Date.now() - s.t);
+})();
 let _histBucket = -1, _histLastAt = 0, histMsg = "", histErr = "";
 function thinHist(now) { hist = hist.filter((s) => (now - s.t) <= HIST_KEEP_MS && ((now - s.t) <= HIST_FINE_MS || s.k)); }
 function saveHist() {
@@ -406,7 +418,12 @@ setInterval(() => {
 					if (claimed.has(key)) continue;                                   // already targeted this tick
 					if (safe(() => api.world && api.world.isTerrainAtCell(ox, oy))) break; // pile rests on ground — stop this column
 					const t = safe(() => api.elements.getResolvedTypeAtCell(ox, oy));
-					if (EMPTY !== undefined && t === EMPTY) { safe(() => api.elements.createAtCellWhenIdle(ox, oy, cfg.type)); claimed.add(key); placed = true; bump(emitTot, cfg.type); break; }
+					if (EMPTY !== undefined && t === EMPTY) {
+						const useType = (emitOnceType != null) ? emitOnceType : cfg.type;
+						safe(() => api.elements.createAtCellWhenIdle(ox, oy, useType));
+						if (useType !== cfg.type) { emitOnceAt = { x: ox, y: oy, at: Date.now(), src: { x: s.x, y: s.y }, material: cfg.type }; emitOnceType = null; }
+						claimed.add(key); placed = true; bump(emitTot, cfg.type); break;
+					}
 					if (t !== EMPTY && t !== undefined) break;                         // hit settled material, next column
 				}
 			}
@@ -743,6 +760,25 @@ function ThermalRow() {
 		h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } },
 			thermalCount + (thermalCount === 1 ? " buffer" : " buffers") + (on ? " · " + pinned + " held at peak temp" : " · drain normally")));
 }
+// --- screensaver row: hands off to the Screensaver mod (window.__brandonScreensaver) --
+let saverMsg = "";
+function ScreensaverRow() {
+	const hook = safe(() => window.__brandonScreensaver);
+	const go = (e) => {
+		if (e && e.stopPropagation) e.stopPropagation();
+		if (!hook) { saverMsg = "Screensaver mod isn't loaded — check the Mods menu (enable it, then fully quit and relaunch)."; if (panelRepaint) panelRepaint((v) => v + 1); return; }
+		let r; try { r = hook.start(); } catch (err) { r = "error: " + (err && err.message ? err.message : err); }
+		saverMsg = r ? ("can't start: " + r) : ("started — build " + (hook.build || "?") + " · move the mouse to stop");
+		if (panelRepaint) panelRepaint((v) => v + 1);
+	};
+	return h("div", { style: { margin: "5px 0 2px" } },
+		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } },
+			h("span", { style: { width: "58px", color: "#a9b8e8", fontWeight: 700, lineHeight: 1.1 } }, "Screensaver"),
+			h("button", { onClick: go, title: hook ? "Start the screensaver now: HUD and cursor hide, the camera follows a grain through your factory. Any key or mouse movement stops it." : "The Screensaver mod isn't loaded — enable it in the Mods menu and relaunch.",
+				style: Object.assign(pillStyle(!!hook, "#a9b8e8", "#1c2340"), { cursor: "pointer" }) }, "🌙 START NOW"),
+			h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } }, hook ? ("build " + (hook.build || "?")) : "mod not loaded")),
+		saverMsg ? h("div", { style: { fontSize: "9.5px", color: "#e0b060", fontWeight: 600, marginLeft: "65px", lineHeight: 1.4 } }, saverMsg) : null);
+}
 const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };
 function TitleBar() {
 	return h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "4px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
@@ -754,7 +790,7 @@ function TitleBar() {
 }
 function Panel() {
 	const [, b] = React.useState(0); panelRepaint = b;
-	if (!isEnabled() || !inWorld()) return null;
+	if (!isEnabled() || !inWorld() || saverActive()) return null;
 	if (emitCfg.type == null) emitCfg.type = defaultType();
 	if (removeCfg.type == null) removeCfg.type = defaultType();
 	const base = {
@@ -775,9 +811,20 @@ function Panel() {
 		Row("Remover", removeCfg, "#e79b9b"),
 		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now."),
 		ThermalRow(),
+		ScreensaverRow(),
 		Tracker(),
 		CleanupRow());
 }
+// hook for the Screensaver mod: where the Sources are and what each emits
+safe(() => {
+	window.__brandonSandboxLoop = {
+		sources: () => eachOf(SRC_ID).map((s) => { const c = cfgFor(s, { type: emitCfg.type, rate: emitCfg.rate }); return { x: s.x, y: s.y, type: c.type, rate: c.rate }; }),
+		// emit ONE grain of `type` instead of the next normal grain, and report where it landed
+		emitOnce: (type) => { emitOnceType = type; emitOnceAt = null; return true; },
+		emitOnceResult: () => emitOnceAt,
+		cancelEmitOnce: () => { emitOnceType = null; },
+	};
+});
 safe(() => api.ui.inject("brandon-sandboxloop-panel", Panel));
 setInterval(() => { if (panelRepaint) panelRepaint((v) => v + 1); }, 1000);
 
