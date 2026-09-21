@@ -775,8 +775,16 @@ function ScreensaverRow() {
 		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } },
 			h("span", { style: { width: "58px", color: "#a9b8e8", fontWeight: 700, lineHeight: 1.1 } }, "Screensaver"),
 			h("button", { onClick: go, title: hook ? "Start the screensaver now: HUD and cursor hide, the camera follows a grain through your factory. Any key or mouse movement stops it." : "The Screensaver mod isn't loaded — enable it in the Mods menu and relaunch.",
-				style: Object.assign(pillStyle(!!hook, "#a9b8e8", "#1c2340"), { cursor: "pointer" }) }, "🌙 START NOW"),
-			h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } }, hook ? ("build " + (hook.build || "?")) : "mod not loaded")),
+			style: Object.assign(pillStyle(!!hook, "#a9b8e8", "#1c2340"), { cursor: "pointer" }) }, "🌙 START NOW"),
+		h("button", { onClick: (e) => {
+				if (e && e.stopPropagation) e.stopPropagation();
+				if (!hook || !hook.exportLog) { saverMsg = "this Screensaver build has no log"; }
+				else { saverMsg = safe(() => hook.exportLog()) || "export failed"; }
+				if (panelRepaint) panelRepaint((v) => v + 1);
+			}, title: "Save the tracer's flight recorder (where it went, and what was around it when it vanished) to Downloads.",
+			style: Object.assign(pillStyle(!!(hook && hook.exportLog), "#cdd6df", "#232a31"), { cursor: "pointer" }) },
+			"⤓ log" + (hook && hook.logSize ? " (" + (safe(() => hook.logSize()) || 0) + ")" : "")),
+		h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } }, hook ? ("build " + (hook.build || "?")) : "mod not loaded")),
 		saverMsg ? h("div", { style: { fontSize: "9.5px", color: "#e0b060", fontWeight: 600, marginLeft: "65px", lineHeight: 1.4 } }, saverMsg) : null);
 }
 const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };

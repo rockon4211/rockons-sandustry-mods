@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.10.0";
+const BUILD = "0.11.0";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -152,6 +152,48 @@ function brightenMeta(n) {
 	if (typeof n !== "number") return 0xffffff;
 	return (brightChan((n >> 16) & 255) << 16) | (brightChan((n >> 8) & 255) << 8) | brightChan(n & 255);
 }
+// --- flight recorder ----------------------------------------------------------
+// Guessing at why the tracer vanishes hasn't worked, so let the game tell us:
+// record every event with position and material, and at the moment it goes
+// missing capture the surrounding cells and structures. Exported as JSON from
+// the Sandbox Loop panel so the cause can be read instead of guessed.
+const LOG_MAX = 500;
+let tlog = [];
+function logEvt(kind, extra) {
+	const e = { t: Date.now(), kind: kind };
+	if (trc) { e.x = trc.x; e.y = trc.y; e.mat = matName(trc.orig); e.miss = trc.miss || 0; }
+	if (extra) for (const k in extra) e[k] = extra[k];
+	tlog.push(e); if (tlog.length > LOG_MAX) tlog.shift();
+}
+function structIdAt(x, y) {
+	const s = safe(() => api.structures.getAtCell(x, y));
+	if (!s) return null;
+	const id = (typeof s.type === "number") ? (safe(() => api.structures.getIdByType(s.type)) || ("#" + s.type)) : String(s.type);
+	return id + (beltAt(x, y) ? "(belt)" : "");
+}
+// everything around a cell: materials, structures, and the immediate neighbours
+function areaReport(cx, cy, R) {
+	const mats = {}, structs = {}, near = [];
+	for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+		const x = cx + dx, y = cy + dy, t = typeAt(x, y);
+		if (isMat(t)) { const n = matName(t); mats[n] = (mats[n] || 0) + 1; }
+		const id = structIdAt(x, y);
+		if (id) { structs[id] = (structs[id] || 0) + 1; if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2) near.push(dx + "," + dy + " " + id); }
+	}
+	return { at: cx + "," + cy, materials: mats, structures: structs, neighbours: near };
+}
+function exportLog() {
+	const payload = { format: "sandustry-tracer-log", build: BUILD, exportedAt: new Date().toISOString(),
+		sources: sourcesList(), tracerElementTypes: [...tracerTypes], events: tlog };
+	try {
+		const blob = new Blob([JSON.stringify(payload, null, 1)], { type: "application/json" });
+		const url = URL.createObjectURL(blob), a = document.createElement("a"), d = new Date(), pad = (n) => String(n).padStart(2, "0");
+		a.href = url; a.download = "tracer-log-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "-" + pad(d.getHours()) + pad(d.getMinutes()) + ".json";
+		document.body.appendChild(a); a.click(); a.remove();
+		setTimeout(() => URL.revokeObjectURL(url), 5000);
+		return "saved " + tlog.length + " events to Downloads";
+	} catch (e) { return "export failed: " + (e && e.message ? e.message : e); }
+}
 let trc = null, possessFails = 0;   // { t, orig, x, y, lastMove, since, hops[], search }
 function possess(x, y, matType) {
 	const def = safe(() => api.elements.getDefinitionByType(matType)) || {};
@@ -173,6 +215,7 @@ function possess(x, y, matType) {
 	while (hops.length > 6) { hops.shift(); hopTypes.shift(); }
 	trc = { t: tt, orig: matType, x: x, y: y, lastMove: Date.now(), since: Date.now(), pending: true, pendingAt: Date.now(), tries: 0, hops: hops, hopTypes: hopTypes, search: null };
 	dbg.note = "possessed " + name + " at " + x + "," + y;
+	logEvt("possess", { stray: stray ? (stray.x + "," + stray.y) : null });
 	return true;
 }
 // hand the grain back to the factory (never leave our element behind)
@@ -242,6 +285,7 @@ function startTracer(now) {
 			const name = matName(waitEmit.material);
 			trc = { t: waitEmit.tt, orig: waitEmit.material, x: r.x, y: r.y, lastMove: now, since: now, pending: false, tries: 0, hops: [name], hopTypes: [waitEmit.material], search: null };
 			dbg.note = "tracer emitted at " + r.x + "," + r.y + " as " + name;
+			logEvt("emitted", { src: waitEmit.src.x + "," + waitEmit.src.y, area: areaReport(r.x, r.y, 3) });
 			waitEmit = null; return true;
 		}
 		if (now - waitEmit.asked > 6000) { safe(() => hook && hook.cancelEmitOnce && hook.cancelEmitOnce()); waitEmit = null; }
@@ -271,7 +315,7 @@ function handoff(now) {
 	// still alive somewhere? then it was never consumed — resume riding it rather
 	// than adopting a second grain (which would leave two tracers in the world)
 	const alive = findTracer(s.x, s.y, 130);
-	if (alive) { trc.x = alive.x; trc.y = alive.y; trc.miss = 0; trc.search = null; trc.lastMove = now; dbg.note = "found it again at " + alive.x + "," + alive.y; return; }
+	if (alive) { logEvt("refound", { at: alive.x + "," + alive.y }); trc.x = alive.x; trc.y = alive.y; trc.miss = 0; trc.search = null; trc.lastMove = now; dbg.note = "found it again at " + alive.x + "," + alive.y; return; }
 	const want = new Set();
 	for (const id of (CHAIN[idOf(s.orig)] || [])) { const t = typeOfId(id); if (typeof t === "number") want.add(t); }
 	const b = snapArea(s.x, s.y, R);
@@ -287,10 +331,10 @@ function handoff(now) {
 	}
 	const settled = (c) => c && !safe(() => api.elements.isFreeFallingAtCell(c.x, c.y));
 	const pick = (settled(hinted) ? hinted : null) || (settled(other) && now - s.t0 > 800 ? other : null) || hinted || (now - s.t0 > 1800 ? other : null);
-	if (pick) { dbg.note = "picked up " + matName(pick.t) + (hinted ? " (chain)" : " (new material)"); possess(pick.x, pick.y, pick.t); return; }
+	if (pick) { dbg.note = "picked up " + matName(pick.t) + (hinted ? " (chain)" : " (new material)"); logEvt("pickup", { became: matName(pick.t), how: hinted ? "chain" : "new material", at: pick.x + "," + pick.y }); possess(pick.x, pick.y, pick.t); return; }
 	const waitMs = setting("handoffSeconds", 8) * 1000;
 	dbg.phase = "waiting for what it becomes (" + Math.ceil((waitMs - (now - s.t0)) / 1000) + "s)";
-	if (now - s.t0 > waitMs) { dbg.note = "nothing came out at " + s.x + "," + s.y + " — new journey"; trc = null; }
+	if (now - s.t0 > waitMs) { dbg.note = "nothing came out at " + s.x + "," + s.y + " — new journey"; logEvt("giveup", { area: areaReport(s.x, s.y, 6) }); trc = null; }
 }
 function tracerTick(now) {
 	if (!tracerTypes.size) { dbg.note = "tracer element not registered"; return null; }
@@ -311,13 +355,19 @@ function tracerTick(now) {
 	trc.miss = trc.miss || 0;
 	const f = findTracer(trc.x, trc.y, 14) || findTracer(trc.x, trc.y, 44) || (trc.miss >= 2 ? findTracer(trc.x, trc.y, 130) : null);
 	if (!f && ++trc.miss < 8) {   // a hitch can move it further than one scan window
+		if (trc.miss === 1) logEvt("miss", { area: areaReport(trc.x, trc.y, 4) });
 		dbg.phase = "looking for the tracer (" + trc.miss + "/8)";
 		return { x: trc.x * CELL + CELL / 2, y: trc.y * CELL + CELL / 2 };
 	}
 	if (f) trc.miss = 0;
 	if (f) {
 		trc.pending = false;
-		if (f.x !== trc.x || f.y !== trc.y) { trc.x = f.x; trc.y = f.y; trc.lastMove = now; }
+		if (f.x !== trc.x || f.y !== trc.y) {
+			if (!trc.trail) trc.trail = [];
+			trc.trail.push(f.x + "," + f.y + "@" + (Math.round((now - trc.since) / 100) / 10) + "s");
+			if (trc.trail.length > 30) trc.trail.shift();
+			trc.x = f.x; trc.y = f.y; trc.lastMove = now;
+		}
 		dbg.phase = "riding " + matName(trc.orig);
 		// Handing the grain back is how we LOSE it (it becomes ordinary material again,
 		// indistinguishable from its neighbours), so only do it when there is a reason:
@@ -336,6 +386,7 @@ function tracerTick(now) {
 		else if (still > stillFor) dbg.phase = "settled in " + matName(trc.orig) + " — waiting (" + Math.ceil((pileMs - still) / 1000) + "s)";
 		if (still > pileMs && !reacting && !onMachine) {   // nothing is going to happen here
 			dbg.note = "sat in a pile at " + trc.x + "," + trc.y + " — new journey";
+			logEvt("pile-giveup", { onStructure: structIdAt(trc.x, trc.y) });
 			release(); return null;
 		}
 		if (reacting || onMachine) {
@@ -343,6 +394,7 @@ function tracerTick(now) {
 			safe(() => api.elements.replaceAtCell(x, y, orig));
 			trc.search = { x: x, y: y, orig: orig, at: now, t0: now, before: snapArea(x, y, 20) };
 			dbg.note = "handed " + matName(orig) + " back at " + x + "," + y + (reacting ? " (to react)" : " (stalled)");
+			logEvt("handback", { why: reacting ? ("touching " + matName(touch)) : "on a machine", onStructure: structIdAt(x, y) });
 		}
 	} else if (trc && trc.pending) {
 		// the mark applies at the sim's next idle moment; until it shows up, keep
@@ -358,6 +410,7 @@ function tracerTick(now) {
 	} else if (trc) {   // the grain was consumed (a machine, a Remover) — watch where it went
 		dbg.phase = "tracer consumed — watching";
 		dbg.note = "lost the tracer at " + trc.x + "," + trc.y + " — watching for what came out";
+		logEvt("LOST", { stillMs: now - trc.lastMove, rodeMs: now - trc.since, onStructure: structIdAt(trc.x, trc.y), trail: (trc.trail || []).slice(-15), area: areaReport(trc.x, trc.y, 6) });
 		trc.search = { x: trc.x, y: trc.y, orig: trc.orig, at: now, t0: now, before: snapArea(trc.x, trc.y, 20) };
 	}
 	if (!trc) return null;
@@ -649,6 +702,8 @@ safe(() => document.addEventListener("visibilitychange", () => { if (active && d
 safe(() => { window.__brandonScreensaver = {
 	build: BUILD,
 	isActive: () => active,
+	exportLog: () => exportLog(),
+	logSize: () => tlog.length,
 	stop: () => stop("hook"),
 	// returns a short status string so the Sandbox Loop button can say what happened
 	start: () => {
