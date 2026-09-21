@@ -2,8 +2,8 @@
 // screensaver: the HUD hides, the cursor disappears, the camera drifts between
 // the busiest spots on the map (your machines, belts, buffers…), the frame
 // rate is capped and the simulation optionally slowed so it costs little
-// power, and a screen wake-lock keeps the monitor from blanking. Any key,
-// click, wheel or real mouse movement restores everything exactly as it was.
+// power, and a screen wake-lock keeps the monitor from blanking. Press E
+// to exit; that restores everything exactly as it was.
 //
 // At the main menu, if nobody touches anything for a few seconds (i.e. the
 // game was launched by the idle scheduled task), it presses Continue for you
@@ -32,12 +32,28 @@ safe(() => window.localStorage.setItem(ACTIVE_KEY, "0"));   // never start with 
 
 // --- input / idle tracking ----------------------------------------------------
 let lastInput = Date.now(), everInput = false, lastMouse = null, graceUntil = 0;
-function noteInput() { lastInput = Date.now(); everInput = true; if (active && Date.now() > graceUntil) stop("input"); }
+// While the screensaver runs, ONLY the E key ends it (tip in the top-right corner);
+// every other key and click is swallowed so it can't nudge the game underneath.
+const isExitKey = (e) => e && (e.code === "KeyE" || e.key === "e" || e.key === "E");
+function noteInput(e) {
+	lastInput = Date.now(); everInput = true;
+	if (!active) return;
+	if (e && e.type === "keydown" && isExitKey(e) && Date.now() > graceUntil) {
+		safe(() => { e.preventDefault(); e.stopImmediatePropagation(); });
+		stop("E key");
+		return;
+	}
+	if (e && (e.type === "keydown" || e.type === "keyup" || e.type === "mousedown" || e.type === "mouseup" || e.type === "click" || e.type === "wheel")) safe(() => { e.preventDefault(); e.stopImmediatePropagation(); });
+}
 safe(() => {
 	const opts = { capture: true, passive: true };
-	window.addEventListener("keydown", noteInput, opts);
-	window.addEventListener("mousedown", noteInput, opts);
-	window.addEventListener("wheel", noteInput, opts);
+	const block = { capture: true, passive: false };
+	window.addEventListener("keydown", noteInput, block);
+	window.addEventListener("keyup", (e) => { if (active) noteInput(e); }, block);
+	window.addEventListener("mousedown", noteInput, block);
+	window.addEventListener("mouseup", (e) => { if (active) noteInput(e); }, block);
+	window.addEventListener("click", (e) => { if (active) noteInput(e); }, block);
+	window.addEventListener("wheel", noteInput, block);
 	window.addEventListener("touchstart", noteInput, opts);
 	window.addEventListener("mousemove", (e) => {
 		// ignore sub-pixel jitter some mice produce at rest
@@ -110,7 +126,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.16.1";
+const BUILD = "0.17.0";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -1017,7 +1033,7 @@ function Debug() {
 if (h) { safe(() => api.ui.inject("brandon-screensaver-debug", Debug)); setInterval(() => { if (dbgRepaint) dbgRepaint((v) => v + 1); }, 250); }
 // --- tracker panel: what the tracer is doing, and every time it loses the grain, why --
 let trkRepaint = null;
-const TRK = { position: "fixed", right: "12px", top: "12px", zIndex: 99998, pointerEvents: "none", width: "400px", font: '500 11px ui-monospace,Consolas,monospace', color: "#dfe6ee", background: "rgba(10,14,20,0.8)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "6px", padding: "7px 10px", lineHeight: 1.45 };
+const TRK = { position: "fixed", right: "12px", top: "46px", zIndex: 99998, pointerEvents: "none", width: "400px", font: '500 11px ui-monospace,Consolas,monospace', color: "#dfe6ee", background: "rgba(10,14,20,0.8)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "6px", padding: "7px 10px", lineHeight: 1.45 };
 function Tracker() {
 	const [, b] = React.useState(0); trkRepaint = b;
 	if (!setting("showTracker", true) || !inWorld() || !(active || setting("debugOverlay", false))) return null;
@@ -1050,11 +1066,20 @@ function Tracker() {
 	return h("div", { style: TRK }, kids);
 }
 if (h) { safe(() => api.ui.inject("brandon-screensaver-tracker", Tracker)); setInterval(() => { if (trkRepaint) trkRepaint((v) => v + 1); }, 300); }
+// the one way out, spelled out in the corner
+let tipRepaint = null;
+function ExitTip() {
+	const [, b] = React.useState(0); tipRepaint = b;
+	if (!active) return null;
+	return h("div", { style: { position: "fixed", right: "12px", top: "12px", zIndex: 99999, pointerEvents: "none", font: '600 12px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#dfe6ee", background: "rgba(10,14,20,0.6)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "6px", padding: "4px 10px", letterSpacing: ".02em" } },
+		"press ", h("span", { style: { display: "inline-block", minWidth: "16px", textAlign: "center", padding: "0 5px", margin: "0 2px", border: "1px solid rgba(255,255,255,0.45)", borderRadius: "4px", fontWeight: 700 } }, "E"), " to exit");
+}
+if (h) { safe(() => api.ui.inject("brandon-screensaver-exittip", ExitTip)); setInterval(() => { if (tipRepaint) tipRepaint((v) => v + 1); }, 500); }
 function Pill() {
 	const [, b] = React.useState(0); repaint = b;
 	if (!setting("enabled", true) || !setting("showStatus", true) || !inWorld() || active) return null;
 	const left = Math.max(0, setting("idleMinutes", 10) * 60000 - idleMs());
-	return h("div", { title: "Sandustry Screensaver: starts after " + setting("idleMinutes", 10) + " min without input. Any key or mouse movement stops it.", style: { position: "fixed", right: "12px", bottom: "12px", zIndex: 99997, pointerEvents: "none", font: '600 10px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#8a94a0", background: "rgba(10,14,20,0.6)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "6px", padding: "2px 7px" } },
+	return h("div", { title: "Sandustry Screensaver: starts after " + setting("idleMinutes", 10) + " min without input. Press E to exit it.", style: { position: "fixed", right: "12px", bottom: "12px", zIndex: 99997, pointerEvents: "none", font: '600 10px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#8a94a0", background: "rgba(10,14,20,0.6)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "6px", padding: "2px 7px" } },
 		"🌙 screensaver in " + Math.ceil(left / 60000) + "m");
 }
 if (h) { safe(() => api.ui.inject("brandon-screensaver-pill", Pill)); setInterval(() => { if (repaint) repaint((v) => v + 1); }, 15000); }

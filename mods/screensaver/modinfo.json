@@ -2,11 +2,11 @@
 	"manifestVersion": 1,
 	"id": "brandon.screensaver",
 	"name": "Screensaver",
-	"version": "0.16.1",
+	"version": "0.17.0",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",
-	"description": "Turns the running world into a screensaver. After N minutes without input the HUD and cursor hide and the camera follows a single grain through your factory: the mod borrows one real grain, marks it as a unique tracer element (same physics, a shade brighter), and rides it along the belts; when it reaches a machine the grain is handed back so the machine processes it normally, and the camera picks up whatever comes out — following the crafting chain from material to material. The frame rate is capped (and the simulation optionally slowed) to save power, and the screen is kept awake. Any key, click or mouse movement puts everything back. Left alone at the main menu it presses Continue and starts by itself, so a Windows 'on idle' task can launch the game into it.",
+	"description": "Turns the running world into a screensaver. After N minutes without input the HUD and cursor hide and the camera follows a single grain through your factory: the mod borrows one real grain, marks it as a unique tracer element (same physics, a shade brighter), and rides it along the belts; when it reaches a machine the grain is handed back so the machine processes it normally, and the camera picks up whatever comes out — following the crafting chain from material to material. The frame rate is capped (and the simulation optionally slowed) to save power, and the screen is kept awake. Press E to exit (a small tip in the top-right says so); other keys and clicks are ignored while it runs. Left alone at the main menu it presses Continue and starts by itself, so a Windows 'on idle' task can launch the game into it.",
 	"dependencies": [],
 	"loadOrder": 0,
 	"configSchema": {
