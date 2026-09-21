@@ -110,7 +110,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.13.1";
+const BUILD = "0.14.0";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -165,6 +165,21 @@ function logEvt(kind, extra) {
 	if (extra) for (const k in extra) e[k] = extra[k];
 	tlog.push(e); if (tlog.length > LOG_MAX) tlog.shift();
 }
+// --- tracker: counts and plain-English notes on what happened to the grain ----
+const stats = { journeys: 0, marksAsked: 0, marksLanded: 0, marksMissed: 0, ghosts: 0, jumps: 0, refound: 0, handbacks: 0, pickups: 0, giveups: 0, piles: 0, losses: {}, longestMs: 0, startedAt: Date.now() };
+let recentNotes = [];
+function track(txt, bad) {
+	const d = new Date(), pad = (n) => String(n).padStart(2, "0");
+	recentNotes.push({ time: pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()), txt: txt, bad: !!bad });
+	if (recentNotes.length > 9) recentNotes.shift();
+}
+function lossReason(kind) { stats.losses[kind] = (stats.losses[kind] || 0) + 1; }
+function speedOf(v) {
+	if (!v) return 0;
+	if (typeof v === "number") return Math.abs(v);
+	const x = +(v.x !== undefined ? v.x : v[0]) || 0, y = +(v.y !== undefined ? v.y : v[1]) || 0;
+	return Math.hypot(x, y);
+}
 function structIdAt(x, y) {
 	const s = safe(() => api.structures.getAtCell(x, y));
 	if (!s) return null;
@@ -184,7 +199,7 @@ function areaReport(cx, cy, R) {
 }
 function exportLog() {
 	const payload = { format: "sandustry-tracer-log", build: BUILD, exportedAt: new Date().toISOString(),
-		sources: sourcesList(), tracerElementTypes: [...tracerTypes], events: tlog };
+		sources: sourcesList(), tracerElementTypes: [...tracerTypes], stats: stats, notes: recentNotes, events: tlog };
 	try {
 		const blob = new Blob([JSON.stringify(payload, null, 1)], { type: "application/json" });
 		const url = URL.createObjectURL(blob), a = document.createElement("a"), d = new Date(), pad = (n) => String(n).padStart(2, "0");
@@ -215,7 +230,9 @@ function possess(x, y, matType) {
 	while (hops.length > 6) { hops.shift(); hopTypes.shift(); }
 	trc = { t: tt, orig: matType, x: x, y: y, lastMove: Date.now(), since: Date.now(), pending: true, pendingAt: Date.now(), tries: 0, hops: hops, hopTypes: hopTypes, search: null };
 	dbg.note = "possessed " + name + " at " + x + "," + y;
-	logEvt("possess", { stray: stray ? (stray.x + "," + stray.y) : null });
+	logEvt("possess", { stray: stray ? (stray.x + "," + stray.y) : null, moving: !!safe(() => api.elements.isFreeFallingAtCell(x, y)), onBelt: !!(beltAt(x, y) || beltAt(x, y + 1)) });
+	stats.marksAsked++;
+	if (stray) track("cleared a leftover tracer at " + stray.x + "," + stray.y, true);
 	return true;
 }
 // hand the grain back to the factory (never leave our element behind)
@@ -302,9 +319,10 @@ function startTracer(now) {
 			trc = { t: waitEmit.tt, orig: waitEmit.material, x: r.x, y: r.y, lastMove: now, since: now, pending: false, tries: 0, hops: [name], hopTypes: [waitEmit.material], search: null };
 			dbg.note = "tracer emitted at " + r.x + "," + r.y + " as " + name;
 			logEvt("emitted", { src: waitEmit.src.x + "," + waitEmit.src.y, area: areaReport(r.x, r.y, 3) });
+			stats.journeys++; track("journey #" + stats.journeys + ": " + name + " from the Source at " + waitEmit.src.x + "," + waitEmit.src.y);
 			waitEmit = null; return true;
 		}
-		if (now - waitEmit.asked > 6000) { safe(() => hook && hook.cancelEmitOnce && hook.cancelEmitOnce()); waitEmit = null; }
+		if (now - waitEmit.asked > 6000) { safe(() => hook && hook.cancelEmitOnce && hook.cancelEmitOnce()); logEvt("emit-timeout", { src: waitEmit.src.x + "," + waitEmit.src.y }); track("the Source at " + waitEmit.src.x + "," + waitEmit.src.y + " didn't emit the tracer within 6s", true); waitEmit = null; }
 		dbg.phase = "waiting for the Source to emit the tracer";
 		return false;
 	}
@@ -331,7 +349,11 @@ function handoff(now) {
 	// still alive somewhere? then it was never consumed — resume riding it rather
 	// than adopting a second grain (which would leave two tracers in the world)
 	const alive = findTracer(s.x, s.y, 130);
-	if (alive) { logEvt("refound", { at: alive.x + "," + alive.y }); trc.x = alive.x; trc.y = alive.y; trc.miss = 0; trc.search = null; trc.lastMove = now; dbg.note = "found it again at " + alive.x + "," + alive.y; return; }
+	if (alive) {
+		const gap = Math.round(Math.hypot(alive.x - s.x, alive.y - s.y)), ms = now - s.t0;
+		stats.refound++;
+		logEvt("refound", { at: alive.x + "," + alive.y, cells: gap, afterMs: ms });
+		track("…it wasn't gone: found it " + gap + " cells away after " + (ms / 1000).toFixed(1) + "s" + (s.lostWhy ? " (it had " + s.lostWhy + ")" : ""), true); trc.x = alive.x; trc.y = alive.y; trc.miss = 0; trc.search = null; trc.lastMove = now; dbg.note = "found it again at " + alive.x + "," + alive.y; return; }
 	const want = new Set();
 	for (const id of (CHAIN[idOf(s.orig)] || [])) { const t = typeOfId(id); if (typeof t === "number") want.add(t); }
 	const b = snapArea(s.x, s.y, R);
@@ -347,10 +369,10 @@ function handoff(now) {
 	}
 	const settled = (c) => c && !safe(() => api.elements.isFreeFallingAtCell(c.x, c.y));
 	const pick = (settled(hinted) ? hinted : null) || (settled(other) && now - s.t0 > 800 ? other : null) || hinted || (now - s.t0 > 1800 ? other : null);
-	if (pick) { dbg.note = "picked up " + matName(pick.t) + (hinted ? " (chain)" : " (new material)"); logEvt("pickup", { became: matName(pick.t), how: hinted ? "chain" : "new material", at: pick.x + "," + pick.y }); possess(pick.x, pick.y, pick.t); return; }
+	if (pick) { stats.pickups++; track((s.lostWhy ? "lost it, so " : "") + "picked up " + matName(pick.t) + (hinted ? " (next in the chain)" : " (something new nearby)") + " at " + pick.x + "," + pick.y); dbg.note = "picked up " + matName(pick.t) + (hinted ? " (chain)" : " (new material)"); logEvt("pickup", { became: matName(pick.t), how: hinted ? "chain" : "new material", at: pick.x + "," + pick.y }); possess(pick.x, pick.y, pick.t); return; }
 	const waitMs = setting("handoffSeconds", 8) * 1000;
 	dbg.phase = "waiting for what it becomes (" + Math.ceil((waitMs - (now - s.t0)) / 1000) + "s)";
-	if (now - s.t0 > waitMs) { dbg.note = "nothing came out at " + s.x + "," + s.y + " — new journey"; logEvt("giveup", { area: areaReport(s.x, s.y, 6) }); trc = null; }
+	if (now - s.t0 > waitMs) { dbg.note = "nothing came out at " + s.x + "," + s.y + " — new journey"; logEvt("giveup", { area: areaReport(s.x, s.y, 6) }); stats.giveups++; track("nothing came out at " + s.x + "," + s.y + " — starting a new journey", true); trc = null; }
 }
 function tracerTick(now) {
 	if (!tracerTypes.size) { dbg.note = "tracer element not registered"; return null; }
@@ -377,7 +399,18 @@ function tracerTick(now) {
 	}
 	if (f) trc.miss = 0;
 	if (f) {
+		if (trc.pending) { stats.marksLanded++; logEvt("marked", { afterMs: now - (trc.pendingAt || now), tries: trc.tries }); track("marked a " + matName(trc.orig) + " grain" + (trc.tries ? " (took " + (trc.tries + 1) + " tries)" : "")); }
 		trc.pending = false;
+		const step = Math.max(Math.abs(f.x - trc.x), Math.abs(f.y - trc.y));
+		if (step > 12 && now - trc.since > 500) {   // no grain moves that far in one look — a second tracer?
+			stats.jumps++;
+			logEvt("jump", { from: trc.x + "," + trc.y, to: f.x + "," + f.y, cells: step, area: areaReport(f.x, f.y, 3) });
+			track("jumped " + step + " cells in one step (" + trc.x + "," + trc.y + " → " + f.x + "," + f.y + ") — possibly a second tracer", true);
+		}
+		trc.vel = speedOf(safe(() => api.elements.getVelocityAtCell(f.x, f.y)));
+		trc.onBelt = !!(beltAt(f.x, f.y) || beltAt(f.x, f.y + 1));
+		trc.maxStep = Math.max(trc.maxStep || 0, step);
+		if (now - trc.since > stats.longestMs) stats.longestMs = now - trc.since;
 		if (f.x !== trc.x || f.y !== trc.y) {
 			if (!trc.trail) trc.trail = [];
 			trc.trail.push(f.x + "," + f.y + "@" + (Math.round((now - trc.since) / 100) / 10) + "s");
@@ -407,6 +440,7 @@ function tracerTick(now) {
 		if (still > pileMs && !reacting && !onMachine) {   // nothing is going to happen here
 			dbg.note = "sat in a pile at " + trc.x + "," + trc.y + " — new journey";
 			logEvt("pile-giveup", { onStructure: structIdAt(trc.x, trc.y) });
+			stats.piles++; track("sat still in a pile for " + Math.round(pileMs / 1000) + "s at " + trc.x + "," + trc.y + " — new journey");
 			release(); return null;
 		}
 		if (reacting || onMachine) {
@@ -415,14 +449,19 @@ function tracerTick(now) {
 			trc.search = { x: x, y: y, orig: orig, at: now, t0: now, before: snapArea(x, y, 20) };
 			dbg.note = "handed " + matName(orig) + " back at " + x + "," + y + (reacting ? " (to react)" : " (stalled)");
 			logEvt("handback", { why: reacting ? ("touching " + matName(touch)) : "on a machine", onStructure: structIdAt(x, y) });
+			stats.handbacks++; track("handed " + matName(orig) + " back " + (reacting ? "to react with " + matName(touch) : "on " + (structIdAt(x, y) || "a machine")) + " — watching for what it becomes");
 		}
 	} else if (trc && trc.pending) {
 		// the mark applies at the sim's next idle moment; until it shows up, keep
 		// re-aiming at the nearest grain of the same material (the stream moves)
 		dbg.phase = "marking a grain…";
 		const g = nearestOf(trc.x, trc.y, trc.orig, 10);
-		if (g) { trc.x = g.x; trc.y = g.y; safe(() => api.elements.replaceAtCell(g.x, g.y, trc.t)); }
+		// re-stamp only every few ticks: each stamp that lands late can leave a stray tracer
+		if (g && trc.tries % 4 === 3) { trc.x = g.x; trc.y = g.y; safe(() => api.elements.replaceAtCell(g.x, g.y, trc.t)); }
 		if (++trc.tries > 45) {   // ~1.5s of trying: start over from a Source
+			stats.marksMissed++; lossReason("the mark never landed (grain kept moving)");
+			logEvt("mark-missed", { tries: trc.tries, area: areaReport(trc.x, trc.y, 4) });
+			track("couldn't mark a " + matName(trc.orig) + " grain at " + trc.x + "," + trc.y + " — it kept moving", true);
 			trc = null; possessFails++;
 			if (possessFails < 6) startTracer(now);
 			else { dbg.note = "couldn't mark a grain — using the belt route"; return null; }
@@ -430,11 +469,39 @@ function tracerTick(now) {
 	} else if (trc) {   // the grain was consumed (a machine, a Remover) — watch where it went
 		dbg.phase = "tracer consumed — watching";
 		dbg.note = "lost the tracer at " + trc.x + "," + trc.y + " — watching for what came out";
-		logEvt("LOST", { stillMs: now - trc.lastMove, rodeMs: now - trc.since, onStructure: structIdAt(trc.x, trc.y), trail: (trc.trail || []).slice(-15), area: areaReport(trc.x, trc.y, 6) });
-		trc.search = { x: trc.x, y: trc.y, orig: trc.orig, at: now, t0: now, before: snapArea(trc.x, trc.y, 20) };
+		const stillMs = now - trc.lastMove, st = structIdAt(trc.x, trc.y) || structIdAt(trc.x, trc.y + 1);
+		let why, kind;
+		if (stillMs > 1000) { why = st && !trc.onBelt ? "been sitting on " + st : "been sitting still (" + (stillMs / 1000).toFixed(1) + "s)"; kind = st && !trc.onBelt ? "sitting on a machine" : "sitting still"; }
+		else if (trc.onBelt) { why = "been moving on a belt"; kind = "moving on a belt"; }
+		else if (st) { why = "gone into " + st; kind = "going into a structure"; }
+		else if (trc.vel > 3) { why = "been flying fast (speed " + trc.vel.toFixed(1) + ")"; kind = "flying fast"; }
+		else { why = "been falling / loose"; kind = "falling / loose"; }
+		lossReason("vanished while " + kind);
+		track("LOST " + matName(trc.orig) + " at " + trc.x + "," + trc.y + " — it had " + why + " (rode " + ((now - trc.since) / 1000).toFixed(1) + "s)", true);
+		logEvt("LOST", { why: why, speed: trc.vel, maxStep: trc.maxStep || 0, stillMs: now - trc.lastMove, rodeMs: now - trc.since, onStructure: structIdAt(trc.x, trc.y), trail: (trc.trail || []).slice(-15), area: areaReport(trc.x, trc.y, 6) });
+		trc.search = { x: trc.x, y: trc.y, orig: trc.orig, at: now, t0: now, before: snapArea(trc.x, trc.y, 20), lostWhy: why };
 	}
 	if (!trc) return null;
 	return { x: trc.x * CELL + CELL / 2, y: trc.y * CELL + CELL / 2 };
+}
+// census: any OTHER tracer cells near the one we follow? (late stamps can leave strays,
+// and the camera would jump to them)
+let lastCensus = 0;
+function censusTick(now) {
+	if (!trc || trc.search || trc.pending || now - lastCensus < 700) return;
+	lastCensus = now;
+	const R = 40, extra = [];
+	for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+		if (!dx && !dy) continue;
+		const t = typeAt(trc.x + dx, trc.y + dy);
+		if (t !== undefined && t !== null && tracerTypes.has(t)) extra.push({ x: trc.x + dx, y: trc.y + dy });
+	}
+	if (!extra.length) return;
+	stats.ghosts += extra.length;
+	logEvt("ghost", { cells: extra.map((c) => c.x + "," + c.y) });
+	track(extra.length + " extra tracer grain" + (extra.length > 1 ? "s" : "") + " near it (e.g. " + extra[0].x + "," + extra[0].y + ") — turned back into " + matName(trc.orig), true);
+	const orig = trc.orig;
+	for (const c of extra) safe(() => api.elements.replaceAtCell(c.x, c.y, orig));
 }
 // safety: never leave our element in the world
 function sweepTracers() {
@@ -613,7 +680,7 @@ function followTick(now) {
 	const t0 = safe(() => performance.now()) || 0;
 	const dt = Math.min(0.5, (now - lastFollowAt) / 1000); lastFollowAt = now;
 	let t = null;
-	if (setting("useTracer", true)) t = tracerTick(now);
+	if (setting("useTracer", true)) { t = tracerTick(now); safe(() => censusTick(now)); }
 	if (!t) { t = pathTick(now, dt); if (!t && !path) t = bodyTick(now, dt); }
 	dbg.ms = (safe(() => performance.now()) || 0) - t0;
 	return t;
@@ -781,6 +848,39 @@ function Debug() {
 	return h("div", { style: { position: "fixed", left: "12px", top: "12px", zIndex: 99999, pointerEvents: "none", font: '600 11px ui-monospace,Consolas,monospace', color: "#e8edf3", background: "rgba(10,14,20,0.82)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: "6px", padding: "6px 9px", whiteSpace: "pre", lineHeight: 1.5, maxWidth: "620px" } }, lines.join("\n"));
 }
 if (h) { safe(() => api.ui.inject("brandon-screensaver-debug", Debug)); setInterval(() => { if (dbgRepaint) dbgRepaint((v) => v + 1); }, 250); }
+// --- tracker panel: what the tracer is doing, and every time it loses the grain, why --
+let trkRepaint = null;
+const TRK = { position: "fixed", right: "12px", top: "12px", zIndex: 99998, pointerEvents: "none", width: "400px", font: '500 11px ui-monospace,Consolas,monospace', color: "#dfe6ee", background: "rgba(10,14,20,0.8)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "6px", padding: "7px 10px", lineHeight: 1.45 };
+function Tracker() {
+	const [, b] = React.useState(0); trkRepaint = b;
+	if (!setting("showTracker", true) || !inWorld() || !(active || setting("debugOverlay", false))) return null;
+	const now = Date.now(), secs = (ms) => (ms / 1000).toFixed(1) + "s";
+	let state;
+	if (!trc) state = waitEmit ? "waiting for a Source to emit the tracer" : "between journeys";
+	else if (trc.search) state = (trc.search.lostWhy ? "LOST — searching" : "handed back — watching the machine") + " at " + trc.search.x + "," + trc.search.y + " (" + secs(now - trc.search.t0) + ")";
+	else if (trc.pending) state = "marking a " + matName(trc.orig) + " grain… (try " + (trc.tries + 1) + ")";
+	else if (trc.miss) state = "can't see it — looking (" + trc.miss + "/8) near " + trc.x + "," + trc.y;
+	else state = "riding " + matName(trc.orig) + " " + secs(now - trc.since) + " · " + (trc.moved || 0) + " cells" + (trc.onBelt ? " · on a belt" : "");
+	const lost = Object.values(stats.losses).reduce((a, n) => a + n, 0);
+	const row = (txt, color, weight) => h("div", { style: { color: color || undefined, fontWeight: weight || undefined } }, txt);
+	const kids = [
+		row("TRACKER  ·  build " + BUILD, "#8fb3d9", 700),
+		row("now: " + state, trc && !trc.search && !trc.miss && !trc.pending ? "#9fe0a8" : "#f2c46b"),
+		row("journeys " + stats.journeys + " · grains marked " + stats.marksLanded + "/" + stats.marksAsked + " · lost " + lost + " · re-found " + stats.refound),
+		row("jumps " + stats.jumps + " · extra tracers " + stats.ghosts + " · hand-backs " + stats.handbacks + " · longest ride " + secs(stats.longestMs)),
+	];
+	const reasons = Object.entries(stats.losses).sort((a, b2) => b2[1] - a[1]);
+	if (reasons.length) {
+		kids.push(row("why it was lost:", "#8fb3d9", 700));
+		for (const [k, n] of reasons) kids.push(row("  " + n + "×  " + k, "#f2c46b"));
+	}
+	if (recentNotes.length) {
+		kids.push(row("recent:", "#8fb3d9", 700));
+		for (const e of recentNotes.slice().reverse()) kids.push(h("div", { style: { color: e.bad ? "#f2a36b" : "#c9d2dc", whiteSpace: "normal", paddingLeft: "6px", textIndent: "-6px" } }, e.time + "  " + e.txt));
+	}
+	return h("div", { style: TRK }, kids);
+}
+if (h) { safe(() => api.ui.inject("brandon-screensaver-tracker", Tracker)); setInterval(() => { if (trkRepaint) trkRepaint((v) => v + 1); }, 300); }
 function Pill() {
 	const [, b] = React.useState(0); repaint = b;
 	if (!setting("enabled", true) || !setting("showStatus", true) || !inWorld() || active) return null;
