@@ -126,7 +126,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.17.1";
+const BUILD = "0.17.2";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -190,7 +190,7 @@ function cloneDefFor(realType, id) {
 	const def = {};
 	for (const k of Object.keys(d)) { const v = d[k]; if (SKIP_KEYS.has(k) || typeof v === "function") continue; def[k] = v; }
 	def.name = "· " + (d.name || matName(realType) || id);
-	if (typeof d.density === "number") def.density = d.density - 1;   // a hair lighter: rides on top of its own kind
+	// same weight as the real material (the clones now react and change like it, so no need to float)
 	def.metaColor = brightenMeta(d.metaColor);
 	if (d.colors && Array.isArray(d.colors.variants)) def.colors = Object.assign({}, d.colors, { variants: brightenVariants(d.colors.variants) });
 	return def;
@@ -322,7 +322,7 @@ function possess(x, y, matType) {
 	// make the tracer look and behave like the grain it is replacing, a shade brighter
 	if (!realOf.has(tt)) safe(() => api.elements.updateDefinition(tt, {
 		nameKey: undefined, name: "· " + (def.name || "tracer"),
-		density: typeof def.density === "number" ? def.density - 1 : def.density,   // a hair lighter: rides on top of its own kind
+		density: def.density,
 		metaColor: brightenMeta(def.metaColor),
 		colors: def.colors && def.colors.variants ? { variants: brightenVariants(def.colors.variants) } : undefined,
 	}));
@@ -421,7 +421,7 @@ function dressTracer(tt, matType) {
 	const def = safe(() => api.elements.getDefinitionByType(matType)) || {};
 	safe(() => api.elements.updateDefinition(tt, {
 		nameKey: undefined, name: "· " + (def.name || "tracer"),
-		density: typeof def.density === "number" ? def.density - 1 : def.density,   // a hair lighter: rides on top of its own kind
+		density: def.density,
 		metaColor: brightenMeta(def.metaColor),
 		colors: def.colors && def.colors.variants ? { variants: brightenVariants(def.colors.variants) } : undefined,
 	}));
@@ -676,7 +676,7 @@ function censusTick(now) {
 	if (!extra.length) return;
 	stats.ghosts += extra.length;
 	logEvt("ghost", { cells: extra.map((c) => c.x + "," + c.y) });
-	track(extra.length + " extra tracer grain" + (extra.length > 1 ? "s" : "") + " near it (e.g. " + extra[0].x + "," + extra[0].y + ") — turned back into " + matName(trc.orig), true);
+	track(extra.length + " extra tracer grain" + (extra.length > 1 ? "s" : "") + " near it (e.g. " + extra[0].x + "," + extra[0].y + ") — turned back into their real material", true);
 	const orig = trc.orig;
 	for (const c of extra) { const real = realOf.get(c.t) !== undefined ? realOf.get(c.t) : orig; safe(() => api.elements.replaceAtCell(c.x, c.y, real)); }
 }
