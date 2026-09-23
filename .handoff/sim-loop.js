@@ -1,5 +1,5 @@
 // Sandbox Loop: does a Source keep its material across PCs? (element ID, not number)
-const fs = require("fs"); const src = fs.readFileSync("/home/claude/sandbox-loop-mod/main.js", "utf8");
+const fs = require("fs"); const src = fs.readFileSync("../mods/sandboxloop/main.js", "utf8");
 function run(label, ids, names, storedCfg, structData) {
   const byType = {}; for (const k in ids) byType[ids[k]] = k;
   let NOW = 1e9; const RD = Date; global.Date = class extends RD { constructor(...a) { super(...(a.length ? a : [NOW])); } static now() { return NOW; } };
