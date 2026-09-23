@@ -1,9 +1,9 @@
-# Mod file checksums — master, 617f2d6, 2026-09-23
+# Mod file checksums — master, cf615c2, 2026-09-23
 
-sha256 of every file in the repo's `mods/` on branch master. Any PC running these
-mods should match exactly. On Windows: `certutil -hashfile <file> SHA256`, or in PowerShell
-`Get-FileHash -Algorithm SHA256 <file>`. From a Claude session with a bridge:
-`cd "$HOME/mnt/sandustry/mods" && find . -type f | sort | xargs sha256sum`.
+Versions: sandboxloop **0.4.0**, screensaver 0.17.2, manufacturing 0.9.5, lavaboiloff 0.1.0, quickstart 1.0.0.
+
+sha256 of every file in the repo's `mods/` on master. On Windows: `certutil -hashfile <file> SHA256`.
+From a Claude session with a bridge: `cd "$HOME/mnt/sandustry/mods" && find . -type f | sort | xargs sha256sum`.
 
 ```
 16180eed16e991fc0155b695cb7b6fa927ce61952b8941ce36b16fa43b195118  README.md
@@ -22,30 +22,23 @@ f98d4b2ca0b99242f3da22f22018bd0aa6fad8d0310b56c9c9ff60722acb688e  manufacturing/
 3c11d6119983d114441475686e40fe874a600ed706a8a284b1d64540c2197bab  quickstart/main.js
 511952cc3b60ee7b8f8bbf68ad4ec3d5cc75120db5ce717e3aa07bb15798ae93  quickstart/modinfo.json
 93da1be7de59ea4f5db0384e5d83098567fbdf5e9f75ca92f20ee2c0a05708b2  quickstart/preview.png
-476154cbfc6c89a5137a287f8b4d2c9e0ee96ed3fd4168523060686805aaa09c  sandboxloop/main.js
+ffc4467653d845c701d34c05fedeab8b65a9c3c08b872fa5a405e9865411d771  sandboxloop/main.js
 9799f426bbb9991dabd5eed0f5b47ed20847363ccb1e3feb083119bf512bd085  sandboxloop/make-sprites.js
-e53894f863720d6dc5e884522d04bdd90a50e78bd8d0d248c6b86387ada7cb3c  sandboxloop/modinfo.json
+128b1148f31160c99006a3a1a8e6248208f2c159c152ffa7f3bffc4c577441bc  sandboxloop/modinfo.json
 d03eb83fbe5c5aba303955cdd28dfe08fcdfc9089a18fd5117b57cbf529b703a  sandboxloop/sink.png
 2fcbee7b58f45f11f52db540b59894490f89bfa6096a1abcf0c1e7aea0d54d18  sandboxloop/source.png
 24e57df1496798cd4b80a300d6218c9e27d299f62d7f7e13f23374c337465244  screensaver/main.js
 dfd4803c71b78672bfb40da7d93705879a6b9299801c1aeff3f1acecf64ac86c  screensaver/modinfo.json
 ```
 
-Versions that go with these hashes: sandboxloop 0.3.1, screensaver 0.17.2,
-manufacturing 0.9.5, lavaboiloff 0.1.0, quickstart 1.0.0.
+The device bridge re-encodes PNGs when it writes them, so images will not match these
+hashes even when they are pixel-identical. Expect the .js and .json files to match exactly.
 
-Note on the PNGs: the device bridge re-encodes images on write, so a PNG copied to a PC
-through it will NOT match the hash above even though it is pixel-identical. Only the .js
-and .json files are expected to match byte for byte. Compare those and check the PNGs by
-eye (or by pixel comparison) if it matters.
-
-Also worth checking on any PC, because they are not in the mods folder:
-- `%APPDATA%\sandustry\meta\settings.json` → `externalModSettings` holds each mod's
-  settings. Different settings can make identical mods behave differently. The
-  screensaver's renamed options (`rideLimitSeconds`, `tourStops`) will be absent until
-  changed on that PC, which is fine — the new defaults then apply.
-- Which mods are ENABLED in the game's mod menu. The rename of vanilla sand to "soil"
-  and the new golden Sand element both come from the Manufacturing mod; with it off or
-  failing to load, the world reverts to vanilla names and materials.
-- Leftovers: a retired `mods\workshop` folder, or an old `glassworks` mod, will still
-  load and register elements if present.
+Not in the mods folder, but worth checking when two PCs behave differently:
+- `%APPDATA%\sandustry\meta\settings.json` → `externalModSettings` (per-mod settings).
+- Which mods are ENABLED in the game's mod menu. Manufacturing is what renames vanilla
+  sand to "soil" and adds the new golden Sand.
+- Leftover `mods\workshop` or `glassworks` folders: they still load if present.
+- `localStorage` for the game's page holds Sandbox Loop's panel selections and (before
+  0.4.0) every placed Source/Remover's material. It does NOT travel with a save. From
+  0.4.0 the material is baked into the structure inside the save instead.

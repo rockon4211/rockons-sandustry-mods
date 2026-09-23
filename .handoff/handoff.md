@@ -22,7 +22,7 @@ copies in this project and on the PC as the durable ones.
 
 ## Mods and versions (installed on the desktop, all committed to master)
 
-- **Sandbox Loop** `brandon.sandboxloop` v0.3.1 — Sources and Removers, balance tracker,
+- **Sandbox Loop** `brandon.sandboxloop` v0.4.0 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
 - **Screensaver** `brandon.screensaver` v0.17.2 — plays the map when idle and follows one
   grain through the factory. This is where nearly all recent work went.
@@ -186,17 +186,15 @@ the game for a mod to reload; the tracker panel shows the build number so he can
 6. The desktop's newest saves (2026-09-21) were never committed; the snapshot branch map is
    from 2026-09-20.
 
-7. **Laptop emits the new golden Sand where the desktop emits soil (2026-09-23, open).**
-   Same mod files on both machines (checksums in `claude/mods-checksums.md`), so suspect
-   something other than the files. Things to check on the laptop, in order: is the
-   Manufacturing mod enabled (it is what renames vanilla sand to "soil" and adds the golden
-   Sand); is an old `mods\\workshop` or `glassworks` folder still present and loading; and
-   what element type each Sandbox Loop Source actually stores. A Source bakes in a NUMERIC
-   element type, and ids for mod-registered elements are handed out in load order — the
-   Screensaver went from registering 5 elements to 35 in v0.16, which shifts the ids of any
-   mod loading after it. If that is the cause, the durable fix is for Sandbox Loop to store
-   a material's string id and resolve it to a type at run time, rather than storing the
-   number.
+7. **Laptop emitted the new golden Sand instead of soil — fixed in Sandbox Loop v0.4.0.**
+   The mod stored a Source's material as the NUMBER the game assigns an element, in
+   localStorage, which never leaves the PC it was set on. On a fresh install every Source
+   fell back to the panel default, and the default was chosen by matching the display name
+   `/^sand$/i` — which on this save is Manufacturing's new golden Sand, not the renamed
+   vanilla soil. v0.4.0 stores the material by element id, bakes it into the structure's
+   own data so it travels with the save, migrates old localStorage entries onto the
+   structures, and picks the default by id. Old Sources that were never opened on the
+   desktop (so never migrated) may still need their material set once on the laptop.
 
 ## Talking to other chats
 
