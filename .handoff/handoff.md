@@ -201,6 +201,12 @@ the game for a mod to reload; the tracker panel shows the build number so he can
 Sessions cannot message each other live. This project is the shared channel: write what you
 did to a doc here and the other chat can read it (that is how the laptop install came back).
 
+**The repo itself is in the project.** `claude/repo-history/` holds the whole code history —
+both branches, every commit — as a git bundle split across ten base64 parts, with the rebuild
+commands in its README. Binary files (the world saves, PNG sprites) are not in it. Rebuild it
+in any session rather than starting from the loose mod docs, and re-export it after big
+changes so the copy here does not go stale.
+
 ## Working style
 
 Brandon iterates fast, live, against the running game. He prefers plain language over jargon
