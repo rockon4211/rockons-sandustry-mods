@@ -66,12 +66,48 @@ function buildPalette() {
 }
 buildPalette();
 setTimeout(buildPalette, 3000);
-safe(() => api.events.on("game:ready", buildPalette));
+safe(() => api.events.on("game:ready", () => { buildPalette(); safe(ensureDefaults); }));
+setTimeout(() => safe(ensureDefaults), 3500);
 
+// resolve stored ids to numbers and fill in a default material if there is none yet
+function ensureDefaults() {
+	fixCfg(emitCfg); fixCfg(removeCfg);
+	if (emitCfg.type == null) { emitCfg.type = defaultType(); emitCfg.mat = eidOfType(emitCfg.type); }
+	if (removeCfg.type == null) { removeCfg.type = defaultType(); removeCfg.mat = eidOfType(removeCfg.type); }
+}
 function defaultType() {
 	if (!palette.length) buildPalette();
+	// by ELEMENT ID, never by display name: other mods rename the vanilla sand to "soil"
+	// and add their own material called "Sand", and matching on the name picked THAT
+	const t = typeOfEid("sand");
+	if (typeof t === "number" && paletteByType.has(t)) return t;
 	const sand = palette.find((p) => /^sand$/i.test(p.name)) || palette.find((p) => /redsand|sand/i.test(p.name));
 	return (sand || palette[0] || { type: null }).type;
+}
+// A material is stored as its element ID (a string like "sand"), because the NUMBER the
+// game gives an element depends on which mods loaded and in what order — the same map on
+// another PC resolved a stored number to a different material.
+const eidCache = new Map(), typeCache = new Map();
+function typeOfEid(id) {
+	if (!id) return undefined;
+	if (typeCache.has(id)) return typeCache.get(id);
+	const t = safe(() => api.elements.getTypeFromId(id));
+	if (typeof t === "number") typeCache.set(id, t);
+	return t;
+}
+function eidOfType(t) {
+	if (typeof t !== "number") return undefined;
+	if (eidCache.has(t)) return eidCache.get(t);
+	const id = safe(() => api.elements.getIdByType(t));
+	if (id) eidCache.set(t, id);
+	return id;
+}
+// fill in whichever half is missing, preferring the id
+function fixCfg(c) {
+	if (!c) return c;
+	if (c.mat) { const t = typeOfEid(c.mat); if (typeof t === "number") c.type = t; }
+	else if (c.type != null) { const id = eidOfType(c.type); if (id) c.mat = id; }
+	return c;
 }
 function nameOf(type) { const p = paletteByType.get(type); return p ? p.name : ("type " + type); }
 function colorOf(type) { const p = paletteByType.get(type); return p ? p.color : "#8a8a8a"; }
@@ -85,6 +121,8 @@ function clampRate(v) { v = +v; if (!isFinite(v) || v < 0) v = 0; if (v > RATE_M
 	const raw = safe(() => window.localStorage.getItem(PANEL_KEY));
 	const o = raw && safe(() => JSON.parse(raw));
 	if (o) { if (o.emit) emitCfg = o.emit; if (o.remove) removeCfg = o.remove; }
+	// stored on an older build (number only) or on another PC: the id wins
+	setTimeout(() => safe(ensureDefaults), 0);
 })();
 function savePanel() { safe(() => window.localStorage.setItem(PANEL_KEY, JSON.stringify({ emit: emitCfg, remove: removeCfg }))); }
 
@@ -92,7 +130,30 @@ function savePanel() { safe(() => window.localStorage.setItem(PANEL_KEY, JSON.st
 const cfgMap = new Map();   // "x,y" -> {type, rate}
 const runtime = new Map();  // "x,y" -> {accum, last}  (emit/remove pacing)
 function ikey(x, y) { return x + "," + y; }
-function cfgFor(s, fallback) { return cfgMap.get(ikey(s.x, s.y)) || fallback; }
+// The settings baked into a placed Source/Remover live on the STRUCTURE (so they travel
+// with the save to another PC); the old per-cell store is still read, and is copied onto
+// the structure the first time it is seen.
+function cfgFor(s, fallback) {
+	const d = s && s.data;
+	if (d && d.brandonMat) {
+		const t = typeOfEid(d.brandonMat);
+		if (typeof t === "number") return { mat: d.brandonMat, type: t, rate: typeof d.brandonRate === "number" ? d.brandonRate : (fallback ? fallback.rate : 0) };
+	}
+	const c = cfgMap.get(ikey(s.x, s.y));
+	if (c) {
+		fixCfg(c);
+		if (d && c.mat) { d.brandonMat = c.mat; if (typeof c.rate === "number") d.brandonRate = c.rate; }
+		return c;
+	}
+	return fixCfg(fallback);
+}
+function bake(s, cfg) {
+	const mat = cfg.mat || eidOfType(cfg.type), rate = cfg.rate;
+	cfgMap.set(ikey(s.x, s.y), { mat: mat, type: cfg.type, rate: rate });
+	if (!s.data) s.data = {};
+	s.data.brandonMat = mat; s.data.brandonRate = rate;
+	saveCfg();
+}
 
 // --- structure cache ---------------------------------------------------------
 // api.structures.forEachOfType walks EVERY structure on the map (~29k here) on
@@ -340,8 +401,8 @@ function saveCfg() { const o = {}; for (const [k, v] of cfgMap) o[k] = v; safe((
 safe(() => api.events.on("building:placed", (p) => {
 	structsChanged();
 	const s = p && p.structure; if (!s) return;
-	if (s.type === SRC_ID) { cfgMap.set(ikey(s.x, s.y), { type: (emitCfg.type != null ? emitCfg.type : defaultType()), rate: emitCfg.rate }); saveCfg(); }
-	else if (s.type === SNK_ID) { cfgMap.set(ikey(s.x, s.y), { type: (removeCfg.type != null ? removeCfg.type : defaultType()), rate: removeCfg.rate }); saveCfg(); }
+	if (s.type === SRC_ID) bake(s, { mat: emitCfg.mat, type: (emitCfg.type != null ? emitCfg.type : defaultType()), rate: emitCfg.rate });
+	else if (s.type === SNK_ID) bake(s, { mat: removeCfg.mat, type: (removeCfg.type != null ? removeCfg.type : defaultType()), rate: removeCfg.rate });
 }));
 // a deconstructed Source/Remover forgets its baked settings (they used to linger in storage forever)
 function forgetAt(x, y) { const k = ikey(x, y); if (cfgMap.delete(k)) saveCfg(); runtime.delete(k); runtime.delete("r" + k); }
@@ -558,7 +619,7 @@ function pinnedFirst(arr, keyOf, restCmp) {
 }
 function Row(label, cfg, accent) {
 	const opts = palette.map((p) => h("option", { value: p.type, key: p.type }, p.name));
-	const onMat = (e) => { cfg.type = +e.target.value; savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
+	const onMat = (e) => { cfg.type = +e.target.value; cfg.mat = eidOfType(cfg.type); savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
 	const onRate = (e) => { cfg.rate = clampRate(e.target.value); savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
 	const stop = (e) => { if (e.stopPropagation) e.stopPropagation(); };   // keep typing from reaching the game's hotkeys
 	return h("div", { style: { display: "flex", alignItems: "center", gap: "7px", margin: "3px 0" } },
@@ -770,13 +831,13 @@ function ScreensaverRow() {
 		if (e && e.stopPropagation) e.stopPropagation();
 		if (!hook) { saverMsg = "Screensaver mod isn't loaded — check the Mods menu (enable it, then fully quit and relaunch)."; if (panelRepaint) panelRepaint((v) => v + 1); return; }
 		let r; try { r = hook.start(); } catch (err) { r = "error: " + (err && err.message ? err.message : err); }
-		saverMsg = r ? ("can't start: " + r) : ("started — build " + (hook.build || "?") + " · move the mouse to stop");
+		saverMsg = r ? ("can't start: " + r) : ("started — build " + (hook.build || "?") + " · press E to exit");
 		if (panelRepaint) panelRepaint((v) => v + 1);
 	};
 	return h("div", { style: { margin: "5px 0 2px" } },
 		h("div", { style: { display: "flex", alignItems: "center", gap: "7px" } },
 			h("span", { style: { width: "58px", color: "#a9b8e8", fontWeight: 700, lineHeight: 1.1 } }, "Screensaver"),
-			h("button", { onClick: go, title: hook ? "Start the screensaver now: HUD and cursor hide, the camera follows a grain through your factory. Any key or mouse movement stops it." : "The Screensaver mod isn't loaded — enable it in the Mods menu and relaunch.",
+			h("button", { onClick: go, title: hook ? "Start the screensaver now: HUD and cursor hide, the camera follows a grain through your factory. Press E to exit." : "The Screensaver mod isn't loaded — enable it in the Mods menu and relaunch.",
 			style: Object.assign(pillStyle(!!hook, "#a9b8e8", "#1c2340"), { cursor: "pointer" }) }, "🌙 START NOW"),
 		h("button", { onClick: (e) => {
 				if (e && e.stopPropagation) e.stopPropagation();
@@ -801,8 +862,7 @@ function TitleBar() {
 function Panel() {
 	const [, b] = React.useState(0); panelRepaint = b;
 	if (!isEnabled() || !inWorld() || saverActive()) return null;
-	if (emitCfg.type == null) emitCfg.type = defaultType();
-	if (removeCfg.type == null) removeCfg.type = defaultType();
+	ensureDefaults();
 	const base = {
 		position: "fixed", left: panelPos.x + "px", top: panelPos.y + "px", zIndex: 99998, pointerEvents: "auto",
 		background: "rgba(10,14,20,0.94)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "8px",

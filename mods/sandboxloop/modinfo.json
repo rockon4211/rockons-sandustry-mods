@@ -2,11 +2,11 @@
 	"manifestVersion": 1,
 	"id": "brandon.sandboxloop",
 	"name": "Sandbox Loop",
-	"version": "0.3.1",
+	"version": "0.4.0",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",
-	"description": "Sources and Removers for an endless, self-balancing system, plus a balance tracker. A Source emits a chosen material at an adjustable particles/sec (decimals OK, up to 100/s); a Remover is a single block that deletes one chosen material at an adjustable rate. Each placed structure bakes in the settings showing on the panel when you place it. The Balance panel counts every material on the whole map, shows surplus/deficit per material (from the map count, with what your machines eat derived), keeps running totals, logs a 30s history you can export and graph, can lock Thermal Buffers at their peak temperature, and freezes everything while the game is paused.",
+	"description": "Sources and Removers for an endless, self-balancing system, plus a balance tracker. A Source emits a chosen material at an adjustable particles/sec (decimals OK, up to 100/s); a Remover is a single block that deletes one chosen material at an adjustable rate. Each placed structure bakes in the settings showing on the panel when you place it, and stores its material by name inside the save, so a map opened on another PC keeps emitting the same thing. The Balance panel counts every material on the whole map, shows surplus/deficit per material (from the map count, with what your machines eat derived), keeps running totals, logs a 30s history you can export and graph, can lock Thermal Buffers at their peak temperature, and freezes everything while the game is paused.",
 	"dependencies": [],
 	"loadOrder": 0,
 	"configSchema": {
