@@ -203,7 +203,9 @@ did to a doc here and the other chat can read it (that is how the laptop install
 
 **The repo itself is in the project.** `claude/repo-history/` holds the whole code history —
 both branches, every commit — as a git bundle split across ten base64 parts, with the rebuild
-commands in its README. Binary files (the world saves, PNG sprites) are not in it. Rebuild it
+commands in its README. The mod sprites and the Workshop custom map are in `claude/repo-history/binaries.md` as
+base64. The world saves are in neither (12 MB); they live in `loamcrest-transfer.zip` and
+on both PCs. Rebuild the repo
 in any session rather than starting from the loose mod docs, and re-export it after big
 changes so the copy here does not go stale.
 
