@@ -1,6 +1,6 @@
-# Mod file checksums — main, 0428b44, 2026-09-24
+# Mod file checksums — main, d4a9da1, 2026-09-24
 
-Versions: sandboxloop 0.4.5, screensaver 0.18.1, manufacturing 0.15.1, lavaboiloff 0.1.1, quickstart 1.0.1, improvedfilters 0.2.0.
+Versions: sandboxloop 0.4.5, screensaver 0.18.2, manufacturing 0.15.2, lavaboiloff 0.1.1, quickstart 1.0.1, improvedfilters 0.2.0.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
 text files out with CRLF, so hash those after converting, or compare with `git hash-object`.
 
@@ -26,11 +26,11 @@ b77d7dbf8f5d674034316ff9af034f1da170dad21f4bcdf12c63540916c1c653  lavaboiloff/ma
 1e4b15b61a5006819fc8d69eeca740b230348493f97440d081812ed1c29e9fcd  lavaboiloff/worker.js
 ff36b12798a7aa8d6983f2c165326ddb38391d218443498bc07cd9ab31c935cc  manufacturing/filter_left_mk3.png
 9bf29fe79ee1c8870df691face431ddd948c2af078fa7524a32a7535c52c5b3e  manufacturing/filter_right_mk3.png
-18cc98411a481b5155cb32757a1a807d57afcc0d77e35d7475d7045e10d8d651  manufacturing/main.js
-555f71b116ae70bcf7731e9ade411e7fb14d0403946579b2a4b04d924f8beba0  manufacturing/main.real.js
+199ef0fc9ea0d9c9478ec92d2c35842e8748dda638209ac3f4158261d12f6069  manufacturing/main.js
+41a21686bfbda282d24aa85c0a6865166cf581111a48d4debbf0378ed753da09  manufacturing/main.real.js
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun.png
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun_icon.png
-0caaafdc9daff9f98b63aa90bcc6c9b05bc31b88104d7eec0db3e5f3f2396237  manufacturing/modinfo.json
+08f55854620c0c030d1713efac95002586118fb380900ff5bc70d42d103dfd95  manufacturing/modinfo.json
 bb6b7ac569af46b8b32072d79df284210d4f8b70e5a84ffa0407fac9c1475189  manufacturing/preview.png
 8018d0144f77848af41857926ed3d93d02d0db2a5482c9ef37b590839876c1f6  manufacturing/worker.js
 b5d6484016e77e14a2650302ea7da93e24213a94e7b87e0fef8facc00965310a  manufacturing/worker.real.js
@@ -42,8 +42,8 @@ c67969b7ba30cb5a1f8967aebd2571d31cfa2945b7bed51623c4f0b4647f22d8  sandboxloop/ma
 9d4c9c4be1b51a356ac37df27fefb30901722fe780b470c7c48463f1ff19299f  sandboxloop/modinfo.json
 d03eb83fbe5c5aba303955cdd28dfe08fcdfc9089a18fd5117b57cbf529b703a  sandboxloop/sink.png
 2fcbee7b58f45f11f52db540b59894490f89bfa6096a1abcf0c1e7aea0d54d18  sandboxloop/source.png
-3ba37c94226cc7a2ec360f39444ae318f52d194e415e35770ad97ba6396a2293  screensaver/main.js
-8ff452dfdd52a0ee911f3af8068d52f5e002b0f5c027739662a48125359caa7d  screensaver/modinfo.json
+897a07aeab82d48bd5aa683cc9840bf7504ef3986be6a19ffda9d1fc7d0ad381  screensaver/main.js
+903f43518ef149b4646fc042f52b94b614eea16c230adcfe7d4aa6af9b52c656  screensaver/modinfo.json
 ```
 
 ## PNGs
