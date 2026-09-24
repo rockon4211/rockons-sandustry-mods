@@ -50,9 +50,9 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
 - **Screensaver** `brandon.screensaver` v0.18.1 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went.
-- **Manufacturing** `brandon.manufacturing` v0.11.1 — soil/Sand rename + Glass, Mod Tools,
-  and the **Filter Mk.3** upgrade (renamed in 0.11.0 from "Belt-Speed Filtering"; same
-  mechanism). Source of truth: `main.real.js` / `worker.real.js` (see below).
+- **Manufacturing** `brandon.manufacturing` v0.12.0 — soil/Sand rename + Glass, Mod Tools,
+  and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
+  0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
 - **Workshop** — retired on 2026-09-20. Code in `.handoff/workshop/` and git history; the
   early root `workshop/` copy was removed on 2026-09-23. On the PC it was moved to
@@ -71,8 +71,10 @@ would drop the hand-written code (HeavyStone, filter boost / Filter Mk.3, red-bl
 probes) and reorder element registration, which changes element ids and breaks saves. It
 now refuses to write into `mods/manufacturing` without `--force`.
 
-**Filter Mk.3.** An On/Off upgrade in a Manufacturing tab of the Upgrades pane. When ON,
-every Mk.2 Filter moves material at Mk.2 belt speed. It is an upgrade, not a new structure,
+**Filter Mk.3.** A research node (`brandonFilterMk3`) under Manufacturing, beside Glass;
+it needs Manufacturing and the vanilla Advanced Filters. Cost is `FILTER_MK3_COST` in
+`main.real.js` — 500,000 gold as a placeholder, to be tuned. Once researched, every Mk.2
+Filter moves material at Mk.2 belt speed (permanent, no switch). It is research, not a new structure,
 because the game hard-codes belt speed and filter behaviour to the `filterLeftMk2` /
 `filterRightMk2` ids and gives any unknown structure id speed 0. `sim-filterboost.js`
 tests it.
@@ -273,7 +275,8 @@ baked into the structure).
 - Removed leftovers: `diag-bolton.js`, root `quickstart/` (duplicate of `mods/quickstart`
   1.0.0), root `workshop/` (early copy).
 - Mods (by other sessions the same day): Sandbox Loop 0.4.3, Screensaver 0.18.1,
-  Manufacturing 0.11.1, Lava Boiloff 0.1.1, Quickstart 1.0.1.
+  Manufacturing 0.11.1, Lava Boiloff 0.1.1, Quickstart 1.0.1. Manufacturing 0.12.0 then moved
+  Filter Mk.3 from the Upgrades pane to the tech tree (500,000 gold placeholder).
 
 ## Talking to other chats
 

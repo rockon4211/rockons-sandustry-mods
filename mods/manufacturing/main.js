@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.11.1 running"));
+		safe(() => api.ui.toast("Manufacturing v0.12.0 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -716,55 +716,63 @@ armGlassRecipe();
 setInterval(armGlassRecipe, 1500);
 
 // =========================================================================
-// FILTER MK.3 - an On/Off upgrade in the Upgrades pane
+// FILTER MK.3 research
 //
-// A "Manufacturing" tab appears in the Upgrades pane once MANUFACTURING is
-// researched. It holds one upgrade on the Mk.2 Filter, "Filter Mk.3": bought once,
-// it becomes an On/Off switch (the game's own one-off upgrade toggle). ON turns
-// every Mk.2 Filter into a Mk.3 - it moves material at Mk.2 BELT speed: 2 cells per belt pass instead of 1,
-// which is the same 6 cells/s the Mk.2 belt manages with 1 cell twice as often.
-// Everything else about the filter (settings, allow/block, pass-through) is the
-// game's own. A separate Mk.3 structure is not possible: the game hard-codes belt
-// speed and every filter behaviour to the structure ids filterLeft/RightMk2, and an
-// unknown id gets speed 0. So the Mk.3 is an upgrade applied to all Mk.2 Filters. The speed lives in the simulation worker's transport config, so
-// the switch is handed to worker.js through a shared buffer.
+// A research node under Manufacturing (beside Glass). Once researched, every
+// Mk.2 Filter becomes a Mk.3: it moves material at Mk.2 BELT speed - 2 cells per
+// belt pass instead of 1, the same 6 cells/s the Mk.2 belt manages with 1 cell
+// twice as often. Everything else about the filter (settings, allow/block,
+// pass-through) is the game's own. A separate Mk.3 structure is not possible:
+// the game hard-codes belt speed and every filter behaviour to the structure ids
+// filterLeft/RightMk2, and an unknown id gets speed 0 - so the Mk.3 is research
+// that upgrades all Mk.2 Filters. The speed lives in the simulation worker's
+// transport config, so the state is handed to worker.js through a shared buffer.
 // =========================================================================
-const FILTER_BOOST_CATEGORY = "brandonManufacturingUpgrades";
-const FILTER_BOOST_ITEM = "filterRightMk2";      // the card is the Mk.2 Filter itself
-const FILTER_BOOST_UPGRADE = "brandonFilterBeltSpeed";
-const FILTER_BOOST_COST = 500;
+const TECH_FILTER_MK3 = "brandonFilterMk3";
+const FILTER_MK3_COST = 500000;   // placeholder price - to be tuned later
 let filterBoost = null;   // uint32[2]: [0] = on (1) / off (0), [1] = the worker's last applied state + 1
 try { filterBoost = api.shared.buffers.create("filterBoost", { type: "uint32", length: 2 }); }
 catch (e) { console.error(`[${MOD_ID}] filter boost buffer failed:`, e); }
 
 safe(() => api.i18n.register("en", {
-	[`upgrades|${FILTER_BOOST_CATEGORY}|name`]: "Manufacturing",
-	[`upgrades|${FILTER_BOOST_UPGRADE}|name`]: "Filter Mk.3",
-	[`upgrades|${FILTER_BOOST_UPGRADE}|description`]:
-		"Upgrades every Mk.2 Filter to a Filter Mk.3: the same filter with the same settings and sorting, but it moves material as fast as a Mk.2 Conveyor Belt (twice the Mk.2 Filter's speed). Switch it on or off at any time once bought.",
+	[`tech|${TECH_FILTER_MK3}|name`]: "Filter Mk.3",
+	[`tech|${TECH_FILTER_MK3}|description`]:
+		"Upgrades every Mk.2 Filter to a Filter Mk.3: the same filter with the same settings and sorting, but it moves material as fast as a Mk.2 Conveyor Belt (twice the Mk.2 Filter's speed).",
 }));
-function registerFilterBoost() {
-	safe(() => api.upgrades.registerCategory({
-		id: FILTER_BOOST_CATEGORY, name: "Manufacturing", nameKey: `upgrades|${FILTER_BOOST_CATEGORY}|name`,
-		requirement: { techId: TECH_MANU },
-	}));
-	safe(() => api.upgrades.register({
-		itemId: FILTER_BOOST_ITEM, itemName: "Filter Mk.2", itemNameKey: "structures|filterMk2|name",
-		categoryId: FILTER_BOOST_CATEGORY,
-		requirement: { building: "filterRightMk2" },   // shown once you can build Mk.2 Filters
-		upgrade: {
-			id: FILTER_BOOST_UPGRADE,
-			name: "Filter Mk.3", nameKey: `upgrades|${FILTER_BOOST_UPGRADE}|name`,
-			description: "Mk.2 Filters become Mk.3: Mk.2 belt speed.", descriptionKey: `upgrades|${FILTER_BOOST_UPGRADE}|description`,
-			maxLevel: 1, costs: [FILTER_BOOST_COST], oneOff: true,
-		},
-	}));
+
+// Filter Mk.3 - under Manufacturing, beside Glass. Also needs Advanced Filters
+// (the vanilla research that unlocks the Mk.2 Filter), looked up by enum name.
+{
+	if (safe(() => api.tech.getDefinitionById(TECH_MANU)) && !safe(() => api.tech.getDefinitionById(TECH_FILTER_MK3))) {
+		const adv = safe(() => sandkit.enums.Tech.AdvancedFilters);
+		const definition = {
+			nameKey: `tech|${TECH_FILTER_MK3}|name`,
+			descriptionKey: `tech|${TECH_FILTER_MK3}|description`,
+			cost: FILTER_MK3_COST,
+			currencyType: "gold",
+			branch: "heat",
+			requires: adv !== undefined && adv !== null ? [TECH_MANU, adv] : [TECH_MANU],
+			unlocks: {},
+		};
+		let done = false;
+		for (const preferredPosition of [{ row: 15, col: 0 }, { row: 14, col: 1 }, { row: 15, col: 1 }, { row: 16, col: 0 }, null]) {
+			try {
+				api.tech.registerNode(TECH_FILTER_MK3, definition,
+					preferredPosition ? { parentId: TECH_MANU, preferredPosition } : { parentId: TECH_MANU });
+				console.log(`[${MOD_ID}] research node registered: Filter Mk.3 (under Manufacturing)`);
+				done = true;
+				break;
+			} catch (e) {
+				if (/already registered/i.test(String(e && e.message))) { done = true; break; }
+			}
+		}
+		if (!done) console.error(`[${MOD_ID}] Filter Mk.3 node could not be placed`);
+	}
 }
-registerFilterBoost();
-// a save loaded after start-up may not carry the upgrade's slot yet; registering again only fills it in
-safe(() => api.events.on("game:ready", () => safe(registerFilterBoost)));
 function filterBoostOn() {
-	return isEnabled() && (safe(() => api.upgrades.getLevelById(FILTER_BOOST_ITEM, FILTER_BOOST_UPGRADE)) || 0) >= 1;
+	if (!isEnabled()) return false;
+	const r = safe(() => api.tech.isResearchedById(TECH_FILTER_MK3));
+	return typeof r === "boolean" ? r : safe(() => api.tech.isLockedById(TECH_FILTER_MK3)) === false;
 }
 let filterBoostLast = null;
 setInterval(() => {
@@ -772,7 +780,10 @@ setInterval(() => {
 	const on = filterBoostOn();
 	filterBoost[0] = on ? 1 : 0;
 	if (on !== filterBoostLast) {
-		if (filterBoostLast !== null) console.log(`[${MOD_ID}] Filter Mk.3 ${on ? "ON (Mk.2 belt speed)" : "OFF (normal Mk.2 speed)"}`);
+		if (filterBoostLast !== null) {
+			console.log(`[${MOD_ID}] Filter Mk.3 ${on ? "ON (Mk.2 belt speed)" : "OFF (normal Mk.2 speed)"}`);
+			if (on) safe(() => api.ui.toast("Filter Mk.3 researched - Mk.2 Filters now run at Mk.2 belt speed"));
+		}
 		filterBoostLast = on;
 	}
 }, 400);
