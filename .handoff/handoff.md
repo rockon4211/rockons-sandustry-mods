@@ -50,7 +50,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
 - **Screensaver** `brandon.screensaver` v0.18.1 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went.
-- **Manufacturing** `brandon.manufacturing` v0.13.0 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.14.0 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
@@ -71,15 +71,23 @@ would drop the hand-written code (HeavyStone, the Filter Mk.3 research node, red
 probes) and reorder element registration, which changes element ids and breaks saves. It
 now refuses to write into `mods/manufacturing` without `--force`.
 
-**Filter Mk.3 (in progress).** A research node (`brandonFilterMk3`) under Manufacturing, beside
-Glass; it needs Manufacturing and the vanilla Advanced Filters. Cost is `FILTER_MK3_COST` in
-`main.real.js` — 25,000 gold. It is meant to unlock a NEW structure, Filter Mk.3: identical to
-the Mk.2 Filter (sorting, filter settings) but moving material at Mk.2 belt speed. That
-structure is not built yet, so the node currently has no effect. History: 0.10.0–0.12.2 sped
-up EVERY Mk.2 Filter instead (worker transport-config patch, then a rename to "Filter Mk.3");
-Brandon rejected that — he wants a separate building — and 0.13.0 removed it completely. The
-game hard-codes belt speed and filter behaviour to the `filterLeftMk2` / `filterRightMk2` ids
-(an unknown id gets speed 0), so the new structure has to supply its own belt + filter logic.
+**Filter Mk.3 (0.14.0).** Its own buildings, `filterRightMk3` / `filterLeftMk3`, unlocked by the
+`brandonFilterMk3` research under Manufacturing (needs Manufacturing + vanilla Advanced
+Filters; `FILTER_MK3_COST` = 25,000 gold). It reuses the game's own code: the sim marks a tile
+as a filter for ANY structure carrying a `filter` object (so sorting = the Mk.2's), and
+`api.structureBehaviors.registerConveyorType(id, {velocity})` makes it a belt that runs the
+same move routine. Mod belt types aren't in the game's passes, so a manager-worker trigger
+(`sandkit.engine.api.workers.triggers.register`, id `brandonFilterMk3Belts`, the callback is
+sent as TEXT) posts `RunConveyorBelts` for it every 166 ms right-then-left — the Mk.2 belt
+cadence; Clearing Frames are driven the same way. Conveyor type + trigger only reach worker
+threads that exist, so both are re-sent on `game:ready`. A new Mk.3 copies
+`store.options.defaultFilter` (the Mk.2 panel's current pick) in `building:placed` — the
+game's filter panel only opens for its own ids; copy-paste keeps a Mk.3's filter. Vertical
+placement makes a vanilla `filterWallMk2`. Sprites: the Mk.2 strip with blue → red
+(`filter_*_mk3.png`, 4 frames of 18×18; only the first frame is drawn — no belt animation
+yet). Saves that researched the node before 0.14.0 get the building unlocked on load.
+UNTESTED in game as of 0.14.0. History: 0.10.0–0.12.2 sped up every Mk.2 Filter instead;
+rejected, removed in 0.13.0.
 
 ## Sandbox Loop v0.4.5 — what it does
 

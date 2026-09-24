@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.13.0 running"));
+		safe(() => api.ui.toast("Manufacturing v0.14.0 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -716,21 +716,84 @@ armGlassRecipe();
 setInterval(armGlassRecipe, 1500);
 
 // =========================================================================
-// FILTER MK.3 research
+// FILTER MK.3 - its own building: the Mk.2 Filter's sorting at Mk.2 BELT speed
 //
-// A research node under Manufacturing (beside Glass). It will unlock the Filter
-// Mk.3 - its own structure that sorts like the Mk.2 Filter at Mk.2 belt speed.
-// That structure is not built yet, so for now the node has no effect. (0.10.0 -
-// 0.12.2 instead sped up EVERY Mk.2 Filter through the worker's transport config;
-// that was not what was wanted and was removed in 0.13.0.)
+// Everything that makes the Mk.2 Filter a filter is the game's own, reused:
+//  - sorting: the sim marks a tile as a filter for ANY structure that carries a
+//    `filter` object (allow/block, element list, liquid/gas flags), so a Mk.3
+//    gets exactly the Mk.2's rules by carrying the same object. It is copied
+//    from the Mk.2 Filter panel's current setting when placed (as the game does
+//    for its own filter wall); copy-paste keeps a Mk.3's own filter.
+//  - moving: registered as a conveyor type, the sim runs the same move routine
+//    as every belt (row above the structure, 1 cell per pass). Mod belt types are
+//    not in the game's belt passes, so a manager-worker trigger posts the pass
+//    every 166 ms, right then left - the Mk.2 Conveyor Belt's cadence (the Mk.2
+//    Filter runs every 332 ms). Clearing Frames are driven the same way.
+//  - placed vertically it becomes a normal Mk.2 filter wall, like the Mk.2 Filter.
+// Unlocked by the FILTER MK.3 research. Look: the Mk.2 sprite with blue -> red.
+// (0.10.0 - 0.12.2 sped up EVERY Mk.2 Filter instead; removed in 0.13.0.)
 // =========================================================================
 const TECH_FILTER_MK3 = "brandonFilterMk3";
 const FILTER_MK3_COST = 25000;    // placeholder price - to be tuned later
+const MK3_R = "filterRightMk3", MK3_L = "filterLeftMk3";
+const MK3_BELT_MS = 166;          // the Mk.2 Conveyor Belt's pass (transport.passes.beltsMk2)
 safe(() => api.i18n.register("en", {
 	[`tech|${TECH_FILTER_MK3}|name`]: "Filter Mk.3",
 	[`tech|${TECH_FILTER_MK3}|description`]:
-		"Unlocks the Filter Mk.3: a filter that sorts exactly like the Mk.2 Filter but moves material as fast as a Mk.2 Conveyor Belt. (The Filter Mk.3 building is still being made - researching this does nothing yet.)",
+		"Unlocks the Filter Mk.3: sorts exactly like the Mk.2 Filter, but moves material as fast as a Mk.2 Conveyor Belt.",
+	["structures|brandonFilterMk3|name"]: "Filter Mk.3",
+	["structures|brandonFilterMk3|description"]:
+		"Sorts exactly like the Mk.2 Filter, at Mk.2 Conveyor Belt speed. It takes the Mk.2 Filter panel's current setting when placed - set that first. Placed vertically it makes a filter wall.",
 }));
+let mk3Ready = false;
+try {
+	await api.sprites.loadFromMod("brandon_filter_right_mk3", "filter_right_mk3.png");
+	await api.sprites.loadFromMod("brandon_filter_left_mk3", "filter_left_mk3.png");
+	const variants = [{ id: MK3_L, angles: [-180, 180] }, { id: MK3_R, angles: [0] }, { id: "filterWallMk2", angles: [-90, 90] }];
+	const common = { nameKey: "structures|brandonFilterMk3|name", descriptionKey: "structures|brandonFilterMk3|description", name: "Filter Mk.3",
+		categoryKey: "logistics", tooltipHover: { type: "filter" }, variants };
+	// the sprite strip is 4 frames of 18x18 (the Mk.2's belt animation); the first frame is drawn
+	api.structures.register(Object.assign({ id: MK3_R, order: 52,
+		buildModes: [{ type: "line", directions: ["horizontal"] }, { type: "line", directions: ["vertical"] }],
+		render: { imageName: "brandon_filter_right_mk3", size: { width: 18, height: 18 }, offset: { x: -1, y: -1 }, z: .85, ui: { outline: true, width: "18px", height: "18px" } } }, common));
+	api.structures.register(Object.assign({ id: MK3_L,
+		render: { imageName: "brandon_filter_left_mk3", size: { width: 18, height: 18 }, offset: { x: -1, y: -1 }, z: .85 } }, common));
+	mk3Ready = true;
+} catch (e) { console.error(`[${MOD_ID}] Filter Mk.3 structures failed to register:`, e); }
+// conveyor behaviour (+ the 166 ms pass). Both only reach worker threads that exist, so
+// they are sent again whenever a world is ready; the manager keeps one trigger per id.
+function armFilterMk3() {
+	if (!mk3Ready) return;
+	safe(() => api.structureBehaviors.registerConveyorType(MK3_R, { velocity: { x: 1, y: 0 } }));
+	safe(() => api.structureBehaviors.registerConveyorType(MK3_L, { velocity: { x: -1, y: 0 } }));
+	const eng = safe(() => sandkit.engine);
+	// the callback is sent to the manager worker as TEXT: it must not use anything from this file
+	safe(() => eng.api.workers.triggers.register(eng.state, "brandonFilterMk3Belts", {
+		interval: MK3_BELT_MS, sequentialRuns: 2, extra: { runOrder: ["right", "left"] },
+		callback: async function (e, t) {
+			const n = e.sandkit.getApi(), r = n.workers.messages.getIdByName("RunConveyorBelts");
+			if (t.extra.runOrder[t.runCount - 1] !== "right") await n.workers.messages.postToEachThreadColumnSequentiallyAwait(e, [r, "filterLeftMk3"]);
+			else await n.workers.messages.postToEachThreadColumnSequentiallyAwait(e, [r, "filterRightMk3"], true);
+		},
+	}));
+}
+armFilterMk3();
+safe(() => api.events.on("game:ready", () => safe(armFilterMk3)));
+// a new Mk.3 takes the Mk.2 Filter panel's current setting (the game's own default filter)
+safe(() => api.events.on("building:placed", (p) => {
+	const s = p && p.structure;
+	if (!s || (s.type !== MK3_R && s.type !== MK3_L) || s.filter) return;
+	const df = safe(() => sandkit.state.store.options.defaultFilter) || { mode: "allow" };
+	s.filter = Object.assign({}, df, { affectsLiquid: true, affectsGas: true });
+	if (Array.isArray(s.filter.elementType)) s.filter.elementType = s.filter.elementType.slice();
+}));
+// saves that researched the node before the building existed: unlock it now
+setInterval(() => {
+	if (!mk3Ready || !isEnabled() || !inGame()) return;
+	const done = safe(() => api.tech.isResearchedById(TECH_FILTER_MK3));
+	const have = safe(() => sandkit.state.store.player.buildings);
+	if (done === true && Array.isArray(have) && have.indexOf(MK3_R) === -1) safe(() => api.player.buildings.unlockById(MK3_R));
+}, 2000);
 
 // Filter Mk.3 - under Manufacturing, beside Glass. Also needs Advanced Filters
 // (the vanilla research that unlocks the Mk.2 Filter), looked up by enum name.
@@ -744,7 +807,7 @@ safe(() => api.i18n.register("en", {
 			currencyType: "gold",
 			branch: "heat",
 			requires: adv !== undefined && adv !== null ? [TECH_MANU, adv] : [TECH_MANU],
-			unlocks: {},
+			unlocks: mk3Ready ? { structures: [MK3_R] } : {},
 		};
 		let done = false;
 		for (const preferredPosition of [{ row: 15, col: 0 }, { row: 14, col: 1 }, { row: 15, col: 1 }, { row: 16, col: 0 }, null]) {
