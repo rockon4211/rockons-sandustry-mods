@@ -50,7 +50,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
 - **Screensaver** `brandon.screensaver` v0.18.1 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went.
-- **Manufacturing** `brandon.manufacturing` v0.14.0 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.15.0 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
@@ -84,9 +84,19 @@ threads that exist, so both are re-sent on `game:ready`. A new Mk.3 copies
 `store.options.defaultFilter` (the Mk.2 panel's current pick) in `building:placed` — the
 game's filter panel only opens for its own ids; copy-paste keeps a Mk.3's filter. Vertical
 placement makes a vanilla `filterWallMk2`. Sprites: the Mk.2 strip with blue → red
-(`filter_*_mk3.png`, 4 frames of 18×18; only the first frame is drawn — no belt animation
-yet). Saves that researched the node before 0.14.0 get the building unlocked on load.
-UNTESTED in game as of 0.14.0. History: 0.10.0–0.12.2 sped up every Mk.2 Filter instead;
+(`filter_*_mk3.png`, 4 frames of 18×18), animated through `render.spritesheet.frameBuffer`:
+the renderer reads a frame index from a mod shared buffer (`mk3anim`, uint8[2]), which
+0.15.0 fills every `frame:render` from the game's own `shared.mods.conveyorMk2AnimationIndex`
+([0] left, [1] right) — so Mk.3s animate in lockstep with Mk.2 belts. Menu (0.15.0): the
+game's filter panel is gated on a fixed id list (`pk`/`hk`/`Uk` in the bundle, not
+exported), so `FilterMk3Panel` in main.real.js is a clone of it (same Tailwind classes),
+mounted with `api.ui.overlays.register("hotbar", …, () => hM(Panel))` (render() must
+RETURN an element). It edits `store.options.defaultFilter` like the Mk.2 panel; clicking a
+placed Mk.3 (`api.signals.interactables.register`, fires on `action:intercept` over the
+structure) selects the contiguous same-setting row (the game's row rule) and Apply writes
+it via `engine.api.structures.updateMany(state, members, {propagateToWorkers:true})`.
+Saves that researched the node before 0.14.0 get the building unlocked on load.
+0.14.0 confirmed in game: the building shows up. 0.15.0 (panel, animation) UNTESTED. History: 0.10.0–0.12.2 sped up every Mk.2 Filter instead;
 rejected, removed in 0.13.0.
 
 ## Sandbox Loop v0.4.5 — what it does
