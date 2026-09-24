@@ -9,7 +9,7 @@ its Mods menu.
 
 | Mod | Version | What it does |
 | --- | --- | --- |
-| **sandboxloop** | 0.4.3 | Sources and Removers for an endless, self-balancing factory, plus a whole-map balance tracker with history export. |
+| **sandboxloop** | 0.4.4 | Sources and Removers for an endless, self-balancing factory, plus a whole-map balance tracker with history export. |
 | **screensaver** | 0.18.1 | After a few idle minutes the HUD hides and the camera follows one real grain through the factory, material by material. Press **E** to exit. |
 | **manufacturing** | 0.12.1 | Renames vanilla sand to "soil" and adds a golden Sand (→ Glass on the Smelter); Mod Tools (Matter Gun, vacuum tank delete buttons, Omni Vacuum); **Filter Mk.3** research under Manufacturing (25,000 gold for now; every Mk.2 Filter then moves at Mk.2 belt speed). |
 | **lavaboiloff** | 0.1.1 | Lava has a 1-in-N chance to burn itself out each time it boils water into steam. |

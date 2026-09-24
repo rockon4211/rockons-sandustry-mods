@@ -7,7 +7,7 @@ const api = sandkit.api;
 const React = sandkit.react;
 const h = React.createElement;
 const MOD_ID = "brandon.sandboxloop";
-const BUILD = "0.4.3";
+const BUILD = "0.4.4";
 
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
@@ -1077,16 +1077,20 @@ function Panel() {
 			TitleBar(),
 			h("div", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600, marginLeft: "20px" } }, ns + (ns === 1 ? " source" : " sources") + " · " + nr + (nr === 1 ? " remover" : " removers")));
 	}
-	return h("div", { style: Object.assign({}, base, { minWidth: "312px", maxWidth: "340px" }) },
+	// never taller than the window: the title bar stays put (drag / minimize) and the rest
+	// scrolls inside the panel
+	return h("div", { style: Object.assign({}, base, { minWidth: "312px", maxWidth: "340px", display: "flex", flexDirection: "column",
+		maxHeight: "max(160px, calc(100vh - " + (Math.max(0, panelPos.y) + 8) + "px))" }) },
 		TitleBar(),
-		Row("Source", emitCfg, "#8fe0aa"),
-		Row("Remover", removeCfg, "#e79b9b"),
-		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now. To change one already placed, press set on it below."),
-		PlacedList(),
-		ThermalRow(),
-		ScreensaverRow(),
-		Tracker(),
-		CleanupRow());
+		h("div", { style: { flex: "1 1 auto", minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingRight: "4px" } },
+			Row("Source", emitCfg, "#8fe0aa"),
+			Row("Remover", removeCfg, "#e79b9b"),
+			h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now. To change one already placed, press set on it below."),
+			PlacedList(),
+			ThermalRow(),
+			ScreensaverRow(),
+			Tracker(),
+			CleanupRow()));
 }
 // hook for the Screensaver mod: where the Sources are and what each emits
 safe(() => {
