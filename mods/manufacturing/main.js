@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.12.1 running"));
+		safe(() => api.ui.toast("Manufacturing v0.12.2 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -774,15 +774,31 @@ function filterBoostOn() {
 	const r = safe(() => api.tech.isResearchedById(TECH_FILTER_MK3));
 	return typeof r === "boolean" ? r : safe(() => api.tech.isLockedById(TECH_FILTER_MK3)) === false;
 }
-let filterBoostLast = null;
+// Researched, the Mk.2 Filter is shown as "Filter Mk.3" in the build menu and everywhere
+// else the game names it (its own translation keys, overridden; the game's text comes
+// back if the research is undone or the mod is switched off)
+const FILTER_NAME_KEY = "structures|filterMk2|name", FILTER_DESC_KEY = "structures|filterMk2|description";
+let filterTextOrig = null;
+function nameFilterMk3(on) {
+	if (!filterTextOrig) {
+		const n = safe(() => api.i18n.t(FILTER_NAME_KEY)), d = safe(() => api.i18n.t(FILTER_DESC_KEY));
+		if (typeof n !== "string" || n === FILTER_NAME_KEY) return;   // the game's text isn't loaded yet
+		filterTextOrig = { name: n, desc: typeof d === "string" && d !== FILTER_DESC_KEY ? d : "" };
+	}
+	safe(() => api.i18n.register("en", on
+		? { [FILTER_NAME_KEY]: "Filter Mk.3", [FILTER_DESC_KEY]: (filterTextOrig.desc ? filterTextOrig.desc + " " : "") + "Mk.3: moves material as fast as a Mk.2 Conveyor Belt." }
+		: { [FILTER_NAME_KEY]: filterTextOrig.name, [FILTER_DESC_KEY]: filterTextOrig.desc }));
+	safe(() => api.ui.update(sandkit.enums.ComponentId.Root));   // repaint menus that already show the old name
+}
+let filterBoostLast = null, filterNamed = null;
 setInterval(() => {
-	if (!filterBoost) return;
 	const on = filterBoostOn();
-	filterBoost[0] = on ? 1 : 0;
+	if (filterBoost) filterBoost[0] = on ? 1 : 0;
+	if (on !== filterNamed && (on || filterNamed !== null)) { nameFilterMk3(on); if (filterTextOrig) filterNamed = on; }
 	if (on !== filterBoostLast) {
 		if (filterBoostLast !== null) {
 			console.log(`[${MOD_ID}] Filter Mk.3 ${on ? "ON (Mk.2 belt speed)" : "OFF (normal Mk.2 speed)"}`);
-			if (on) safe(() => api.ui.toast("Filter Mk.3 researched - Mk.2 Filters now run at Mk.2 belt speed"));
+			if (on) safe(() => api.ui.toast("Filter Mk.3 researched - your Mk.2 Filters are now Filter Mk.3 (Mk.2 belt speed)"));
 		}
 		filterBoostLast = on;
 	}

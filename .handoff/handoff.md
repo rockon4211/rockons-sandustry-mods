@@ -50,7 +50,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
 - **Screensaver** `brandon.screensaver` v0.18.1 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went.
-- **Manufacturing** `brandon.manufacturing` v0.12.1 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.12.2 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
@@ -74,7 +74,7 @@ now refuses to write into `mods/manufacturing` without `--force`.
 **Filter Mk.3.** A research node (`brandonFilterMk3`) under Manufacturing, beside Glass;
 it needs Manufacturing and the vanilla Advanced Filters. Cost is `FILTER_MK3_COST` in
 `main.real.js` — 25,000 gold as a placeholder, to be tuned. Once researched, every Mk.2
-Filter moves material at Mk.2 belt speed (permanent, no switch). It is research, not a new structure,
+Filter moves material at Mk.2 belt speed (permanent, no switch) and is renamed "Filter Mk.3" in the build menu (0.12.2 overrides the game's structures|filterMk2 name/description keys). It is research, not a new structure,
 because the game hard-codes belt speed and filter behaviour to the `filterLeftMk2` /
 `filterRightMk2` ids and gives any unknown structure id speed 0. `sim-filterboost.js`
 tests it.
