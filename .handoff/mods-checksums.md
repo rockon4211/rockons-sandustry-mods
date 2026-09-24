@@ -1,8 +1,8 @@
-# Mod file checksums — TO BE REGENERATED
+# Mod file checksums — main, 2bd39b6, 2026-09-23
 
-The hashes that used to be here were for an old commit (`cf615c2`, before Sandbox Loop
-0.4.3, Screensaver 0.18.1, Manufacturing 0.11.1, Lava Boiloff 0.1.1, Quickstart 1.0.1).
-They will be regenerated after the 2026-09-23 audit round is committed.
+Versions: sandboxloop 0.4.3, screensaver 0.18.1, manufacturing 0.11.1, lavaboiloff 0.1.1, quickstart 1.0.1.
+Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
+text files out with CRLF, so hash those after converting, or compare with `git hash-object`.
 
 ## How to regenerate (after committing, so the header can name the commit)
 
@@ -19,7 +19,27 @@ To compare an install, run the same `find … | xargs sha256sum` inside
 `%APPDATA%\sandustry\mods\` (Git Bash: `cd "$APPDATA/sandustry/mods"`).
 
 ```
-(placeholder — regenerate after commit)
+b77d7dbf8f5d674034316ff9af034f1da170dad21f4bcdf12c63540916c1c653  lavaboiloff/main.js
+311973d685f93b75546a1af856febf8a8e293bc8e6d1b98da2c616459b436509  lavaboiloff/modinfo.json
+1e4b15b61a5006819fc8d69eeca740b230348493f97440d081812ed1c29e9fcd  lavaboiloff/worker.js
+54166e14eba8951fd7c05d5825d50f193a7bf74260cd11b5939d27723f77f5e2  manufacturing/main.js
+d1322ae88b0db3d1325a46290cf8d7ea53556ff84c5e98ee9badf3a35d3e64dc  manufacturing/main.real.js
+c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun.png
+c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun_icon.png
+7458e58ec6bbd45fb66cbb0eabf93450a0c7d48253fa2eaa88170413b1f9854b  manufacturing/modinfo.json
+bb6b7ac569af46b8b32072d79df284210d4f8b70e5a84ffa0407fac9c1475189  manufacturing/preview.png
+b9c4e9343fa937d48ad69555d4dd79a65fbead6249b5e6459ad67e87f946bf72  manufacturing/worker.js
+d2ada6a4c01c2438a5b8f8a472d9b59ae15ece21c03b195b54b6775532944d8d  manufacturing/worker.real.js
+6d4f399c4dffcecd3c0a94738438a2d76cd9b438135ea5c3bae94b938871a4cf  quickstart/main.js
+cbe98a26414ea9cdeca5a1739a8900e1a798d274084370ca45ecfd730b34ab4e  quickstart/modinfo.json
+93da1be7de59ea4f5db0384e5d83098567fbdf5e9f75ca92f20ee2c0a05708b2  quickstart/preview.png
+09dfeab0fb2939bbdb395fe9d93bc51e1dc209f886efd9e6f3375f597c542667  sandboxloop/main.js
+c67969b7ba30cb5a1f8967aebd2571d31cfa2945b7bed51623c4f0b4647f22d8  sandboxloop/make-sprites.js
+ae471362c32897f935439fed70296c7694bdfbb95adab756a434811f1fe50805  sandboxloop/modinfo.json
+d03eb83fbe5c5aba303955cdd28dfe08fcdfc9089a18fd5117b57cbf529b703a  sandboxloop/sink.png
+2fcbee7b58f45f11f52db540b59894490f89bfa6096a1abcf0c1e7aea0d54d18  sandboxloop/source.png
+3ba37c94226cc7a2ec360f39444ae318f52d194e415e35770ad97ba6396a2293  screensaver/main.js
+8ff452dfdd52a0ee911f3af8068d52f5e002b0f5c027739662a48125359caa7d  screensaver/modinfo.json
 ```
 
 ## PNGs
