@@ -43,7 +43,7 @@ function noteInput(e) {
 		stop("E key");
 		return;
 	}
-	if (e && (e.type === "keydown" || e.type === "keyup" || e.type === "mousedown" || e.type === "mouseup" || e.type === "click" || e.type === "wheel")) safe(() => { e.preventDefault(); e.stopImmediatePropagation(); });
+	if (e && (e.type === "keydown" || e.type === "keyup" || e.type === "mousedown" || e.type === "mouseup" || e.type === "click" || e.type === "wheel" || e.type === "pointerdown" || e.type === "pointerup")) safe(() => { e.preventDefault(); e.stopImmediatePropagation(); });
 }
 safe(() => {
 	const opts = { capture: true, passive: true };
@@ -54,6 +54,11 @@ safe(() => {
 	window.addEventListener("mouseup", (e) => { if (active) noteInput(e); }, block);
 	window.addEventListener("click", (e) => { if (active) noteInput(e); }, block);
 	window.addEventListener("wheel", noteInput, block);
+	// the game's canvas (PIXI) and its mouse-button tracker listen for POINTER events, which
+	// fire before (and apart from) the mouse events above — swallow those too while active
+	window.addEventListener("pointerdown", noteInput, block);
+	window.addEventListener("pointerup", (e) => { if (active) noteInput(e); }, block);
+	window.addEventListener("pointermove", (e) => { if (active) safe(() => e.stopImmediatePropagation()); }, block);
 	window.addEventListener("touchstart", noteInput, opts);
 	window.addEventListener("mousemove", (e) => {
 		// ignore sub-pixel jitter some mice produce at rest
@@ -126,7 +131,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.18.0";
+const BUILD = "0.18.1";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -158,7 +163,13 @@ const TRACER_KINDS = [["brandonTracerPowder", "Powder", 1600], ["brandonTracerLi
 // structures that only hold, carry or move material — never a reason to hand the grain back
 const PASSIVE = /clearingFrame|launcher|frame|platform|ladder|support|scaffold|wall|pipe|chute|door|light|sign|button|foundation|splitter|dropper|conveyor|belt|filter|soundBox|pump|liquidVent|quantumPortal/i;
 // the game's own structures report a NUMBER as their type; these are their names (build 0.5.6)
-const VANILLA_STRUCTS = [null, "conveyorLeft", "conveyorRight", "shakerLeft", "shakerRight", "launcherUp", "launcherLeft", "launcherRight", "splitterLeft", "splitterRight", "dropper", "foundation", "foundationAngledLeft", "foundationTriangleLeftDel", "foundationAngledRight", "foundationTriangleRightDel", "collector", "filterLeft", "filterRight", "slidingFoundation", "velocitySoaker", "grower", "soundBox", "pipe", "pump", "liquidVent", "light", "gloomEmitter"];
+const VANILLA_STRUCTS_056 = [null, "conveyorLeft", "conveyorRight", "shakerLeft", "shakerRight", "launcherUp", "launcherLeft", "launcherRight", "splitterLeft", "splitterRight", "dropper", "foundation", "foundationAngledLeft", "foundationTriangleLeftDel", "foundationAngledRight", "foundationTriangleRightDel", "collector", "filterLeft", "filterRight", "slidingFoundation", "velocitySoaker", "grower", "soundBox", "pipe", "pump", "liquidVent", "light", "gloomEmitter"];
+// read them from the game's own enum when it is there (so a later build's numbering still maps)
+const VANILLA_STRUCTS = (() => {
+	const E = safe(() => sandkit.enums.StructureType) || {}, out = VANILLA_STRUCTS_056.slice();
+	for (const k of Object.keys(E)) if (typeof E[k] === "number" && E[k] > 0 && E[k] < 1000) out[E[k]] = k.charAt(0).toLowerCase() + k.slice(1);
+	return out;
+})();
 // which recipe table a machine runs, by its structure name
 const FAMILY_OF = [[/shaker/i, "shaker"], [/velocitySoaker|kineticPress/i, "kineticPress"], [/grower|planter/i, "planterBox"], [/thermofroster|condenser/i, "condenser"], [/thermodryer|steamDryer/i, "steamDryer"], [/crystallizer|synthesizer/i, "synthesizer"], [/snowmaker/i, "snowmaker"], [/smelter/i, "smelter"]];
 function familyOf(sid) { if (!sid) return null; for (const [re, f] of FAMILY_OF) if (re.test(sid)) return f; return null; }
@@ -519,31 +530,46 @@ function possess(x, y, matType) {
 	if (stray) track("cleared a leftover tracer at " + stray.x + "," + stray.y, true);
 	return true;
 }
+// the queued swap only applies if the cell hasn't moved on, so every clean-up is repeated a
+// few times; the timers are kept so a new run can cancel them
+let sweepTimers = [];
+function sweepLater(fn) { fn(); for (const ms of [200, 600, 1200, 2500]) sweepTimers.push(setTimeout(() => safe(fn), ms)); }
+function cancelSweeps() { for (const id of sweepTimers) safe(() => clearTimeout(id)); sweepTimers = []; }
+// a tracer cell that belongs to the CURRENT journey — a clean-up of an old grain must never
+// touch it (the next grain is often emitted at the same Source within ~200ms)
+function isCurrent(x, y) {
+	if (trc && !trc.search && Math.max(Math.abs(x - trc.x), Math.abs(y - trc.y)) <= 4) return true;
+	if (waitEmit) {
+		const r = safe(() => window.__brandonSandboxLoop.emitOnceResult());
+		if (r && r.at >= waitEmit.asked && typeof r.x === "number" && Math.max(Math.abs(x - r.x), Math.abs(y - r.y)) <= 40) return true;
+	}
+	return false;
+}
 // hand the grain back to the factory (never leave our element behind)
 function release() {
 	if (!trc) return;
 	const at = { x: trc.x, y: trc.y }, orig = trc.orig;
 	trc = null;
-	// the queued swap only applies if the cell hasn't moved on, so sweep a few times
-	const put = () => { const f = findTracer(at.x, at.y, 60); if (f) { at.x = f.x; at.y = f.y; const real = realOf.get(f.t) !== undefined ? realOf.get(f.t) : orig; safe(() => api.elements.replaceAtCell(f.x, f.y, real)); return true; } return false; };
-	put();
-	for (const ms of [200, 600, 1200, 2500]) setTimeout(() => safe(put), ms);
+	sweepLater(() => { const f = findTracer(at.x, at.y, 60, 0, isCurrent); if (f) { at.x = f.x; at.y = f.y; const real = realOf.get(f.t) !== undefined ? realOf.get(f.t) : orig; safe(() => api.elements.replaceAtCell(f.x, f.y, real)); } });
 }
 // the screensaver is over: just delete our grain (no need to give it back)
+function removeNear(x, y) {
+	const at = { x: x, y: y };
+	sweepLater(() => { let f, n = 0; while ((f = findTracer(at.x, at.y, 60)) && n++ < 8) { at.x = f.x; at.y = f.y; safe(() => api.elements.removeAtCell(f.x, f.y)); } });
+}
 function discard() {
 	if (!trc) return;
-	const at = { x: trc.x, y: trc.y };
+	const x = trc.x, y = trc.y;
 	trc = null;
-	const del = () => { let f, n = 0; while ((f = findTracer(at.x, at.y, 60)) && n++ < 8) { at.x = f.x; at.y = f.y; safe(() => api.elements.removeAtCell(f.x, f.y)); } };
-	del();
-	for (const ms of [200, 600, 1200, 2500]) setTimeout(() => safe(del), ms);
+	removeNear(x, y);
 }
-function findTracer(cx, cy, R) {
-	for (let r = 0; r <= R; r++) {
+// nearest tracer cell, scanning rings r0..R outwards (skip(x, y) excludes a cell)
+function findTracer(cx, cy, R, r0, skip) {
+	for (let r = r0 || 0; r <= R; r++) {
 		for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
 			if (r && Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
 			const t = typeAt(cx + dx, cy + dy);
-			if (t !== undefined && t !== null && tracerTypes.has(t)) return { x: cx + dx, y: cy + dy, t: t };
+			if (t !== undefined && t !== null && tracerTypes.has(t) && !(skip && skip(cx + dx, cy + dy))) return { x: cx + dx, y: cy + dy, t: t };
 		}
 	}
 	return null;
@@ -619,7 +645,7 @@ function startTracer(now) {
 			stats.journeys++; track("journey #" + stats.journeys + ": " + name + " from the Source at " + waitEmit.src.x + "," + waitEmit.src.y);
 			waitEmit = null; return true;
 		}
-		if (now - waitEmit.asked > 6000) { safe(() => hook && hook.cancelEmitOnce && hook.cancelEmitOnce()); logEvt("emit-timeout", { src: waitEmit.src.x + "," + waitEmit.src.y }); track("the Source at " + waitEmit.src.x + "," + waitEmit.src.y + " didn't emit the tracer within 6s", true); waitEmit = null; }
+		if (now - waitEmit.asked > 6000) { safe(() => hook && hook.cancelEmitOnce && hook.cancelEmitOnce()); dropLateEmit(hook); logEvt("emit-timeout", { src: waitEmit.src.x + "," + waitEmit.src.y }); track("the Source at " + waitEmit.src.x + "," + waitEmit.src.y + " didn't emit the tracer within 6s", true); waitEmit = null; }
 		dbg.phase = "waiting for the Source to emit the tracer";
 		return false;
 	}
@@ -633,6 +659,12 @@ function startTracer(now) {
 	dbg.note = "asked " + s.x + "," + s.y + " to emit a " + matName(s.type) + " tracer";
 	return false;
 }
+// the Source may have emitted the tracer just before we cancelled: never leave that grain behind
+function dropLateEmit(hook) {
+	if (!waitEmit) return;
+	const r = safe(() => hook && hook.emitOnceResult && hook.emitOnceResult());
+	if (r && r.at >= waitEmit.asked && typeof r.x === "number") { logEvt("late-emit", { at: r.x + "," + r.y }); removeNear(r.x, r.y); }
+}
 function snapArea(cx, cy, R) {
 	const m = new Map();
 	for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const t = typeAt(cx + dx, cy + dy); if (isMat(t)) m.set((cx + dx) + "," + (cy + dy), t); }
@@ -644,13 +676,17 @@ function handoff(now) {
 	if (now - s.at < 200) return;
 	s.at = now;
 	// still alive somewhere? then it was never consumed — resume riding it rather
-	// than adopting a second grain (which would leave two tracers in the world)
-	const alive = findTracer(s.x, s.y, 130);
+	// than adopting a second grain (which would leave two tracers in the world).
+	// Handed back by us, it can only be where we swapped it; lost, it may be far off —
+	// but a 130-cell scan is ~70k cells, so only once a second
+	const wide = !!s.lostWhy && now - (s.wideAt || 0) >= 1000;
+	if (wide) s.wideAt = now;
+	const alive = findTracer(s.x, s.y, s.lostWhy ? 44 : 20) || (wide ? findTracer(s.x, s.y, 130, 45) : null);
 	if (alive) {
 		const gap = Math.round(Math.hypot(alive.x - s.x, alive.y - s.y)), ms = now - s.t0;
 		stats.refound++;
 		logEvt("refound", { at: alive.x + "," + alive.y, cells: gap, afterMs: ms });
-		track("…it wasn't gone: found it " + gap + " cells away after " + (ms / 1000).toFixed(1) + "s" + (s.lostWhy ? " (it had " + s.lostWhy + ")" : ""), true); trc.x = alive.x; trc.y = alive.y; trc.miss = 0; trc.search = null; trc.lastMove = now; dbg.note = "found it again at " + alive.x + "," + alive.y; return; }
+		track("…it wasn't gone: found it " + gap + " cells away after " + (ms / 1000).toFixed(1) + "s" + (s.lostWhy ? " (it had " + s.lostWhy + ")" : ""), true); trc.x = alive.x; trc.y = alive.y; trc.miss = 0; trc.search = null; trc.lastMove = now; trc.since = now; trc.touchSince = 0; dbg.note = "found it again at " + alive.x + "," + alive.y; return; }
 	// only a material this one can really turn into (the game's own tables), best first —
 	// 0.17 also grabbed "anything new nearby", which is how wet soil became a Copper grain
 	const want = nextOf(s.orig);
@@ -715,7 +751,11 @@ function tracerTick(now) {
 		return { x: p.x * CELL + CELL / 2, y: p.y * CELL + CELL / 2 };
 	}
 	trc.miss = trc.miss || 0;
-	const f = findTracer(trc.x, trc.y, 14) || findTracer(trc.x, trc.y, 44) || (trc.miss >= 2 ? findTracer(trc.x, trc.y, 130) : null);
+	// the far ring (45–130, ~65k cells) only once the near ones have failed twice, and at most
+	// once every 700ms
+	const wideOk = trc.miss >= 2 && now - (trc.wideAt || 0) >= 700;
+	if (wideOk) trc.wideAt = now;
+	const f = findTracer(trc.x, trc.y, 14) || findTracer(trc.x, trc.y, 44, 15) || (wideOk ? findTracer(trc.x, trc.y, 130, 45) : null);
 	// burning: for a moment the grain IS a flame (the game's fire code swaps it for a Flame
 	// that remembers what to leave behind), then it comes back as the burnt copy — wait for it
 	if (!f && !trc.pending && flameNear(trc.x, trc.y, 3)) {
@@ -824,7 +864,7 @@ function tracerTick(now) {
 			stats.marksMissed++; lossReason("the mark never landed (grain kept moving)");
 			logEvt("mark-missed", { tries: trc.tries, area: areaReport(trc.x, trc.y, 4) });
 			track("couldn't mark a " + matName(trc.orig) + " grain at " + trc.x + "," + trc.y + " — it kept moving", true);
-			trc = null; possessFails++;
+			release(); possessFails++;   // a re-stamp may still land late: sweep it back
 			if (possessFails < 6) startTracer(now);
 			else { dbg.note = "couldn't mark a grain — using the belt route"; return null; }
 		}
@@ -878,7 +918,9 @@ function censusTick(now) {
 }
 // safety: never leave our element in the world
 function sweepTracers() {
-	safe(() => { const hook = window.__brandonSandboxLoop; if (hook && hook.cancelEmitOnce) hook.cancelEmitOnce(); });
+	const hook = safe(() => window.__brandonSandboxLoop);
+	safe(() => { if (hook && hook.cancelEmitOnce) hook.cancelEmitOnce(); });
+	dropLateEmit(hook);
 	waitEmit = null;
 	if (trc) discard();
 }
@@ -987,7 +1029,7 @@ function pathTick(now, dt) {
 	}
 	dbg.pos = pathI; dbg.phase = now < holdUntil ? dbg.phase : "following the line";
 	if (pathI >= path.length - 1 && now >= holdUntil) {   // finished: take another route
-		path = null;
+		path = null; pathSrc = null;
 		if (setting("tourStops", false)) return null;         // let a tour stop happen, then a new path
 		if (newPath(now)) return ptAt(0);
 		return null;
@@ -1072,7 +1114,7 @@ function tick() {
 		const longRide = trc && now - trc.since > maxMs;
 		if (longRide || (path && now - pathAt > maxMs)) {
 			if (longRide) { track("ride limit (" + maxSec + "s) reached — letting go of the grain"); release(); }
-			path = null; fol = null;
+			path = null; pathSrc = null; fol = null;
 			if (setting("tourStops", false)) { tour = nextLeg(); cam = null; if (tour) track("gliding to a tour stop — straight line, not following anything", true); }
 		}
 		const t = !tour ? followTick(now) : null;
@@ -1103,7 +1145,8 @@ function tick() {
 
 function start(reason) {
 	if (active || !inWorld() || !setting("enabled", true)) return;
-	active = true; startedAt = Date.now(); tour = null; fol = null; cam = null; path = null; trc = null; waitEmit = null; indexBelts(true);
+	cancelSweeps();   // the last run's clean-up sweeps must not delete this run's grain
+	active = true; startedAt = Date.now(); tour = null; fol = null; cam = null; path = null; pathSrc = null; trc = null; waitEmit = null; indexBelts(true);
 	safe(armCloneReactions);
 	graceUntil = Date.now() + (reason === "menu" ? 2500 : 0);   // started by hand (panel button): ignore the mouse settling after the click
 	saved = {
@@ -1111,18 +1154,19 @@ function start(reason) {
 		fps: safe(() => state.session.settings.frameRateCap),
 		windowMode: safe(() => state.session.settings.windowMode),
 		override: state.session.overrideCamera,
+		fpsSet: false, speedSet: false, fullscreenSet: false,   // what start() actually changed, so stop() undoes exactly that
 	};
 	buildPois();
 	// hide the HUD (the game's own hotkey does exactly this) and the cursor
 	if (setting("hideHud", true)) { safe(() => { state.session.ui.hudHidden = true; }); safe(() => api.ui.update(ComponentId.Root)); }
 	if (setting("hideCursor", true)) safe(() => { styleEl = document.createElement("style"); styleEl.textContent = "*{cursor:none !important}"; document.head.appendChild(styleEl); });
 	// power: cap the frame rate, optionally slow the simulation
-	const fps = setting("fpsCap", 30); if (fps > 0) safe(() => { state.session.settings.frameRateCap = fps; });
-	const spd = setting("simSpeed", 1); if (spd > 0 && spd !== 1) postSimSpeed(spd);
+	const fps = setting("fpsCap", 30); if (fps > 0) safe(() => { state.session.settings.frameRateCap = fps; saved.fpsSet = true; });
+	const spd = setting("simSpeed", 1); if (spd > 0 && spd !== 1) { postSimSpeed(spd); saved.speedSet = true; }
 	// fullscreen if asked and not already
-	if (setting("fullscreen", true) && saved.windowMode !== "fullscreen") safe(() => window.electron.setFullscreen(true));
+	if (setting("fullscreen", true) && saved.windowMode !== "fullscreen") safe(() => { window.electron.setFullscreen(true); saved.fullscreenSet = true; });
 	// keep the screen on
-	safe(() => navigator.wakeLock.request("screen").then((l) => { wakeLock = l; }).catch(() => {}));
+	takeWakeLock();
 	safe(() => window.localStorage.setItem(ACTIVE_KEY, "1"));
 	console.log("[" + MOD_ID + "] started (" + reason + ") — " + pois.length + " points of interest");
 	if (repaint) repaint((v) => v + 1);
@@ -1132,20 +1176,30 @@ function stop(reason) {
 	// hand over the evidence automatically if anything went wrong during this run
 	const troubles = tlog.filter((e) => e.t >= startedAt && /LOST|jump|ghost|mark-missed|giveup/.test(e.kind)).length;
 	if (troubles && setting("saveLogOnStop", true)) setTimeout(() => safe(exportLog), 300);
-	active = false; tour = null; fol = null; cam = null; path = null; sweepTracers();
+	active = false; tour = null; fol = null; cam = null; path = null; pathSrc = null; sweepTracers();
 	safe(() => { state.session.overrideCamera = saved && saved.override ? saved.override : false; });
 	safe(() => { state.session.ui.hudHidden = saved ? saved.hud : false; }); safe(() => api.ui.update(ComponentId.Root));
 	if (styleEl) { safe(() => styleEl.remove()); styleEl = null; }
 	if (saved) {
-		safe(() => { state.session.settings.frameRateCap = typeof saved.fps === "number" ? saved.fps : 0; });
-		if (setting("fullscreen", true) && saved.windowMode !== "fullscreen") safe(() => window.electron.setFullscreen(false));
+		if (saved.fpsSet) safe(() => { state.session.settings.frameRateCap = typeof saved.fps === "number" ? saved.fps : 0; });
+		if (saved.fullscreenSet) safe(() => window.electron.setFullscreen(false));
+		// back to the cinematic panel's speed if one is set, else normal
+		if (saved.speedSet) { const cm = safe(() => state.session.cinematic.speed.multiplier); postSimSpeed(typeof cm === "number" && cm > 0 ? cm : 1); }
 	}
-	postSimSpeed(1);
-	if (wakeLock) { safe(() => wakeLock.release()); wakeLock = null; }
+	if (wakeLock) { const l = wakeLock; wakeLock = null; safe(() => l.release()); }
 	safe(() => window.localStorage.setItem(ACTIVE_KEY, "0"));
 	lastInput = Date.now();   // don't restart immediately
 	console.log("[" + MOD_ID + "] stopped (" + reason + ") after " + Math.round((Date.now() - startedAt) / 1000) + "s");
 	if (repaint) repaint((v) => v + 1);
+}
+// the browser drops the lock whenever the page is hidden (and fires "release"); a request that
+// resolves after stop() is let go at once
+function takeWakeLock() {
+	safe(() => navigator.wakeLock.request("screen").then((l) => {
+		if (!active || (wakeLock && !wakeLock.released)) { safe(() => l.release()); return; }
+		wakeLock = l;
+		safe(() => l.addEventListener("release", () => { if (wakeLock === l) wakeLock = null; }));
+	}).catch(() => {}));
 }
 const SIM_SPEED_MSG = 68;   // worker message id for SetSimulationSpeed (v0.5.6)
 function postSimSpeed(m) { safe(() => { const mgr = state.environment.multithreading.simulation.manager; if (mgr && mgr.postMessage) mgr.postMessage([SIM_SPEED_MSG, m]); }); }
@@ -1172,7 +1226,7 @@ setInterval(tick, 33);
 setInterval(() => { if (!active && trc) { dbg.note = "cleanup: removing the tracer grain"; discard(); } }, 2000);
 safe(() => window.addEventListener("beforeunload", () => safe(discard)));
 // safety: if the page is hidden (alt-tabbed / minimized) the wake lock is released by the browser; re-take it when visible
-safe(() => document.addEventListener("visibilitychange", () => { if (active && document.visibilityState === "visible" && !wakeLock) safe(() => navigator.wakeLock.request("screen").then((l) => { wakeLock = l; }).catch(() => {})); }));
+safe(() => document.addEventListener("visibilitychange", () => { if (active && document.visibilityState === "visible" && (!wakeLock || wakeLock.released)) takeWakeLock(); }));
 
 // --- hook for other mods (the Sandbox Loop panel has a "Start now" button) ----
 safe(() => { window.__brandonScreensaver = {
