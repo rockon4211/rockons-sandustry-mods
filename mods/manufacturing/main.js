@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.11.0 running"));
+		safe(() => api.ui.toast("Manufacturing v0.11.1 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -779,7 +779,7 @@ setInterval(() => {
 
 
 // ------------------------------------------------- Mod Tools: red-block fix --
-// Stuck "red blocks" are orphaned Block terrain (cell id 15): the engine stamps
+// Stuck "red blocks" are orphaned Block terrain (built-in cell type): the engine stamps
 // Block under every structure, and a structure removed through a path that never
 // un-stamped it leaves that terrain behind as bare, undiggable red blocks with
 // nothing on top to deconstruct. Real Block cells always have their structure
@@ -790,29 +790,46 @@ setInterval(() => {
 // Trigger: the "Clear stuck red blocks" setting. Mods can read settings but not
 // write them, so it's edge-triggered — flipping it ON runs one sweep; to run
 // again, flip it OFF and back ON.
-const BLOCK_CELL = 15;
-// Terrain ids the sweep treats as "structure stamps". 15 = Block (the default
-// stamped under fallback/broken structures). Registered mod structures stamp a
-// separate runtime terrain (id 56 in this world); STAMP_NAMES lets us find it
-// by name at runtime so an id shift between sessions doesn't break the sweep.
-const STAMP_IDS = new Set([BLOCK_CELL, 56]);
-const STAMP_NAMES = ["modStructure", "mod_structure", "structure", "block"];
+//
+// Every terrain id the sweep matches is resolved BY NAME at runtime
+// (terrains.getTypeById also knows the built-in cell types, case-insensitively).
+// Terrain numbers past the built-ins are handed out in registration order, so a
+// hard-coded number can be real terrain in another world or mod set and would be
+// wiped map-wide. A name that doesn't resolve is not swept; if Block itself
+// can't be resolved the sweep refuses to run. (Undamaged terrain's cell id IS
+// its terrain type, so getCellIdAtCell compares directly.)
+const BLOCK_NAME = "block";
+// Extra stamp terrains to treat like Block, by terrain id. 0.11.0 also swept a
+// raw id 56 (a mod-structure stamp in one save, name never recorded) - if that
+// is needed again, read its name off the cell probe and add it here.
+const STAMP_NAMES = ["modStructure", "mod_structure"];
+function terrainByName(n) { const t = safe(() => api.terrains.getTypeById(n)); return typeof t === "number" && t > 0 ? t : null; }
 function stampSet() {
-	const ids = new Set(STAMP_IDS);
-	for (const n of STAMP_NAMES) { const t = safe(() => api.terrains.getTypeById(n)); if (typeof t === "number" && t > 0) ids.add(t); }
+	const block = terrainByName(BLOCK_NAME);
+	if (block === null) return null;
+	const ids = new Set([block]);
+	for (const n of STAMP_NAMES) { const t = terrainByName(n); if (t !== null) ids.add(t); }
 	return ids;
 }
 let _rbFix = null, _rbLastFlag = null;
 function startRedBlockSweep() {
+	if (!isEnabled()) return;
 	const d = safe(() => api.world && api.world.getDimensions()) || {};
 	const W = d.widthCells | 0, H = d.heightCells | 0;
 	if (W <= 0 || H <= 0) { safe(() => api.ui.toast("Red-block fix: world not ready")); return; }
-	_rbFix = { W, total: W * H, cursor: 0, found: 0, cleared: 0, budget: 25000, nextToastPct: 25, ids: stampSet() };
+	const ids = stampSet();
+	if (!ids) {
+		safe(() => api.ui.toast("Red-block fix: can't identify Block terrain by name - nothing swept"));
+		console.error(`[${MOD_ID}] red-block sweep refused: terrain "${BLOCK_NAME}" did not resolve`);
+		return;
+	}
+	_rbFix = { W, total: W * H, cursor: 0, found: 0, cleared: 0, budget: 25000, nextToastPct: 25, ids };
 	safe(() => api.ui.toast("Clearing stuck red blocks... scanning the whole map (~30s)"));
 	console.log(`[${MOD_ID}] red-block sweep started: ${W}x${H}`);
 }
 setInterval(() => {
 	if (!_rbFix || !inGame()) return;
+	if (!isEnabled()) { console.log(`[${MOD_ID}] red-block sweep cancelled: mod disabled`); _rbFix = null; return; }
 	const f = _rbFix, world = api.world, structs = api.structures;
 	let n = 0;
 	try {
@@ -896,16 +913,28 @@ if (ReactM && hM) {
 	safe(() => api.ui.inject("brandon-cell-probe", CellProbe));
 }
 }
-(function () {
-	var src = null;
+// Hot-load. main.real.js is read from THIS mod's own folder (the game resolves
+// it via api.assets.getUrl, so any install path works), and the worker is told
+// the same folder through the "hotloadUrl" shared buffer. The baked copy above
+// runs only if the file can't be read or doesn't compile - never after the real
+// code has started (its registrations would happen twice). The game awaits this
+// entry, so the real code is awaited too and its errors reach the game.
+await (async function () {
+	var src = null, fn = null;
+	try {
+		var wu = sandkit.api.assets.getUrl("worker.real.js"), wb = sandkit.api.shared.buffers.create("hotloadUrl", { type: "uint16", length: 1024 });
+		if (wu.length < wb.length) for (var i = 0; i < wu.length; i++) wb[i] = wu.charCodeAt(i);
+	} catch (e) {}
 	try {
 		var xhr = new XMLHttpRequest();
-		xhr.open("GET", "file:///C:/Users/Brand/AppData/Roaming/sandustry/mods/manufacturing/main.real.js" + "?ts=" + Date.now(), false);
+		xhr.open("GET", sandkit.api.assets.getUrl("main.real.js") + "?ts=" + Date.now(), false);
 		xhr.send();
 		if (xhr.status === 0 || xhr.status === 200) src = xhr.responseText;
 	} catch (e) { src = null; }
-	try {
-		if (src) { new (Object.getPrototypeOf(async function(){}).constructor)("sandkit", src)(sandkit); console.log("[brandon.manufacturing] main.js hot-loaded fresh from disk"); }
-		else { __baked(sandkit); console.log("[brandon.manufacturing] main.js using baked code (no disk read)"); }
-	} catch (e) { console.warn("[brandon.manufacturing] main.js hot-load threw, using baked:", e && e.message); __baked(sandkit); }
+	if (src) {
+		try { fn = new (Object.getPrototypeOf(async function(){}).constructor)("sandkit", "\"use strict\";\n" + src); }
+		catch (e) { console.warn("[brandon.manufacturing] main.real.js failed to compile, using baked:", e && e.message); }
+	}
+	if (fn) { await fn(sandkit); console.log("[brandon.manufacturing] main.js hot-loaded fresh from disk"); }
+	else { await __baked(sandkit); if (!src) console.log("[brandon.manufacturing] main.js using baked code (no disk read)"); }
 })();

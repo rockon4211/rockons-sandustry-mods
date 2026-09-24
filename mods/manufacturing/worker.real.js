@@ -130,7 +130,8 @@ register();
 		if (!buf) buf = safe(() => api.shared.buffers.require("filterBoost", { type: "uint32", length: 2 })) || null;
 		if (buf) {
 			const on = buf[0] === 1 ? 1 : 0;
-			if (on !== applied && apply(on === 1)) {
+			// safe(): a throw in apply() must not end this setTimeout chain.
+			if (on !== applied && safe(() => apply(on === 1))) {
 				applied = on; buf[1] = on + 1;
 				console.log(`[${MOD_ID}] worker: Filter Mk.3 ${on ? "ON (2 cells per pass)" : "OFF"}`);
 			}

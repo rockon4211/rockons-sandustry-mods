@@ -132,7 +132,8 @@ register();
 		if (!buf) buf = safe(() => api.shared.buffers.require("filterBoost", { type: "uint32", length: 2 })) || null;
 		if (buf) {
 			const on = buf[0] === 1 ? 1 : 0;
-			if (on !== applied && apply(on === 1)) {
+			// safe(): a throw in apply() must not end this setTimeout chain.
+			if (on !== applied && safe(() => apply(on === 1))) {
 				applied = on; buf[1] = on + 1;
 				console.log(`[${MOD_ID}] worker: Filter Mk.3 ${on ? "ON (2 cells per pass)" : "OFF"}`);
 			}
@@ -142,16 +143,28 @@ register();
 	tick();
 })();
 }
+// Hot-load. Workers have no assets API, so main.js publishes this mod's own
+// worker.real.js URL in the "hotloadUrl" shared buffer - no install path is
+// hard-coded. The baked copy above runs only if the file can't be read or
+// doesn't compile - never after the real code has started (it would arm twice).
 (function () {
-	var src = null;
+	var url = "", src = null, fn = null;
 	try {
-		var xhr = new XMLHttpRequest();
-		xhr.open("GET", "file:///C:/Users/Brand/AppData/Roaming/sandustry/mods/manufacturing/worker.real.js" + "?ts=" + Date.now(), false);
-		xhr.send();
-		if (xhr.status === 0 || xhr.status === 200) src = xhr.responseText;
-	} catch (e) { src = null; }
-	try {
-		if (src) { new Function("sandkit", src)(sandkit); console.log("[brandon.manufacturing] worker.js hot-loaded fresh from disk"); }
-		else { __baked(sandkit); console.log("[brandon.manufacturing] worker.js using baked code (no disk read)"); }
-	} catch (e) { console.warn("[brandon.manufacturing] worker.js hot-load threw, using baked:", e && e.message); __baked(sandkit); }
+		var b = sandkit.api.shared.buffers.require("hotloadUrl", { type: "uint16", length: 1024 });
+		for (var i = 0; i < b.length && b[i]; i++) url += String.fromCharCode(b[i]);
+	} catch (e) { url = ""; }
+	if (url) {
+		try {
+			var xhr = new XMLHttpRequest();
+			xhr.open("GET", url + "?ts=" + Date.now(), false);
+			xhr.send();
+			if (xhr.status === 0 || xhr.status === 200) src = xhr.responseText;
+		} catch (e) { src = null; }
+	}
+	if (src) {
+		try { fn = new Function("sandkit", "\"use strict\";\n" + src); }
+		catch (e) { console.warn("[brandon.manufacturing] worker.real.js failed to compile, using baked:", e && e.message); }
+	}
+	if (fn) { fn(sandkit); console.log("[brandon.manufacturing] worker.js hot-loaded fresh from disk"); }
+	else { __baked(sandkit); if (!src) console.log("[brandon.manufacturing] worker.js using baked code (no disk read)"); }
 })();
