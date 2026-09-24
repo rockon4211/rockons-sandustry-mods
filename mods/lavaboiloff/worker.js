@@ -23,16 +23,16 @@ const BUFLEN = 6;
 // it — roll the chance to burn that lava out.
 function onWaterMoved(x, y) {
 	if (!shared || shared[0] !== 1) return;
-	const waterT = shared[1], lavaT = shared[2], denom = shared[3] || 5000;
+	const waterT = shared[1], lavaT = shared[2], denom = shared[3] || 100;
 	if (!waterT || !lavaT) return;
 	if (readType(x, y) !== waterT) return;          // must still be water
 	for (const [dx, dy] of NB) {
 		const nx = x + dx, ny = y + dy;
 		if (readType(nx, ny) === lavaT) {
-			shared[4] = (shared[4] + 1) >>> 0;      // a roll happened (checker)
+			Atomics.add(shared, 4, 1);              // a roll happened (checker; wraps at 2^32)
 			if (Math.random() * denom < 1) {
 				safe(() => api.elements.removeAtCell(nx, ny));
-				shared[5] = (shared[5] + 1) >>> 0;  // lava vanished (checker)
+				Atomics.add(shared, 5, 1);          // lava vanished (checker)
 			}
 			return;                                 // one roll per water-move event
 		}

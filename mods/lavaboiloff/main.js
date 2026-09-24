@@ -35,7 +35,7 @@ function publish() {
 	shared[0] = isEnabled() ? 1 : 0;
 	shared[1] = typeOf("water");
 	shared[2] = typeOf("lava");
-	shared[3] = Math.max(1, Math.round(setting("chanceDenominator", 5000)));
+	shared[3] = Math.max(1, Math.round(setting("chanceDenominator", 100)));
 }
 publish();
 setInterval(publish, 1000);
