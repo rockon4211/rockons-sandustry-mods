@@ -714,15 +714,17 @@ armGlassRecipe();
 setInterval(armGlassRecipe, 1500);
 
 // =========================================================================
-// MK2 FILTER SPEED - an On/Off upgrade in the Upgrades pane
+// FILTER MK.3 - an On/Off upgrade in the Upgrades pane
 //
 // A "Manufacturing" tab appears in the Upgrades pane once MANUFACTURING is
-// researched. It holds one upgrade on the Mk.2 Filter: bought once, it becomes
-// an On/Off switch (the game's own one-off upgrade toggle). ON makes every Mk.2
-// Filter move material at Mk.2 BELT speed: 2 cells per belt pass instead of 1,
+// researched. It holds one upgrade on the Mk.2 Filter, "Filter Mk.3": bought once,
+// it becomes an On/Off switch (the game's own one-off upgrade toggle). ON turns
+// every Mk.2 Filter into a Mk.3 - it moves material at Mk.2 BELT speed: 2 cells per belt pass instead of 1,
 // which is the same 6 cells/s the Mk.2 belt manages with 1 cell twice as often.
 // Everything else about the filter (settings, allow/block, pass-through) is the
-// game's own. The speed lives in the simulation worker's transport config, so
+// game's own. A separate Mk.3 structure is not possible: the game hard-codes belt
+// speed and every filter behaviour to the structure ids filterLeft/RightMk2, and an
+// unknown id gets speed 0. So the Mk.3 is an upgrade applied to all Mk.2 Filters. The speed lives in the simulation worker's transport config, so
 // the switch is handed to worker.js through a shared buffer.
 // =========================================================================
 const FILTER_BOOST_CATEGORY = "brandonManufacturingUpgrades";
@@ -735,9 +737,9 @@ catch (e) { console.error(`[${MOD_ID}] filter boost buffer failed:`, e); }
 
 safe(() => api.i18n.register("en", {
 	[`upgrades|${FILTER_BOOST_CATEGORY}|name`]: "Manufacturing",
-	[`upgrades|${FILTER_BOOST_UPGRADE}|name`]: "Belt-Speed Filtering",
+	[`upgrades|${FILTER_BOOST_UPGRADE}|name`]: "Filter Mk.3",
 	[`upgrades|${FILTER_BOOST_UPGRADE}|description`]:
-		"Mk.2 Filters move material as fast as a Mk.2 Conveyor Belt (twice their normal speed). Sorting works exactly as before. Switch it on or off at any time once bought.",
+		"Upgrades every Mk.2 Filter to a Filter Mk.3: the same filter with the same settings and sorting, but it moves material as fast as a Mk.2 Conveyor Belt (twice the Mk.2 Filter's speed). Switch it on or off at any time once bought.",
 }));
 function registerFilterBoost() {
 	safe(() => api.upgrades.registerCategory({
@@ -750,8 +752,8 @@ function registerFilterBoost() {
 		requirement: { building: "filterRightMk2" },   // shown once you can build Mk.2 Filters
 		upgrade: {
 			id: FILTER_BOOST_UPGRADE,
-			name: "Belt-Speed Filtering", nameKey: `upgrades|${FILTER_BOOST_UPGRADE}|name`,
-			description: "Mk.2 Filters move material at Mk.2 belt speed.", descriptionKey: `upgrades|${FILTER_BOOST_UPGRADE}|description`,
+			name: "Filter Mk.3", nameKey: `upgrades|${FILTER_BOOST_UPGRADE}|name`,
+			description: "Mk.2 Filters become Mk.3: Mk.2 belt speed.", descriptionKey: `upgrades|${FILTER_BOOST_UPGRADE}|description`,
 			maxLevel: 1, costs: [FILTER_BOOST_COST], oneOff: true,
 		},
 	}));
@@ -768,7 +770,7 @@ setInterval(() => {
 	const on = filterBoostOn();
 	filterBoost[0] = on ? 1 : 0;
 	if (on !== filterBoostLast) {
-		if (filterBoostLast !== null) console.log(`[${MOD_ID}] Mk.2 Filter belt speed ${on ? "ON" : "OFF"}`);
+		if (filterBoostLast !== null) console.log(`[${MOD_ID}] Filter Mk.3 ${on ? "ON (Mk.2 belt speed)" : "OFF (normal Mk.2 speed)"}`);
 		filterBoostLast = on;
 	}
 }, 400);
