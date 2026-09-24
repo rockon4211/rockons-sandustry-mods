@@ -50,7 +50,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
 - **Screensaver** `brandon.screensaver` v0.18.1 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went.
-- **Manufacturing** `brandon.manufacturing` v0.12.2 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.13.0 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
@@ -67,17 +67,19 @@ back to a **verbatim baked copy** of it embedded in the stub. Every edit goes in
 `.real` file **and** is mirrored into the baked copy.
 
 The Material Studio compiler (`compiler.js`) is **retired**: recompiling from `graph.json`
-would drop the hand-written code (HeavyStone, filter boost / Filter Mk.3, red-block fixes,
+would drop the hand-written code (HeavyStone, the Filter Mk.3 research node, red-block fixes,
 probes) and reorder element registration, which changes element ids and breaks saves. It
 now refuses to write into `mods/manufacturing` without `--force`.
 
-**Filter Mk.3.** A research node (`brandonFilterMk3`) under Manufacturing, beside Glass;
-it needs Manufacturing and the vanilla Advanced Filters. Cost is `FILTER_MK3_COST` in
-`main.real.js` — 25,000 gold as a placeholder, to be tuned. Once researched, every Mk.2
-Filter moves material at Mk.2 belt speed (permanent, no switch) and is renamed "Filter Mk.3" in the build menu (0.12.2 overrides the game's structures|filterMk2 name/description keys). It is research, not a new structure,
-because the game hard-codes belt speed and filter behaviour to the `filterLeftMk2` /
-`filterRightMk2` ids and gives any unknown structure id speed 0. `sim-filterboost.js`
-tests it.
+**Filter Mk.3 (in progress).** A research node (`brandonFilterMk3`) under Manufacturing, beside
+Glass; it needs Manufacturing and the vanilla Advanced Filters. Cost is `FILTER_MK3_COST` in
+`main.real.js` — 25,000 gold. It is meant to unlock a NEW structure, Filter Mk.3: identical to
+the Mk.2 Filter (sorting, filter settings) but moving material at Mk.2 belt speed. That
+structure is not built yet, so the node currently has no effect. History: 0.10.0–0.12.2 sped
+up EVERY Mk.2 Filter instead (worker transport-config patch, then a rename to "Filter Mk.3");
+Brandon rejected that — he wants a separate building — and 0.13.0 removed it completely. The
+game hard-codes belt speed and filter behaviour to the `filterLeftMk2` / `filterRightMk2` ids
+(an unknown id gets speed 0), so the new structure has to supply its own belt + filter logic.
 
 ## Sandbox Loop v0.4.5 — what it does
 
@@ -213,7 +215,6 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   `hotspot` bailout, with no further pick-ups there.
 - `sim-loop.js` — Sandbox Loop: a Source keeps its material across PCs (desktop, fresh
   laptop, baked-in-save all emit soil).
-- `sim-filterboost.js` — Manufacturing's Filter Mk.3 worker patch (on/off, no compounding).
 
 They are the only way to test without the game.
 

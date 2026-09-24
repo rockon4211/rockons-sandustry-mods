@@ -210,7 +210,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.12.2 running"));
+		safe(() => api.ui.toast("Manufacturing v0.13.0 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -716,26 +716,18 @@ setInterval(armGlassRecipe, 1500);
 // =========================================================================
 // FILTER MK.3 research
 //
-// A research node under Manufacturing (beside Glass). Once researched, every
-// Mk.2 Filter becomes a Mk.3: it moves material at Mk.2 BELT speed - 2 cells per
-// belt pass instead of 1, the same 6 cells/s the Mk.2 belt manages with 1 cell
-// twice as often. Everything else about the filter (settings, allow/block,
-// pass-through) is the game's own. A separate Mk.3 structure is not possible:
-// the game hard-codes belt speed and every filter behaviour to the structure ids
-// filterLeft/RightMk2, and an unknown id gets speed 0 - so the Mk.3 is research
-// that upgrades all Mk.2 Filters. The speed lives in the simulation worker's
-// transport config, so the state is handed to worker.js through a shared buffer.
+// A research node under Manufacturing (beside Glass). It will unlock the Filter
+// Mk.3 - its own structure that sorts like the Mk.2 Filter at Mk.2 belt speed.
+// That structure is not built yet, so for now the node has no effect. (0.10.0 -
+// 0.12.2 instead sped up EVERY Mk.2 Filter through the worker's transport config;
+// that was not what was wanted and was removed in 0.13.0.)
 // =========================================================================
 const TECH_FILTER_MK3 = "brandonFilterMk3";
 const FILTER_MK3_COST = 25000;    // placeholder price - to be tuned later
-let filterBoost = null;   // uint32[2]: [0] = on (1) / off (0), [1] = the worker's last applied state + 1
-try { filterBoost = api.shared.buffers.create("filterBoost", { type: "uint32", length: 2 }); }
-catch (e) { console.error(`[${MOD_ID}] filter boost buffer failed:`, e); }
-
 safe(() => api.i18n.register("en", {
 	[`tech|${TECH_FILTER_MK3}|name`]: "Filter Mk.3",
 	[`tech|${TECH_FILTER_MK3}|description`]:
-		"Upgrades every Mk.2 Filter to a Filter Mk.3: the same filter with the same settings and sorting, but it moves material as fast as a Mk.2 Conveyor Belt (twice the Mk.2 Filter's speed).",
+		"Unlocks the Filter Mk.3: a filter that sorts exactly like the Mk.2 Filter but moves material as fast as a Mk.2 Conveyor Belt. (The Filter Mk.3 building is still being made - researching this does nothing yet.)",
 }));
 
 // Filter Mk.3 - under Manufacturing, beside Glass. Also needs Advanced Filters
@@ -767,40 +759,6 @@ safe(() => api.i18n.register("en", {
 		if (!done) console.error(`[${MOD_ID}] Filter Mk.3 node could not be placed`);
 	}
 }
-function filterBoostOn() {
-	if (!isEnabled()) return false;
-	const r = safe(() => api.tech.isResearchedById(TECH_FILTER_MK3));
-	return typeof r === "boolean" ? r : safe(() => api.tech.isLockedById(TECH_FILTER_MK3)) === false;
-}
-// Researched, the Mk.2 Filter is shown as "Filter Mk.3" in the build menu and everywhere
-// else the game names it (its own translation keys, overridden; the game's text comes
-// back if the research is undone or the mod is switched off)
-const FILTER_NAME_KEY = "structures|filterMk2|name", FILTER_DESC_KEY = "structures|filterMk2|description";
-let filterTextOrig = null;
-function nameFilterMk3(on) {
-	if (!filterTextOrig) {
-		const n = safe(() => api.i18n.t(FILTER_NAME_KEY)), d = safe(() => api.i18n.t(FILTER_DESC_KEY));
-		if (typeof n !== "string" || n === FILTER_NAME_KEY) return;   // the game's text isn't loaded yet
-		filterTextOrig = { name: n, desc: typeof d === "string" && d !== FILTER_DESC_KEY ? d : "" };
-	}
-	safe(() => api.i18n.register("en", on
-		? { [FILTER_NAME_KEY]: "Filter Mk.3", [FILTER_DESC_KEY]: (filterTextOrig.desc ? filterTextOrig.desc + " " : "") + "Mk.3: moves material as fast as a Mk.2 Conveyor Belt." }
-		: { [FILTER_NAME_KEY]: filterTextOrig.name, [FILTER_DESC_KEY]: filterTextOrig.desc }));
-	safe(() => api.ui.update(sandkit.enums.ComponentId.Root));   // repaint menus that already show the old name
-}
-let filterBoostLast = null, filterNamed = null;
-setInterval(() => {
-	const on = filterBoostOn();
-	if (filterBoost) filterBoost[0] = on ? 1 : 0;
-	if (on !== filterNamed && (on || filterNamed !== null)) { nameFilterMk3(on); if (filterTextOrig) filterNamed = on; }
-	if (on !== filterBoostLast) {
-		if (filterBoostLast !== null) {
-			console.log(`[${MOD_ID}] Filter Mk.3 ${on ? "ON (Mk.2 belt speed)" : "OFF (normal Mk.2 speed)"}`);
-			if (on) safe(() => api.ui.toast("Filter Mk.3 researched - your Mk.2 Filters are now Filter Mk.3 (Mk.2 belt speed)"));
-		}
-		filterBoostLast = on;
-	}
-}, 400);
 
 
 // ------------------------------------------------- Mod Tools: red-block fix --

@@ -7,7 +7,7 @@
 // (main.js / worker.js are hot-load stubs that embed a verbatim baked copy of
 // the .real files; edit the .real file and mirror the change into the baked
 // copy). Since v0.8.1 the mod has grown hand-written code this compiler knows
-// nothing about (HeavyStone, the filter boost / Filter Mk.3, the red-block
+// nothing about (HeavyStone, the Filter Mk.3 research node, the red-block
 // fixes, the probes). Recompiling from graph.json would:
 //   - DROP all of that hand-written code, and
 //   - REORDER element registration, which changes element type ids and

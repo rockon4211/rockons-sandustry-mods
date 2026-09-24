@@ -11,7 +11,7 @@ its Mods menu.
 | --- | --- | --- |
 | **sandboxloop** | 0.4.5 | Sources and Removers for an endless, self-balancing factory, plus a whole-map balance tracker with history export. |
 | **screensaver** | 0.18.1 | After a few idle minutes the HUD hides and the camera follows one real grain through the factory, material by material. Press **E** to exit. |
-| **manufacturing** | 0.12.2 | Renames vanilla sand to "soil" and adds a golden Sand (→ Glass on the Smelter); Mod Tools (Matter Gun, vacuum tank delete buttons, Omni Vacuum); **Filter Mk.3** research under Manufacturing (25,000 gold for now; every Mk.2 Filter then moves at Mk.2 belt speed). |
+| **manufacturing** | 0.13.0 | Renames vanilla sand to "soil" and adds a golden Sand (→ Glass on the Smelter); Mod Tools (Matter Gun, vacuum tank delete buttons, Omni Vacuum); **Filter Mk.3** research under Manufacturing (25,000 gold) — the Filter Mk.3 building it will unlock is still being made. |
 | **lavaboiloff** | 0.1.1 | Lava has a 1-in-N chance to burn itself out each time it boils water into steam. |
 | **quickstart** | 1.0.1 | **F10** quick reload: reboots the game straight back into the current save (prefers the F5 quicksave). |
 
@@ -51,7 +51,7 @@ a `.real` file must be mirrored into the baked copy. Do **not** regenerate the m
   machines between them. Still useful for browsing the game's recipe graph.
 - `compiler.js`, `compiler-cfg.json`, `tools-bolton.js`, `tech-glass-bolton.js` — the
   studio's mod compiler. **RETIRED — DANGER.** Manufacturing has grown hand-written code
-  since the last compile (HeavyStone, the filter boost / Filter Mk.3, red-block fixes,
+  since the last compile (HeavyStone, the Filter Mk.3 research node, red-block fixes,
   probes). A recompile from `graph.json` would drop all of that, **reorder element
   registration (changing element ids and breaking saves)**, and roll the version back to
   the 0.8.1 in `compiler-cfg.json`. It refuses to write into `mods/manufacturing` without
