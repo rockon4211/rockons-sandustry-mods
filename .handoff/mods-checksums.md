@@ -1,6 +1,6 @@
-# Mod file checksums — main, 88fd93b, 2026-09-24
+# Mod file checksums — main, 2dd92e5, 2026-09-24
 
-Versions: sandboxloop 0.4.5, screensaver 0.18.1, manufacturing 0.12.2, lavaboiloff 0.1.1, quickstart 1.0.1.
+Versions: sandboxloop 0.4.5, screensaver 0.18.1, manufacturing 0.13.0, lavaboiloff 0.1.1, quickstart 1.0.1.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
 text files out with CRLF, so hash those after converting, or compare with `git hash-object`.
 
@@ -22,14 +22,14 @@ To compare an install, run the same `find … | xargs sha256sum` inside
 b77d7dbf8f5d674034316ff9af034f1da170dad21f4bcdf12c63540916c1c653  lavaboiloff/main.js
 311973d685f93b75546a1af856febf8a8e293bc8e6d1b98da2c616459b436509  lavaboiloff/modinfo.json
 1e4b15b61a5006819fc8d69eeca740b230348493f97440d081812ed1c29e9fcd  lavaboiloff/worker.js
-4d2d63295f3bf3e53bc25bb2c5a8b6fda7604f1981ea2ee5cdde2a0cc1f6776d  manufacturing/main.js
-b690a74f6f8764f2d42388a2edbf201c226a74a7024aa3391500c321e16aa6e0  manufacturing/main.real.js
+85cdcc27cd46f1404fe2bd4163ffaca197de49e6e6f6facb14425f74fbbbd184  manufacturing/main.js
+55e1704f77dd6d865e50f889fd660e410127f1e514857bc4819e28e09aa20fbb  manufacturing/main.real.js
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun.png
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun_icon.png
-d4dbb5344ce269db7d39690158e2d1e0b3abef14bb5c7a09ae9434817469ec19  manufacturing/modinfo.json
+7952b7e2f81b67a7f9e9d84e42ab5cec4d833540069bd79344c266dae6940bcc  manufacturing/modinfo.json
 bb6b7ac569af46b8b32072d79df284210d4f8b70e5a84ffa0407fac9c1475189  manufacturing/preview.png
-b9c4e9343fa937d48ad69555d4dd79a65fbead6249b5e6459ad67e87f946bf72  manufacturing/worker.js
-d2ada6a4c01c2438a5b8f8a472d9b59ae15ece21c03b195b54b6775532944d8d  manufacturing/worker.real.js
+8018d0144f77848af41857926ed3d93d02d0db2a5482c9ef37b590839876c1f6  manufacturing/worker.js
+b5d6484016e77e14a2650302ea7da93e24213a94e7b87e0fef8facc00965310a  manufacturing/worker.real.js
 6d4f399c4dffcecd3c0a94738438a2d76cd9b438135ea5c3bae94b938871a4cf  quickstart/main.js
 cbe98a26414ea9cdeca5a1739a8900e1a798d274084370ca45ecfd730b34ab4e  quickstart/modinfo.json
 93da1be7de59ea4f5db0384e5d83098567fbdf5e9f75ca92f20ee2c0a05708b2  quickstart/preview.png
