@@ -1,20 +1,25 @@
-// Improved Filter Options - a clipboard for filter settings.
+// Improved Filter Options - a clipboard for filter settings, built into the filter menus.
 //
 // A filter's settings are the `filter` object the game keeps on the structure
 // ({mode: allow|block, elementType: one number or a list, affectsLiquid, affectsGas,
 // density}). Every kind of filter carries the same object - Mk.1, Mk.2, the Mk.3 from
 // the Manufacturing mod, and the filter walls - so settings copied from one kind fit
-// any other. COPY reads that object off a placed filter; PASTE writes it onto a whole
-// row (every joined filter of the same kind and setting, the game's own row rule)
-// through the game's own updateMany, which is what its Mk.2 row editor uses; NEW
-// FILTERS writes it into store.options.defaultFilter, the setting the Mk.2 / Mk.3
-// panels edit and every new Mk.2 / Mk.3 takes when placed.
+// any other. (Shakers, growers and critter fences carry a `filter` too, for their own
+// purposes; only the real filter kinds count here.)
+//
+// The clipboard shows up as a strip in the same band as the filter menu, whenever a
+// filter menu is up - the game's (a Mk.1 / Mk.2 filter in hand, or a row selected in
+// its editor) or the Mk.3's. COPY takes what that menu is showing (the row being
+// edited, else the setting new filters take); PASTE puts the clipboard into it (the
+// row - through the game's own editor, setDraft + apply - or store.options.defaultFilter,
+// which every new Mk.2 / Mk.3 takes when placed). PICK / ONTO arm a click on any placed
+// filter instead, for a row that isn't open in a menu.
 //
 // The clipboard is saved by material id (names like "water"), never by the number the
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.1.0";
+const BUILD = "0.2.0";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -25,6 +30,8 @@ function inWorld() {
 	return menus.length ? !menus.includes(a) : a > 2;
 }
 const ReactM = safe(() => sandkit.react), h = ReactM ? ReactM.createElement : null;
+const state = () => sandkit.state;
+const engine = () => sandkit.engine;
 
 // --- materials: numbers <-> ids ---------------------------------------------------
 const typeCache = new Map(), idCache = new Map();
@@ -64,9 +71,10 @@ setInterval(() => { if (clipLoaded || !inWorld()) return; loadClip(); clipLoaded
 
 // --- filters on the map ------------------------------------------------------------
 const ST = safe(() => sandkit.enums.StructureType) || {};
-const FILTER_IDS = new Set([ST.FilterLeft, ST.FilterRight, "filterLeftMk2", "filterRightMk2", "filterWall", "filterWallMk2", "filterLeftMk3", "filterRightMk3"].filter((v) => v !== undefined));
+const VAN = new Set([ST.FilterLeft, ST.FilterRight, "filterLeftMk2", "filterRightMk2", "filterWall", "filterWallMk2"].filter((v) => v !== undefined));
+const MK3 = new Set(["filterLeftMk3", "filterRightMk3"]);
 const WALLS = new Set(["filterWall", "filterWallMk2"]);
-const isFilter = (s) => !!s && ((s.filter && typeof s.filter === "object") || FILTER_IDS.has(s.type));
+const isFilter = (s) => !!s && (VAN.has(s.type) || MK3.has(s.type));   // real filter kinds only
 const filterKey = (s) => { const f = s.filter || {}; return [s.type, f.mode || "allow", asList(f.elementType).slice().sort((a, b) => a - b).join(","), f.affectsLiquid ? 1 : 0, f.affectsGas ? 1 : 0, f.density || 0].join("_"); };
 // the whole row joined to the filter at x,y: same kind, same setting, touching - the
 // game's own rule for its row editor (walls join vertically)
@@ -81,122 +89,161 @@ function rowAt(x, y) {
 	for (let i = 0; i < 4096; i++) { const s = at(vert ? x0 : x0 + i * N, vert ? y0 + i * N : y0); if (!same(s)) break; members.push(s); }
 	return { members, type: s0.type, x: s0.x, y: s0.y };
 }
-const kindName = (t) => t === ST.FilterLeft || t === ST.FilterRight ? "Filter" : t === "filterLeftMk2" || t === "filterRightMk2" ? "Filter Mk.2" : t === "filterLeftMk3" || t === "filterRightMk3" ? "Filter Mk.3" : t === "filterWall" ? "Filter wall" : t === "filterWallMk2" ? "Filter wall Mk.2" : String(t);
+const kindName = (t) => t === ST.FilterLeft || t === ST.FilterRight ? "Filter" : t === "filterLeftMk2" || t === "filterRightMk2" ? "Filter Mk.2" : MK3.has(t) ? "Filter Mk.3" : t === "filterWall" ? "Filter wall" : t === "filterWallMk2" ? "Filter wall Mk.2" : String(t);
 function describe(f) { const l = asList(f && f.elementType); return (l.length ? l.map(nameOf).join(" / ") : "no material") + " · " + ((f && f.mode) === "block" ? "block" : "allow"); }
+function writeRow(members) {
+	for (const s of members) s.filter = Object.assign({}, s.filter || {}, cloneFilter(clip));
+	return safe(() => { engine().api.structures.updateMany(engine().state, members, { propagateToWorkers: true }); return true; }, false);
+}
 
-// --- copy / paste / new filters -------------------------------------------------------
-let msg = "", mode = null;   // mode: "copy" | "paste" | null (armed: the next click on a filter does it)
-function setNewFilters() {
+// --- the menus: which one is up, what it shows, and how to put a setting into it ------
+// the game's row editor (its filter panel in "editing" mode) is on the engine api
+const vanEditor = () => safe(() => engine().api.filterGroupEditor) || null;
+const vanSel = () => { const ed = vanEditor(); return ed ? (safe(() => ed.getSelection(engine().state)) || null) : null; };
+// the Mk.3 panel (Manufacturing) says what it is doing through this hook
+const mk3 = () => safe(() => window.__brandonFilterMk3) || null;
+const mk3Sel = () => { const k = mk3(); return k ? (safe(() => k.selection()) || null) : null; };
+function menuUp() {
+	if (vanSel()) return "van-row";
+	if (mk3Sel()) return "mk3-row";
+	const st = safe(state); if (!st) return null;
+	const t = safe(() => st.session.building.activeStructureType), a = safe(() => st.store.player.action && st.store.player.action.id);
+	if (VAN.has(t)) return "van-new";
+	if (MK3.has(t) || MK3.has(a)) return "mk3-new";
+	return null;
+}
+function menuFilter(which) {   // what the menu is showing right now
+	if (which === "van-row") { const s = vanSel(); return s && s.draft; }
+	if (which === "mk3-row") { const k = mk3(); return k && safe(() => k.draft()); }
+	return safe(() => state().store.options.defaultFilter);
+}
+function setNewFilters() {   // what every new Mk.2 / Mk.3 takes - the setting the filter panels edit
 	if (!clip) return false;
-	const ok = safe(() => { const st = sandkit.state; st.store.options.defaultFilter = cloneFilter(clip);
+	const ok = safe(() => { const st = state(); st.store.options.defaultFilter = cloneFilter(clip);
 		const cd = st.session.action.customData; if (cd && cd.copiedStructure && cd.copiedStructure.filter) cd.copiedStructure.filter = undefined;   // as the panel does: a copied structure's own filter no longer applies
 		return true; }, false);
+	const CID = safe(() => sandkit.enums.ComponentId) || {};
+	if (CID.FilterConfig !== undefined) safe(() => api.ui.update(CID.FilterConfig));   // the game's panel reads it on render
+	safe(() => api.ui.overlays.update("hotbar"));
+	const k = mk3(); if (k) safe(() => k.refresh());
 	return ok;
 }
-function newFiltersMatch() { const df = safe(() => sandkit.state.store.options.defaultFilter); return !!clip && !!df && filterKey({ type: 0, filter: df }) === filterKey({ type: 0, filter: clip }); }
-function doCopy(row) {
-	clip = cloneFilter(row.members[0].filter); saveClip();
-	const forNew = setting("copyAlsoSetsNew", true) && setNewFilters();
-	msg = "copied " + kindName(row.type) + " (" + row.members.length + "): " + describe(clip) + (forNew ? " — new filters take it" : "");
+function newFiltersMatch() { const df = safe(() => state().store.options.defaultFilter); return !!clip && !!df && filterKey({ type: 0, filter: df }) === filterKey({ type: 0, filter: clip }); }
+let msg = "";
+function copyFromMenu(which) {
+	const f = menuFilter(which); if (!f) { msg = "nothing to copy"; return; }
+	clip = cloneFilter(f); saveClip();
+	const s = which === "van-row" ? vanSel() : which === "mk3-row" ? mk3Sel() : null;
+	const from = s ? (which === "van-row" ? kindName(s.structureType) + " row (" + s.memberCount + ")" : "Filter Mk.3 row (" + (s.count || "?") + ")") : "new-filter setting";
+	const forNew = which !== "van-new" && which !== "mk3-new" && setting("copyAlsoSetsNew", true) && setNewFilters();
+	msg = "copied from " + from + ": " + describe(clip) + (forNew ? " — new filters take it" : "");
 	safe(() => api.ui.toast("Copied filter settings: " + describe(clip)));
 }
-function doPaste(row) {
+function pasteIntoMenu(which) {
 	if (!clip) { msg = "nothing copied yet"; return; }
-	for (const s of row.members) s.filter = Object.assign({}, s.filter || {}, cloneFilter(clip));
-	const ok = safe(() => { sandkit.engine.api.structures.updateMany(sandkit.engine.state, row.members, { propagateToWorkers: true }); return true; }, false);
-	msg = ok ? "pasted onto " + kindName(row.type) + " (" + row.members.length + "): " + describe(clip) : "couldn't write the row";
-	if (ok) safe(() => api.ui.toast("Pasted filter settings onto " + row.members.length + " " + kindName(row.type) + (row.members.length === 1 ? "" : "s")));
+	if (which === "van-row") {   // the game's editor: set its draft, then its own apply writes the row and closes
+		const ed = vanEditor(), st = engine().state, s = vanSel();
+		const ok = ed && safe(() => ed.setDraft(st, cloneFilter(clip)), false) && safe(() => ed.apply(st), false);
+		msg = ok ? "pasted onto " + kindName(s.structureType) + " row (" + s.memberCount + "): " + describe(clip) : "the game's editor refused it";
+		if (ok) safe(() => api.ui.toast("Pasted filter settings onto " + s.memberCount + " " + kindName(s.structureType) + (s.memberCount === 1 ? "" : "s")));
+		return;
+	}
+	if (which === "mk3-row") {
+		const k = mk3(), s = mk3Sel();
+		const ok = k && safe(() => k.setDraft(cloneFilter(clip)), false) && safe(() => k.apply(), false);
+		msg = ok ? "pasted onto Filter Mk.3 row (" + (s && s.count || "?") + "): " + describe(clip) : "the Mk.3 panel refused it";
+		if (ok) safe(() => api.ui.toast("Pasted filter settings onto the Filter Mk.3 row"));
+		return;
+	}
+	msg = setNewFilters() ? "new filters now take: " + describe(clip) : "couldn't set it";
 }
-let cursorStyle = null;
+// PICK / ONTO: a click on any placed filter, taken before the game sees it (capture),
+// so nothing gets built or grabbed. Esc / right-click cancels.
+let mode = null, cursorStyle = null, swallowUntil = 0;
 function arm(m) {
 	mode = m;
 	if (cursorStyle) { safe(() => cursorStyle.remove()); cursorStyle = null; }
-	if (m) { safe(() => { cursorStyle = document.createElement("style"); cursorStyle.textContent = "*{cursor:" + (m === "copy" ? "copy" : "cell") + " !important}"; document.head.appendChild(cursorStyle); }); }
-	msg = m === "copy" ? "click a placed filter to copy its settings (Esc cancels)" : m === "paste" ? "click a placed filter to paste onto that whole row (Esc cancels)" : msg;
+	if (m) safe(() => { cursorStyle = document.createElement("style"); cursorStyle.textContent = "*{cursor:" + (m === "copy" ? "copy" : "cell") + " !important}"; document.head.appendChild(cursorStyle); });
+	if (m) msg = m === "copy" ? "click a placed filter to copy its settings (Esc cancels)" : "click a placed filter: its whole row gets the clipboard (Esc cancels)";
 	repaint();
 }
-// the armed click: taken before the game sees it (capture), so nothing gets built or grabbed
-let swallowUntil = 0;
+function doCopyRow(row) {
+	clip = cloneFilter(row.members[0].filter); saveClip();
+	const forNew = setting("copyAlsoSetsNew", true) && setNewFilters();
+	msg = "copied " + kindName(row.type) + " row (" + row.members.length + "): " + describe(clip) + (forNew ? " — new filters take it" : "");
+	safe(() => api.ui.toast("Copied filter settings: " + describe(clip)));
+}
+function doPasteRow(row) {
+	const ok = writeRow(row.members);
+	msg = ok ? "pasted onto " + kindName(row.type) + " row (" + row.members.length + "): " + describe(clip) : "couldn't write the row";
+	if (ok) safe(() => api.ui.toast("Pasted filter settings onto " + row.members.length + " " + kindName(row.type) + (row.members.length === 1 ? "" : "s")));
+}
 safe(() => {
 	const block = { capture: true, passive: false };
 	const eat = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
+	const ours = (e) => !!(e.target && e.target.closest && e.target.closest("[data-brandon-ifo]"));
 	window.addEventListener("mousedown", (e) => {
-		if (!mode) return;
-		if (e.target && e.target.closest && e.target.closest("[data-brandon-ifo]")) return;   // our own panel
+		if (!mode || ours(e)) return;
 		if (e.button === 2) { eat(e); swallowUntil = Date.now() + 400; arm(null); msg = "cancelled"; repaint(); return; }
 		if (e.button !== 0) return;
 		eat(e); swallowUntil = Date.now() + 400;
-		const cp = safe(() => sandkit.state.session.input.mouse.cellPosition);
+		const cp = safe(() => state().session.input.mouse.cellPosition);
 		const row = cp ? rowAt(Math.floor(cp.x), Math.floor(cp.y)) : null;
 		const m = mode; arm(null);
-		if (!row) { msg = "that isn't a filter — " + (m === "copy" ? "copy" : "paste") + " cancelled"; repaint(); return; }
-		if (m === "copy") doCopy(row); else doPaste(row);
+		if (!row) { msg = "that isn't a filter — cancelled"; repaint(); return; }
+		if (m === "copy") doCopyRow(row); else doPasteRow(row);
 		repaint();
 	}, block);
 	for (const t of ["pointerdown", "pointerup", "mouseup", "click", "contextmenu"]) window.addEventListener(t, (e) => {
-		if (!mode && Date.now() > swallowUntil) return;
-		if (e.target && e.target.closest && e.target.closest("[data-brandon-ifo]")) return;
+		if ((!mode && Date.now() > swallowUntil) || ours(e)) return;
 		if (mode && t === "pointerdown" && e.button !== 0 && e.button !== 2) return;
 		eat(e);
 	}, block);
 	window.addEventListener("keydown", (e) => { if (mode && e.code === "Escape") { eat(e); arm(null); msg = "cancelled"; repaint(); } }, block);
 });
 
-// --- the panel ----------------------------------------------------------------------
-let repaintFn = null;
-function repaint() { if (repaintFn) repaintFn((v) => v + 1); }
-const POS_KEY = "brandon.improvedfilters.panelpos", MIN_KEY = "brandon.improvedfilters.panelmin";
-let panelPos = { x: Math.max(12, (safe(() => window.innerWidth) || 1280) - 340), y: 84 }, panelMin = false;
-(function loadUi() {
-	const raw = safe(() => window.localStorage.getItem(POS_KEY)), o = raw && safe(() => JSON.parse(raw));
-	if (o && typeof o.x === "number" && typeof o.y === "number") panelPos = o;
-	if (safe(() => window.localStorage.getItem(MIN_KEY)) === "1") panelMin = true;
-})();
-let _drag = false, _ddx = 0, _ddy = 0;
-safe(() => {
-	window.addEventListener("mousemove", (e) => { if (!_drag) return; panelPos = { x: Math.max(0, e.clientX - _ddx), y: Math.max(0, e.clientY - _ddy) }; repaint(); });
-	window.addEventListener("mouseup", () => { if (!_drag) return; _drag = false; safe(() => window.localStorage.setItem(POS_KEY, JSON.stringify(panelPos))); });
-});
-function startDrag(e) { _drag = true; _ddx = e.clientX - panelPos.x; _ddy = e.clientY - panelPos.y; if (e.preventDefault) e.preventDefault(); }
-const BTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "10.5px", fontWeight: 700, padding: "3px 9px", cursor: "pointer", whiteSpace: "nowrap" };
-function btn(label, onClick, opts) {
-	const o = opts || {};
-	return h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); onClick(); }, onMouseDown: (e) => { if (e.stopPropagation) e.stopPropagation(); }, title: o.title || "",
-		style: Object.assign({}, BTN, o.on ? { background: "#2a3645", color: "#ffe27a", borderColor: "#ffe27a" } : null, o.dim ? { opacity: 0.45, cursor: "default" } : null) }, label);
+// --- the strip in the filter menu's band ---------------------------------------------
+let repaintFn = null, wasUp = null;
+function repaint() { if (repaintFn) repaintFn((v) => v + 1); safe(() => api.ui.overlays.update("hotbar")); }
+// the game's own classes, so it matches the filter panel next to it
+const BTN = "text-xs px-2 py-0.5 text-white bg-black border rounded-tr-lg rounded-bl-lg item-button-transition border-slate-200 border-opacity-25 hover:text-[#ffe700] hover:border-opacity-0";
+const BTN_ON = "text-xs px-2 py-0.5 bg-black border rounded-tr-lg rounded-bl-lg item-button-transition text-[#ffe700] border-[#ffe700]";
+function btn(label, onClick, o) {
+	o = o || {};
+	return h("button", { className: o.on ? BTN_ON : BTN, style: o.dim ? { opacity: 0.45 } : undefined, title: o.title || "", tabIndex: -1,
+		onClick: (e) => { e.stopPropagation(); if (!o.dim) onClick(); }, onMouseDown: (e) => { e.preventDefault(); e.stopPropagation(); } }, label);
 }
-function swatch(t) { const c = colorOf(t); return h("span", { key: t, style: { width: "11px", height: "11px", borderRadius: "2px", background: c, boxShadow: "0 0 5px " + c, flexShrink: 0, display: "inline-block" } }); }
-function Panel() {
+function Strip() {
 	const [, rp] = ReactM.useState(0); repaintFn = rp;
 	if (!isEnabled() || !inWorld()) return null;
 	if (safe(() => window.__brandonScreensaver && window.__brandonScreensaver.isActive())) return null;
-	const base = { position: "fixed", left: panelPos.x + "px", top: panelPos.y + "px", zIndex: 99997, pointerEvents: "auto",
-		background: "rgba(10,14,20,0.94)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "8px", padding: "8px 10px",
-		font: '600 12px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#e8edf3", boxShadow: "0 4px 16px rgba(0,0,0,.5)", minWidth: "250px", maxWidth: "330px" };
-	const title = h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: panelMin ? 0 : "6px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
-		h("span", { style: { color: "#5b6470", fontSize: "13px", lineHeight: 1 } }, "⠿"),
-		h("span", null, "Filter clipboard"),
-		h("span", { style: { flex: "1 1 auto" } }),
-		h("button", { title: panelMin ? "expand" : "minimize", onMouseDown: (e) => { if (e.stopPropagation) e.stopPropagation(); }, onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); panelMin = !panelMin; safe(() => window.localStorage.setItem(MIN_KEY, panelMin ? "1" : "0")); repaint(); },
-			style: Object.assign({}, BTN, { fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px" }) }, panelMin ? "▢" : "–"));
-	if (panelMin) return h("div", { "data-brandon-ifo": "1", style: base }, title);
+	const which = mode ? (wasUp || menuUp()) : menuUp();
+	if (!which) return null;
 	const list = asList(clip && clip.elementType);
-	const preview = clip
-		? h("div", { style: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: "5px", fontSize: "11px", margin: "4px 0" } },
-			list.map(swatch),
-			h("span", { style: { fontWeight: 700 } }, list.length ? list.map(nameOf).join(" / ") : "no material"),
-			h("span", { style: { color: clip.mode === "block" ? "#ff6a4d" : "#5cff4a", fontWeight: 800, fontSize: "10px" } }, clip.mode === "block" ? "✕ block" : "✓ allow"),
-			newFiltersMatch() ? h("span", { style: { color: "#93a1b0", fontSize: "9.5px", fontWeight: 600 } }, "· new filters take this") : null)
-		: h("div", { style: { fontSize: "11px", color: "#93a1b0", margin: "4px 0" } }, "empty — press COPY, then click any placed filter");
-	return h("div", { "data-brandon-ifo": "1", style: base },
-		title,
-		h("div", { style: { display: "flex", flexWrap: "wrap", gap: "5px" } },
-			btn(mode === "copy" ? "COPY: click a filter…" : "COPY", () => arm(mode === "copy" ? null : "copy"), { on: mode === "copy", title: "Then click any placed filter (Mk.1 / Mk.2 / Mk.3 / wall) to copy its materials and allow/block." }),
-			btn(mode === "paste" ? "PASTE: click a filter…" : "PASTE", () => { if (!clip) { msg = "nothing copied yet"; repaint(); return; } arm(mode === "paste" ? null : "paste"); }, { on: mode === "paste", dim: !clip, title: "Then click a placed filter: its whole row gets the copied settings. Works from any kind onto any kind." }),
-			btn("NEW FILTERS", () => { msg = setNewFilters() ? "new Mk.2 / Mk.3 filters now take: " + describe(clip) : "nothing copied yet"; repaint(); }, { dim: !clip || newFiltersMatch(), title: "Make the next Mk.2 / Mk.3 filters you place take the copied settings (the same thing the filter panel sets)." }),
-			btn("CLEAR", () => { clip = null; saveClip(); arm(null); msg = "cleared"; repaint(); }, { dim: !clip })),
-		preview,
-		msg ? h("div", { style: { fontSize: "9.5px", color: mode ? "#ffe27a" : "#8fb98f", fontWeight: 700, lineHeight: 1.4 } }, msg) : null);
+	const target = which === "van-row" || which === "mk3-row" ? "this row" : "new filters";
+	return h("div", { "data-brandon-ifo": "1", className: "bg-black bg-opacity-75 px-4 py-2 flex items-center gap-3 border border-slate-700 rounded ui-box text-white text-xs", style: { flexWrap: "wrap" } },
+		h("span", { className: "font-semibold text-white" }, "Clipboard"),
+		clip
+			? h("div", { className: "flex flex-wrap items-center gap-x-2 gap-y-1" },
+				list.map((t) => h("span", { key: t, className: "w-3 h-3 flex-shrink-0", style: { backgroundColor: colorOf(t), boxShadow: "0 0 6px " + colorOf(t) } })),
+				h("span", { className: "text-white" }, list.length ? list.map(nameOf).join(" / ") : "no material"),
+				h("span", { className: "text-[10px] " + (clip.mode === "block" ? "text-[rgb(255,77,21)]" : "text-[rgb(30,255,0)]") }, clip.mode === "block" ? "✕ block" : "✓ allow"))
+			: h("span", { className: "text-white/70" }, "empty"),
+		btn("Copy", () => { copyFromMenu(which); repaint(); }, { title: "Copy what this menu is showing (" + (target === "this row" ? "the row being edited" : "the setting new filters take") + ")." }),
+		btn("Paste", () => { pasteIntoMenu(which); repaint(); }, { dim: !clip, title: "Put the clipboard into " + target + ". Works from any filter kind onto any other." }),
+		btn(mode === "copy" ? "Pick: click a filter…" : "Pick from map", () => arm(mode === "copy" ? null : "copy"), { on: mode === "copy", title: "Then click any placed filter (Mk.1 / Mk.2 / Mk.3 / wall) to copy its settings." }),
+		btn(mode === "paste" ? "Onto: click a filter…" : "Paste onto map", () => arm(mode === "paste" ? null : "paste"), { on: mode === "paste", dim: !clip, title: "Then click a placed filter: its whole row gets the clipboard." }),
+		clip ? btn("Clear", () => { clip = null; saveClip(); arm(null); msg = "cleared"; repaint(); }) : null,
+		msg ? h("span", { className: "text-[10px] " + (mode ? "text-[#ffe700]" : "text-white/70") }, msg) : null);
 }
-if (h) safe(() => api.ui.inject("brandon-improvedfilters-panel", Panel));
-else console.error(`[${MOD_ID}] React not available - no panel`);
+if (h) {
+	// the same band above the hotbar the filter menus live in; a fixed box if that can't be used
+	const mounted = safe(() => { api.ui.overlays.register("hotbar", "brandonFilterClipboard", () => h(Strip)); return true; }, false);
+	if (!mounted) safe(() => api.ui.inject("brandon-improvedfilters-strip", () => h("div", { style: { position: "fixed", left: "50%", bottom: "96px", transform: "translateX(-50%)", zIndex: 40, pointerEvents: "auto" } }, h(Strip))));
+	setInterval(() => {   // show / hide with the filter menus
+		if (!isEnabled()) return;
+		const up = menuUp();
+		if (up !== wasUp) { if (!up && mode) { /* keep the strip while a pick is armed */ } else { wasUp = up; if (!up) { arm(null); msg = ""; } repaint(); } }
+	}, 250);
+} else console.error(`[${MOD_ID}] React not available - no clipboard strip`);
 console.log(`[${MOD_ID}] loaded (build ${BUILD})`);

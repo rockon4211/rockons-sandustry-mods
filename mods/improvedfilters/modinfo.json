@@ -2,11 +2,11 @@
 	"manifestVersion": 1,
 	"id": "brandon.improvedfilters",
 	"name": "Improved Filter Options",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",
-	"description": "A clipboard for filter settings. COPY the settings (materials, allow/block) of any placed filter - Mk.1, Mk.2, Mk.3 or a filter wall - and PASTE them onto another placed filter row, or use them for every new filter you place next. It works across kinds: copy a Mk.2, paste onto a Mk.3, and back. The clipboard is kept by material name, so it survives reloads and moving to another PC.\n\nHOW\nThe Filter clipboard panel (drag it by its title) has: COPY - then click a placed filter to copy its settings; PASTE - then click a placed filter to give that whole row the copied settings; NEW FILTERS - make the next Mk.2 / Mk.3 filters you place take the copied settings (copying does this automatically); CLEAR. Esc or right-click cancels a copy/paste.",
+	"description": "A clipboard for filter settings, built into the filter menus. COPY the settings (materials, allow/block) shown by the filter menu that is open - the row being edited, or the setting new filters take - and PASTE the clipboard into any other filter menu: onto a Mk.1, Mk.2 or Mk.3 row, or into new filters. It works across kinds: copy a Mk.2, paste onto a Mk.3, and back. The clipboard is kept by material name, so it survives reloads and moving to another PC.\n\nHOW\nWhenever a filter menu is up (a filter in hand, or a placed row opened in its editor), a Clipboard strip appears in the same band above the hotbar: COPY / PASTE work on what that menu shows. PICK FROM MAP and PASTE ONTO MAP arm a click on any placed filter instead, for a row that isn't open in a menu; Esc or right-click cancels.",
 	"dependencies": [],
 	"loadOrder": 0,
 	"configSchema": {
@@ -20,7 +20,7 @@
 			"type": "boolean",
 			"default": true,
 			"labelKey": "Copy also sets new filters",
-			"descriptionKey": "When ON, copying a filter's settings also makes the next Mk.2 / Mk.3 filters you place take them (the same setting the filter panel edits). When OFF, use the NEW FILTERS button for that."
+			"descriptionKey": "When ON, copying from a placed row also makes the next Mk.2 / Mk.3 filters you place take those settings (the same setting the filter panel edits). When OFF, PASTE into the new-filter menu does that."
 		}
 	}
 }

@@ -210,7 +210,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.15.0 running"));
+		safe(() => api.ui.toast("Manufacturing v0.15.1 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -965,6 +965,16 @@ if (hM) {
 		const now = mk3Selected();
 		if (now !== mk3.wasSel) { mk3.wasSel = now; if (!now && !mk3.sel) mk3.open = false; mk3Refresh(); }
 	}, 250);
+	// what the panel is doing, for other mods (Improved Filter Options' clipboard reads and
+	// writes the row being edited through this)
+	safe(() => { window.__brandonFilterMk3 = {
+		inHand: () => mk3Selected(),
+		selection: () => mk3.sel ? { x: mk3.sel.x, y: mk3.sel.y, count: mk3.sel.members.length, type: mk3.sel.type } : null,
+		draft: () => mk3Cfg(),
+		setDraft: (f) => { if (!f || typeof f !== "object") return false; mk3Set(Object.assign({}, f)); return true; },
+		apply: () => { if (!mk3.sel) return false; mk3Apply(); return true; },
+		refresh: () => mk3Refresh(),
+	}; });
 }
 // saves that researched the node before the building existed: unlock it now
 setInterval(() => {

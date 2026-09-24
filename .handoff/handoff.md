@@ -50,19 +50,24 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
 - **Screensaver** `brandon.screensaver` v0.18.1 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went.
-- **Manufacturing** `brandon.manufacturing` v0.15.0 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.15.1 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
-- **Improved Filter Options** `brandon.improvedfilters` v0.1.0 (2026-09-24) — a clipboard for
-  filter settings: COPY (click any placed filter: Mk.1 / Mk.2 / Mk.3 / walls) reads its
-  `filter` object; PASTE (click a filter) writes it onto that whole row through
-  `engine.api.structures.updateMany(state, members, {propagateToWorkers:true})` (the game's
-  row rule: same kind, same setting, touching; walls join vertically); NEW FILTERS writes it
-  into `store.options.defaultFilter` (copy does this too, setting `copyAlsoSetsNew`). The
-  armed click is taken in the capture phase (mousedown / pointer / click swallowed) so the
-  game never sees it. Clipboard persisted by element id (`brandon.improvedfilters.clip`),
-  resolved to numbers once in a world. UNTESTED in game as of 0.1.0.
+- **Improved Filter Options** `brandon.improvedfilters` v0.2.0 (2026-09-24) — a clipboard for
+  filter settings, built into the filter menus: a strip mounted in the hotbar band
+  (`api.ui.overlays.register("hotbar", …)`) whenever a filter menu is up. It reads the
+  game's row editor through `sandkit.engine.api.filterGroupEditor` (`getSelection(state)`
+  → `{structureType, memberCount, draft}`, `setDraft(state, f)`, `apply(state)`; the engine
+  exposes it via `FH.extend`) and the Mk.3 panel through `window.__brandonFilterMk3`
+  (`selection()`, `draft()`, `setDraft(f)`, `apply()`, `refresh()`, added in Manufacturing
+  0.15.1). COPY takes what the open menu shows (row draft, else
+  `store.options.defaultFilter`); PASTE writes it back the same way (a row via the editor's
+  setDraft + apply). PICK / ONTO arm a click on a placed filter (capture-phase swallow) for
+  rows not open in a menu; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
+  Mk.3, walls) — shakers, growers and critter fences carry a `filter` too but are excluded.
+  Clipboard persisted by element id (`brandon.improvedfilters.clip`). UNTESTED in game as
+  of 0.2.0 (0.1.0's floating panel was seen in game).
 - **Workshop** — retired on 2026-09-20. Code in `.handoff/workshop/` and git history; the
   early root `workshop/` copy was removed on 2026-09-23. On the PC it was moved to
   `sandustry\_to_delete\retired-2026-09-20\workshop`.
