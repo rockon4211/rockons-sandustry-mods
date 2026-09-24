@@ -1,6 +1,6 @@
-// Source (green hopper, emits) + Remover (passable red "delete zone" frame —
-// no collision, so conveyors can slide material straight into it and it's eaten
-// as it passes through). Both 48x48 = 12x12 cells.
+// Source (green hopper, emits; 48x48 px = 12x12 cells) + Remover (one solid red
+// block, 16x16 px = 4x4 cells; it eats the chosen material that lands on top of it
+// or is pushed against its sides).
 const sharp = require("sharp");
 const CW = 12, CH = 12, P = 4, W = CW * P, H = CH * P;
 
@@ -43,4 +43,4 @@ const SRC = [[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,
 Promise.all([
 	buildFromShape("source.png", SRC, [72,150,96,255], [44,96,60,255], [150,220,170,255]),
 	buildBlock("sink.png"),
-]).then(() => console.log("wrote source.png + sink.png (passable zone)"));
+]).then(() => console.log("wrote source.png (12x12 hopper) + sink.png (solid 4x4 block)"));

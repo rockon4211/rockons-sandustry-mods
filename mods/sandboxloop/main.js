@@ -7,7 +7,7 @@ const api = sandkit.api;
 const React = sandkit.react;
 const h = React.createElement;
 const MOD_ID = "brandon.sandboxloop";
-const BUILD = "0.4.2";
+const BUILD = "0.4.3";
 
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
@@ -79,6 +79,7 @@ function ensureDefaults() {
 	fixCfg(emitCfg); fixCfg(removeCfg);
 	if (emitCfg.type == null) { emitCfg.type = defaultType(); emitCfg.mat = eidOfType(emitCfg.type); }
 	if (removeCfg.type == null) { removeCfg.type = defaultType(); removeCfg.mat = eidOfType(removeCfg.type); }
+	safe(resolvePins);
 }
 function defaultType() {
 	if (!palette.length) buildPalette();
@@ -137,22 +138,26 @@ function clampRate(v) { v = +v; if (!isFinite(v) || v < 0) v = 0; if (v > RATE_M
 function savePanel() { safe(() => window.localStorage.setItem(PANEL_KEY, JSON.stringify({ emit: emitCfg, remove: removeCfg }))); }
 
 // --- per-instance config (baked on place), persisted -------------------------
-const cfgMap = new Map();   // "x,y" -> {type, rate}
-const runtime = new Map();  // "x,y" -> {accum, last}  (emit/remove pacing)
-function ikey(x, y) { return x + "," + y; }
+const cfgMap = new Map();   // "world@x,y" -> {mat, type, rate}  (older builds: "x,y")
+const runtime = new Map();  // "world@x,y" -> {accum, last}  (emit/remove pacing)
+// localStorage is one store for the whole PC, but coordinates only mean something on
+// one map: keys carry the id the game stamps on a world and keeps in its saves.
+function worldId() { const w = safe(() => sandkit.state.store.meta.worldId); return (typeof w === "string" || typeof w === "number") && w !== "" ? String(w) : ""; }
+function ikey(x, y) { const w = worldId(); return (w ? w + "@" : "") + x + "," + y; }
 // The settings baked into a placed Source/Remover live on the STRUCTURE (so they travel
 // with the save to another PC); the old per-cell store is still read, and is copied onto
-// the structure the first time it is seen.
+// the structure the first time it is seen — but only an entry holding the element ID. A
+// number-only entry (pre-0.4.0) means whatever this PC numbered it, so it counts as unset.
 function cfgFor(s, fallback) {
 	const d = s && s.data;
 	if (d && d.brandonMat) {
 		const t = typeOfEid(d.brandonMat);
 		if (typeof t === "number") return { mat: d.brandonMat, type: t, rate: typeof d.brandonRate === "number" ? d.brandonRate : (fallback ? fallback.rate : 0) };
 	}
-	const c = cfgMap.get(ikey(s.x, s.y));
-	if (c) {
+	const c = cfgMap.get(ikey(s.x, s.y)) || cfgMap.get(s.x + "," + s.y);
+	if (c && typeof c.mat === "string" && typeof typeOfEid(c.mat) === "number") {
 		fixCfg(c);
-		if (d && c.mat) { d.brandonMat = c.mat; if (typeof c.rate === "number") d.brandonRate = c.rate; }
+		if (d) { d.brandonMat = c.mat; if (typeof c.rate === "number") d.brandonRate = c.rate; }
 		return c;
 	}
 	const f = fixCfg(fallback);
@@ -201,13 +206,15 @@ function eachOf(id) {
 // deficit signal. rate{} smooths those into effective particles/sec.
 const emitTot = new Map(), rmTot = new Map();
 let emitOnceType = null, emitOnceAt = null, emitOnceSrc = null;   // one-shot element swap for the Screensaver mod
+let emitSeq = 0;   // bumped by emitOnce/cancelEmitOnce: a queued tracer that was superseded comes out as the normal material
 function bump(m, type) { if (type == null) return; m.set(type, (m.get(type) || 0) + 1); }
 const rate = new Map();      // type -> {e, r, _le, _lr}
 let lastSample = simNow();
 setInterval(() => {
 	if (simPaused) { lastSample = simNow(); return; }   // paused: hold every rate where it is
-	const now = simNow(), dt = (now - lastSample) / 1000; lastSample = now;
-	if (dt < 0.25) return;
+	const now = simNow(), dt = (now - lastSample) / 1000;
+	if (dt < 0.25) return;   // too soon (e.g. just unpaused): keep the old baseline, or the next rate reads high
+	lastSample = now;
 	const types = new Set(); for (const k of emitTot.keys()) types.add(k); for (const k of rmTot.keys()) types.add(k); for (const k of rate.keys()) types.add(k);
 	const A = 0.4; // EMA smoothing on the per-second rate
 	for (const t of types) {
@@ -253,19 +260,34 @@ function censusOn() { return setting("worldCensus", true); }
 //     the cumulative counters, the census baseline and the start time; only the
 //     reset button (or the user) zeroes them. -------------------------------
 const TOTALS_KEY = "brandon.sandboxloop.totals";
-function saveTotals() {
-	safe(() => window.localStorage.setItem(TOTALS_KEY, JSON.stringify({ e: [...emitTot], r: [...rmTot], b: [...censusBase], ba: censusBaseAt, tm: trackedMs() })));
+// Totals, the census baseline and the history log describe ONE map, so they are stored
+// per world ("key@worldId") and swapped when another world is loaded. undefined = no
+// world seen yet (nothing is saved); "" = the game gave no world id (unscoped key).
+let curWorld;
+function scopedKey(base) { return curWorld === undefined ? null : (curWorld ? base + "@" + curWorld : base); }
+// Element NUMBERS are handed out at runtime and differ between PCs / mod sets, so anything
+// persisted by number carries {number: element id} and is mapped back on load.
+function idMapFor(types) { const o = {}; for (const t of types) { const id = eidOfType(+t); if (id) o[t] = id; } return o; }
+function remapType(t, ids) {
+	if (!ids) return +t;                                   // older store: this PC's numbers
+	const id = ids[t]; if (!id) return +t;
+	const n = typeOfEid(id); return typeof n === "number" ? n : null;   // material gone → drop
 }
-(function loadTotals() {
-	const raw = safe(() => window.localStorage.getItem(TOTALS_KEY));
+function saveTotals() {
+	const key = scopedKey(TOTALS_KEY); if (!key) return;
+	const ids = idMapFor(new Set([...emitTot.keys(), ...rmTot.keys(), ...censusBase.keys()]));
+	safe(() => window.localStorage.setItem(key, JSON.stringify({ e: [...emitTot], r: [...rmTot], b: [...censusBase], ba: censusBaseAt, tm: trackedMs(), ids })));
+}
+function loadTotals() {
+	const raw = safe(() => window.localStorage.getItem(scopedKey(TOTALS_KEY)));
 	const o = raw && safe(() => JSON.parse(raw));
 	if (!o) return;
-	if (Array.isArray(o.e)) for (const kv of o.e) emitTot.set(+kv[0], kv[1]);
-	if (Array.isArray(o.r)) for (const kv of o.r) rmTot.set(+kv[0], kv[1]);
-	if (Array.isArray(o.b)) for (const kv of o.b) censusBase.set(+kv[0], kv[1]);
+	const ids = o.ids && typeof o.ids === "object" ? o.ids : null;
+	const put = (m, a) => { if (Array.isArray(a)) for (const kv of a) { const t = remapType(kv[0], ids); if (t !== null) m.set(t, kv[1]); } };
+	put(emitTot, o.e); put(rmTot, o.r); put(censusBase, o.b);
 	if (typeof o.ba === "number") censusBaseAt = o.ba;
 	if (typeof o.tm === "number") { trackedBase = o.tm; trackerStartSim = simNow(); }
-})();
+}
 setInterval(saveTotals, 4000);   // keep the persisted copy fresh as totals grow
 // --- scan speed ---------------------------------------------------------------
 let scanGentle = false;
@@ -337,27 +359,41 @@ setInterval(() => {
 // histExport() wraps it with the material names/colours and the loop config.
 const HIST_KEY = "brandon.sandboxloop.history";
 const HIST_MS = 30000, HIST_FINE_MS = 6 * 3600e3, HIST_KEEP_MS = 48 * 3600e3, HIST_COARSE_MS = 300e3;
-let hist = [];
-(function loadHist() {
-	const raw = safe(() => window.localStorage.getItem(HIST_KEY)); const a = raw && safe(() => JSON.parse(raw));
-	if (!Array.isArray(a)) return;
+const HIST_SAVE_MS = 5 * 60e3;   // the whole log is ~1-2 MB of JSON: persist every 5 min (and on unload), not every sample
+let hist = [], _histSavedAt = 0;
+function loadHist() {
+	hist = [];
+	const raw = safe(() => window.localStorage.getItem(scopedKey(HIST_KEY))); const o = raw && safe(() => JSON.parse(raw));
+	const a = Array.isArray(o) ? o : (o && Array.isArray(o.samples) ? o.samples : null);   // 0.4.3+: {v, ids, samples}
+	if (!a) return;
 	hist = a.filter((s) => s && typeof s.t === "number");
+	const ids = o && !Array.isArray(o) && o.ids && typeof o.ids === "object" ? o.ids : null;
+	if (ids) {   // numbered on another PC / mod set? map every per-material table back to this session's numbers
+		const re = (m) => { if (!m) return m; const n = {}; for (const k in m) { const t = remapType(k, ids); if (t !== null) n[t] = m[k]; } return n; };
+		for (const s of hist) { s.c = re(s.c); s.e = re(s.e); s.r = re(s.r); }
+	}
 	// Samples logged before the game clock existed have no `st`. Backfill them from
 	// the wall clock (relative to the first clocked sample) so one log never mixes
 	// two clocks — the graph page would otherwise refuse the game-time axis.
 	const first = hist.find((s) => typeof s.st === "number");
 	if (first) for (const s of hist) { if (typeof s.st !== "number") s.st = first.st - (first.t - s.t); }
 	else for (const s of hist) s.st = simMs - (Date.now() - s.t);
-})();
+}
 let _histBucket = -1, _histLastAt = 0, histMsg = "", histErr = "";
 function thinHist(now) { hist = hist.filter((s) => (now - s.t) <= HIST_KEEP_MS && ((now - s.t) <= HIST_FINE_MS || s.k)); }
 function saveHist() {
-	try { window.localStorage.setItem(HIST_KEY, JSON.stringify(hist)); histErr = ""; }
-	catch (e) {   // storage quota — drop the oldest quarter and retry once
-		hist = hist.slice(Math.floor(hist.length / 4));
-		try { window.localStorage.setItem(HIST_KEY, JSON.stringify(hist)); histErr = ""; } catch (e2) { histErr = "log not saved (storage full)"; }
+	const key = scopedKey(HIST_KEY); if (!key) return;
+	_histSavedAt = Date.now();
+	const put = (samples) => {
+		const types = new Set(); for (const s of samples) for (const m of [s.c, s.e, s.r]) if (m) for (const t in m) types.add(t);
+		window.localStorage.setItem(key, JSON.stringify({ v: 2, ids: idMapFor(types), samples }));
+	};
+	try { put(hist); histErr = ""; }
+	catch (e) {   // storage quota — keep the long-term 5-min points, drop the fine 30s ones (the log in memory is untouched)
+		try { put(hist.filter((s) => s.k)); histErr = "only the 5-min points saved (storage full)"; } catch (e2) { histErr = "log not saved (storage full)"; }
 	}
 }
+safe(() => window.addEventListener("beforeunload", () => { safe(saveHist); safe(saveTotals); }));
 function recordHist() {
 	if (!running() || !setting("showTracker", true) || !censusOn() || !censusInfo.at) return;   // paused → nothing is logged
 	const now = Date.now();
@@ -370,7 +406,8 @@ function recordHist() {
 	const s = { t: now, st: Math.round(simNow()), x: 1, c, e, r };   // st = game-time ms (pauses excluded); x: 1 = exact count
 	const bucket = Math.floor(now / HIST_COARSE_MS);
 	if (bucket !== _histBucket) { s.k = 1; _histBucket = bucket; }
-	hist.push(s); thinHist(now); saveHist();
+	hist.push(s); thinHist(now);
+	if (now - _histSavedAt >= HIST_SAVE_MS) saveHist();
 }
 setInterval(recordHist, 5000);
 function histSpan() { return hist.length ? (hist[hist.length - 1].t - hist[0].t) : 0; }
@@ -422,19 +459,34 @@ function saveCfg() { const o = {}; for (const [k, v] of cfgMap) o[k] = v; safe((
 safe(() => api.events.on("building:placed", (p) => {
 	structsChanged();
 	const s = p && p.structure; if (!s) return;
+	if (isThermal(s.type)) { thermalPins.delete(ikey(s.x, s.y)); return; }   // a new buffer starts from its own temperature
+	if (s.type !== SRC_ID && s.type !== SNK_ID) return;
+	// moved or copy-pasted: the game copies the original's data, baked settings included — keep them
+	const d = s.data;
+	if (p.isCopied && d && typeof d.brandonMat === "string") {
+		const t = typeOfEid(d.brandonMat);
+		if (typeof t === "number") { cfgMap.set(ikey(s.x, s.y), { mat: d.brandonMat, type: t, rate: typeof d.brandonRate === "number" ? d.brandonRate : (s.type === SRC_ID ? emitCfg : removeCfg).rate }); saveCfg(); }
+		return;
+	}
 	if (s.type === SRC_ID) bake(s, { mat: emitCfg.mat, type: (emitCfg.type != null ? emitCfg.type : defaultType()), rate: emitCfg.rate });
-	else if (s.type === SNK_ID) bake(s, { mat: removeCfg.mat, type: (removeCfg.type != null ? removeCfg.type : defaultType()), rate: removeCfg.rate });
+	else bake(s, { mat: removeCfg.mat, type: (removeCfg.type != null ? removeCfg.type : defaultType()), rate: removeCfg.rate });
 }));
 // a deconstructed Source/Remover forgets its baked settings (they used to linger in storage forever)
-function forgetAt(x, y) { const k = ikey(x, y); if (cfgMap.delete(k)) saveCfg(); runtime.delete(k); runtime.delete("r" + k); }
+function forgetAt(x, y) { const k = ikey(x, y); if (cfgMap.delete(k) | cfgMap.delete(x + "," + y)) saveCfg(); runtime.delete(k); runtime.delete("r" + k); }
 safe(() => api.events.on("building:removed", (p) => {
 	structsChanged();
-	if (p && (p.structureId === SRC_ID || p.structureId === SNK_ID) && typeof p.x === "number") forgetAt(p.x, p.y);
+	if (!p || typeof p.x !== "number") return;
+	if (p.structureId === SRC_ID || p.structureId === SNK_ID) forgetAt(p.x, p.y);
+	else if (isThermal(p.structureId)) thermalPins.delete(ikey(p.x, p.y));
 }));
 safe(() => api.events.on("structures:removed", (p) => {
 	structsChanged();
 	const list = p && p.structures; if (!Array.isArray(list)) return;
-	for (const s of list) if (s && (s.type === SRC_ID || s.type === SNK_ID) && typeof s.x === "number") forgetAt(s.x, s.y);
+	for (const s of list) {
+		if (!s || typeof s.x !== "number") continue;
+		if (s.type === SRC_ID || s.type === SNK_ID) forgetAt(s.x, s.y);
+		else if (isThermal(s.type)) thermalPins.delete(ikey(s.x, s.y));
+	}
 }));
 
 // --- register the two structures --------------------------------------------
@@ -470,6 +522,41 @@ setInterval(() => {
 
 // --- emit loop --------------------------------------------------------------
 const TICK = 200;
+// The game's own emptiness test: false for a cell holding material, terrain OR a building
+// (reading the element type gave null for a building cell, so grains were "placed" into
+// the hopper and counted though the game never made them). undefined = couldn't tell.
+function cellEmpty(x, y) {
+	const w = safe(() => api.world);
+	if (w && typeof w.isCellEmptyAtCell === "function") return safe(() => !!w.isCellEmptyAtCell(x, y));
+	const t = safe(() => api.elements.getResolvedTypeAtCell(x, y));   // older runtime: no element here
+	return t === undefined ? undefined : t === null;
+}
+// Make one grain at a cell verified empty. With api.world.mutate the create runs at the
+// sim's next idle moment and is confirmed there, so only grains that really appeared are
+// counted, and the Screensaver's tracer is reported only once it exists. A tracer whose
+// request was cancelled/replaced meanwhile comes out as the normal material; one that
+// found its cell filled goes back in the queue.
+function emitGrain(ox, oy, s, cfg, tracer) {
+	const w = safe(() => api.world), seq = emitSeq;
+	const report = (x, y) => { emitOnceAt = { x, y, at: Date.now(), src: { x: s.x, y: s.y }, material: cfg.type }; };
+	if (w && typeof w.mutate === "function" && typeof w.isCellEmptyAtCell === "function") {
+		const queued = safe(() => { w.mutate((wr) => { try {
+			const live = tracer != null && seq === emitSeq;
+			if (!w.isCellEmptyAtCell(ox, oy)) { if (live && emitOnceType == null) emitOnceType = tracer; return; }
+			// createAtCell makes the grain whenever the cell is empty, which was just checked in
+			// this same idle moment — so it exists now (no re-read: whether a write inside
+			// mutate is visible to a read before it returns isn't something to rely on)
+			wr.elements.createAtCell(ox, oy, live ? tracer : cfg.type);
+			bump(emitTot, cfg.type);
+			if (live) report(ox, oy);
+		} catch (e) {} }); return true; }, false);
+		if (queued) return;
+	}
+	// no mutate: the idle create re-checks the cell itself; the cell was verified empty just now
+	safe(() => api.elements.createAtCellWhenIdle(ox, oy, tracer != null ? tracer : cfg.type));
+	bump(emitTot, cfg.type);
+	if (tracer != null) report(ox, oy);
+}
 
 setInterval(() => {
 	if (!running()) return;                       // paused → no emitting, and no catch-up burst after (pacing runs on game time)
@@ -482,7 +569,6 @@ setInterval(() => {
 		rt.accum += (cfg.rate * dt) / 1000;
 		const cap = Math.max(8, cfg.rate);              // buffer up to ~1s of the set rate
 		if (rt.accum > cap) rt.accum = cap;
-		const EMPTY = safe(() => api.elements.getResolvedTypeAtCell(s.x + 6, s.y - 6));
 		// Drop across the WHOLE underside of the hopper (10 cols) and well below it,
 		// not a 2-cell column — that alone was choking the rate. And keep a per-tick
 		// `claimed` set: createAtCellWhenIdle is queued, so within one tick re-reads
@@ -499,16 +585,16 @@ setInterval(() => {
 					const key = ox + "," + oy;
 					if (claimed.has(key)) continue;                                   // already targeted this tick
 					if (safe(() => api.world && api.world.isTerrainAtCell(ox, oy))) break; // pile rests on ground — stop this column
-					const t = safe(() => api.elements.getResolvedTypeAtCell(ox, oy));
-					if (EMPTY !== undefined && t === EMPTY) {
+					const empty = cellEmpty(ox, oy);
+					if (empty === true) {
 						// the one-shot swap only applies at the Source the Screensaver asked for
 						const mine = emitOnceType != null && (!emitOnceSrc || (emitOnceSrc.x === s.x && emitOnceSrc.y === s.y));
-						const useType = mine ? emitOnceType : cfg.type;
-						safe(() => api.elements.createAtCellWhenIdle(ox, oy, useType));
-						if (useType !== cfg.type) { emitOnceAt = { x: ox, y: oy, at: Date.now(), src: { x: s.x, y: s.y }, material: cfg.type }; emitOnceType = null; }
-						claimed.add(key); placed = true; bump(emitTot, cfg.type); break;
+						const tracer = mine && emitOnceType !== cfg.type ? emitOnceType : null;
+						if (tracer != null) emitOnceType = null;                       // taken (restored if it can't be made)
+						emitGrain(ox, oy, s, cfg, tracer);
+						claimed.add(key); placed = true; break;
 					}
-					if (t !== EMPTY && t !== undefined) break;                         // hit settled material, next column
+					if (empty === false) break;                                        // hit settled material or a building, next column
 				}
 			}
 			col = (col + 1) % COLS; rt.col = col;                                  // spread the next unit to the next column
@@ -519,6 +605,20 @@ setInterval(() => {
 }, TICK);
 
 // --- remove loop (rate-limited: deletes only cfg.type, slowly) --------------
+// The delete runs at the sim's next idle moment. removeAtCellWhenIdle only checks the cell
+// still holds the same element slot — a grain that changed material in place (wet → dry,
+// melting…) would still go. Through api.world.mutate the material is checked again right
+// before the delete, and only a real delete is counted.
+function removeGrain(x, y, type) {
+	const w = safe(() => api.world);
+	if (w && typeof w.mutate === "function") {
+		const queued = safe(() => { w.mutate((wr) => { try {
+			if (api.elements.getResolvedTypeAtCell(x, y) === type) { wr.elements.removeAtCell(x, y); bump(rmTot, type); }
+		} catch (e) {} }); return true; }, false);
+		if (queued) return;
+	}
+	safe(() => api.elements.removeAtCellWhenIdle(x, y)); bump(rmTot, type);
+}
 const rmRecent = new Map();
 setInterval(() => {
 	if (!running()) return;                       // paused → no removing
@@ -544,7 +644,7 @@ setInterval(() => {
 				const x = zone[i][0], y = zone[i][1];
 				const key = x + "," + y; if ((rmRecent.get(key) || 0) > now) continue;
 				if (safe(() => api.elements.getResolvedTypeAtCell(x, y)) === cfg.type) {
-					safe(() => api.elements.removeAtCellWhenIdle(x, y)); rmRecent.set(key, now + 300); removed = true; bump(rmTot, cfg.type);
+					removeGrain(x, y, cfg.type); rmRecent.set(key, now + 300); removed = true;
 				}
 			}
 			if (!removed) break;
@@ -563,8 +663,9 @@ setInterval(() => {
 const THERMAL_ID = "thermalRelay";
 let thermalLock = false;
 (function loadTL() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.thermallock")) === "1") thermalLock = true; })();
-const thermalPins = new Map();   // "x,y" -> pinned temperature
+const thermalPins = new Map();   // "world@x,y" -> pinned temperature; dropped when that buffer is removed/replaced or the world changes
 let thermalCount = 0;
+function isThermal(type) { return type != null && (type === THERMAL_ID || type === safe(() => api.structures.getTypeById(THERMAL_ID))); }
 function setThermalLock(v) {
 	thermalLock = !!v;
 	safe(() => window.localStorage.setItem("brandon.sandboxloop.thermallock", thermalLock ? "1" : "0"));
@@ -583,6 +684,37 @@ setInterval(() => {
 		else if (t !== pin) safe(() => api.structures.setData(s, { temperature: pin }));   // draining: put it back
 	}
 }, 50);
+
+// --- world changes -----------------------------------------------------------
+// Another save loaded: put away the old world's totals/log, load this one's, restart the
+// map count and forget every held temperature. The first world after an update adopts
+// the old unscoped totals/log (they were written by a build that didn't scope them).
+function adoptLegacy(base) {
+	if (!curWorld) return;
+	safe(() => {
+		const ls = window.localStorage, key = base + "@" + curWorld;
+		if (ls.getItem(key) !== null) return;
+		const old = ls.getItem(base); if (old === null) return;
+		ls.setItem(key, old); ls.removeItem(base);
+	});
+}
+function switchWorld(w) {
+	if (curWorld !== undefined) { saveTotals(); saveHist(); }   // flush the world we're leaving
+	curWorld = w;
+	emitTot.clear(); rmTot.clear(); rate.clear();
+	_sweep = null; _prevAt = 0; _prevCensus = new Map(); census = new Map(); censusTrend = new Map(); censusInfo = { at: 0 }; _restUntil = 0;
+	censusBase = new Map(); censusBaseAt = 0; trackedBase = 0; trackerStartSim = simNow();
+	hist = []; _histBucket = -1; _histLastAt = 0; _histSavedAt = Date.now();
+	adoptLegacy(TOTALS_KEY); adoptLegacy(HIST_KEY);
+	loadTotals(); loadHist();
+	thermalPins.clear(); runtime.clear(); structsChanged();
+	if (panelRepaint) panelRepaint((v) => v + 1);
+}
+setInterval(() => {
+	if (!inWorld()) { thermalPins.clear(); return; }
+	const w = worldId();
+	if (w !== curWorld) switchWorld(w);
+}, 1000);
 
 // --- config panel (interactive) ---------------------------------------------
 let panelRepaint = null;
@@ -621,10 +753,21 @@ let panelMin = false;
 (function loadMin() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.panelmin")) === "1") panelMin = true; })();
 function setMin(v) { panelMin = v; safe(() => window.localStorage.setItem("brandon.sandboxloop.panelmin", v ? "1" : "0")); if (panelRepaint) panelRepaint((x) => x + 1); }
 // --- pin favourites to the top (so they stop reordering under you) ----------
+// Stored by element ID (older builds stored this PC's numbers); resolved once the
+// element list is up, from ensureDefaults.
 const pinned = new Set();
-(function loadPins() { const raw = safe(() => window.localStorage.getItem("brandon.sandboxloop.pins")); const a = raw && safe(() => JSON.parse(raw)); if (Array.isArray(a)) for (const t of a) pinned.add(t); })();
-function savePins() { safe(() => window.localStorage.setItem("brandon.sandboxloop.pins", JSON.stringify([...pinned]))); }
-function togglePin(t) { if (pinned.has(t)) pinned.delete(t); else pinned.add(t); savePins(); if (panelRepaint) panelRepaint((v) => v + 1); }
+let _pinRaw = null;
+(function loadPins() { const raw = safe(() => window.localStorage.getItem("brandon.sandboxloop.pins")); const a = raw && safe(() => JSON.parse(raw)); if (Array.isArray(a)) _pinRaw = a; })();
+function resolvePins() {
+	if (!_pinRaw || !palette.length) return;
+	const left = [];
+	for (const p of _pinRaw) { const t = typeof p === "string" ? typeOfEid(p) : p; if (typeof t === "number") pinned.add(t); else left.push(p); }
+	const changed = left.length !== _pinRaw.length || _pinRaw.some((p) => typeof p !== "string");
+	_pinRaw = left.length ? left : null;   // ids from a mod that isn't loaded: kept, not lost
+	if (changed) savePins();
+}
+function savePins() { safe(() => window.localStorage.setItem("brandon.sandboxloop.pins", JSON.stringify([...pinned].map((t) => eidOfType(t) || t).concat(_pinRaw || [])))); }
+function togglePin(t) { resolvePins(); if (pinned.has(t)) pinned.delete(t); else pinned.add(t); savePins(); if (panelRepaint) panelRepaint((v) => v + 1); }
 function pinStar(t) {
 	const on = pinned.has(t);
 	return h("span", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); togglePin(t); }, title: on ? "unpin" : "pin to top", style: { cursor: "pointer", color: on ? "#ffd166" : "#57616e", fontSize: "12px", lineHeight: 1, width: "14px", textAlign: "center", flexShrink: 0, userSelect: "none" } }, on ? "★" : "☆");
@@ -639,14 +782,16 @@ function pinnedFirst(arr, keyOf, restCmp) {
 	});
 }
 function Row(label, cfg, accent) {
-	const opts = palette.map((p) => h("option", { value: p.type, key: p.type }, p.name));
-	const onMat = (e) => { cfg.type = +e.target.value; cfg.mat = eidOfType(cfg.type); savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
+	// "— pick —" is shown while nothing (or a material that isn't in the list) is set; without it
+	// the select showed the first material and choosing that one did nothing
+	const opts = [h("option", { value: "", key: "_none", disabled: true }, "— pick —")].concat(palette.map((p) => h("option", { value: p.type, key: p.type }, p.name)));
+	const onMat = (e) => { if (e.target.value === "") return; cfg.type = +e.target.value; cfg.mat = eidOfType(cfg.type); savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
 	const onRate = (e) => { cfg.rate = clampRate(e.target.value); savePanel(); if (panelRepaint) panelRepaint((v) => v + 1); };
 	const stop = (e) => { if (e.stopPropagation) e.stopPropagation(); };   // keep typing from reaching the game's hotkeys
 	return h("div", { style: { display: "flex", alignItems: "center", gap: "7px", margin: "3px 0" } },
 		h("span", { style: { width: "58px", color: accent, fontWeight: 700 } }, label),
 		h("span", { style: { width: "12px", height: "12px", borderRadius: "3px", background: colorOf(cfg.type), border: "1px solid rgba(255,255,255,.3)", flexShrink: 0 } }),
-		h("select", { value: cfg.type == null ? "" : cfg.type, onChange: onMat, style: { width: "100px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px" } }, opts),
+		h("select", { value: cfg.type == null || !paletteByType.has(cfg.type) ? "" : cfg.type, onChange: onMat, style: { width: "100px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px" } }, opts),
 		h("input", { type: "range", min: "0", max: String(RATE_MAX), step: "0.5", value: cfg.rate, onChange: onRate, onInput: onRate, title: "drag for a quick rate; type an exact one in the box", style: { width: "58px" } }),
 		h("input", { type: "number", min: "0", max: String(RATE_MAX), step: "0.1", value: cfg.rate, onChange: onRate, onKeyDown: stop, onKeyUp: stop, onKeyPress: stop, title: "particles per second — decimals OK (0.5 = one every 2s), up to " + RATE_MAX,
 			style: { width: "52px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px 3px", fontVariantNumeric: "tabular-nums" } }),
@@ -948,9 +1093,9 @@ safe(() => {
 	window.__brandonSandboxLoop = {
 		sources: () => eachOf(SRC_ID).map((s) => { const c = cfgFor(s, { type: emitCfg.type, rate: emitCfg.rate }); return { x: s.x, y: s.y, type: c.type, rate: c.rate }; }),
 		// emit ONE grain of `type` instead of the next normal grain, and report where it landed
-		emitOnce: (type, src) => { emitOnceType = type; emitOnceSrc = src && typeof src.x === "number" ? { x: src.x, y: src.y } : null; emitOnceAt = null; return true; },
+		emitOnce: (type, src) => { emitSeq++; emitOnceType = type; emitOnceSrc = src && typeof src.x === "number" ? { x: src.x, y: src.y } : null; emitOnceAt = null; return true; },
 		emitOnceResult: () => emitOnceAt,
-		cancelEmitOnce: () => { emitOnceType = null; emitOnceSrc = null; },
+		cancelEmitOnce: () => { emitSeq++; emitOnceType = null; emitOnceSrc = null; },
 	};
 });
 safe(() => api.ui.inject("brandon-sandboxloop-panel", Panel));
