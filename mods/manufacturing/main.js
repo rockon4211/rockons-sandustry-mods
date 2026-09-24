@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.15.2 running"));
+		safe(() => api.ui.toast("Manufacturing v0.15.3 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -934,6 +934,11 @@ function FilterMk3Panel() {
 			hM("button", { className: MK3_BTN, onClick: (e) => { e.stopPropagation(); mk3Apply(); }, onMouseDown: noDown, tabIndex: -1 }, tr("ui|filter|apply", null, "Apply")),
 			hM("button", { className: MK3_BTN, onClick: (e) => { e.stopPropagation(); mk3Cancel(); }, onMouseDown: noDown, tabIndex: -1 }, tr("ui|filter|cancel", null, "Cancel")))
 		: hM("div", { className: "flex items-center gap-3" }, editLast,
+			// the same "labels overlay" switch as the Mk.2 panel, on the same game setting
+			hM("div", { className: "flex items-center gap-2" },
+				hM("span", { className: "text-xs text-white" }, tr("ui|filter|labelsOverlay", null, "Labels overlay")),
+				hM("button", { className: overlayOn() ? "text-xs px-2 py-0.5 bg-black border rounded-tr-lg rounded-bl-lg item-button-transition " + MK3_ON_ALLOW : MK3_BTN,
+					onClick: (e) => { e.stopPropagation(); safe(() => { sandkit.state.store.options.showFilterOverlay = !overlayOn(); }); mk3Refresh(); }, onMouseDown: noDown, tabIndex: -1 }, overlayOn() ? "on" : "off")),
 			hM("button", { className: MK3_BTN, onClick: () => { mk3.open = false; mk3Refresh(); }, onMouseDown: noDown, tabIndex: -1 }, tr("ui|elementPicker|minimize", null, "Minimize") + " ▾"));
 	return hM("div", { className: "bg-black bg-opacity-75 flex flex-col overflow-hidden border border-slate-700 rounded ui-box", style: { width: "640px", maxHeight: "600px" } },
 		hM("div", { className: "px-4 py-2 border-b border-slate-800 flex items-center justify-between" }, title, right),
@@ -951,7 +956,72 @@ function FilterMk3Panel() {
 			shown.length ? hM("div", { className: "grid gap-1", style: { gridTemplateColumns: "repeat(4, minmax(0, 1fr))" } }, shown.map(chip))
 				: hM("div", { className: "text-xs text-white/70" }, "no discovered material matches")));
 }
+const overlayOn = () => safe(() => sandkit.state.store.options.showFilterOverlay) !== false;
+// --- the labels overlay for Mk.3 rows: the game's draws only its own filter ids ------
+// Shown, like the game's, while a Filter Mk.3 is in hand (or a row is being edited) and
+// the "labels overlay" switch is on. A label per row (materials, allow/block), placed the
+// way the game places its own: screen = canvas origin + (world px - camera) * zoom *
+// scale, refreshed every frame; the rows themselves are re-read twice a second.
+// Clicking a label opens that row in the panel.
+function mk3Rows() {
+	const all = [];
+	for (const id of [MK3_R, MK3_L]) safe(() => api.structures.forEachOfType(id, (s) => { if (typeof s.x === "number") all.push(s); }));
+	const groups = new Map();
+	for (const s of all) { const k = s.y + "_" + mk3Key(s); let g = groups.get(k); if (!g) { g = []; groups.set(k, g); } g.push(s); }
+	const rows = [];
+	for (const g of groups.values()) {
+		g.sort((a, b) => a.x - b.x);
+		let run = [];
+		const flush = () => { if (!run.length) return; const f = run[0].filter || {};
+			rows.push({ key: run[0].type + "_" + run[0].x + "_" + run[0].y, x: run[0].x, y: run[0].y, x1: run[run.length - 1].x + 4, count: run.length, mode: f.mode === "block" ? "block" : "allow", types: asList(f.elementType) }); run = []; };
+		for (const s of g) { if (run.length && s.x !== run[run.length - 1].x + 4) flush(); run.push(s); }
+		flush();
+	}
+	return rows;
+}
+function colorOfType(t) { const mc = safe(() => api.elements.getDefinitionByType(t).metaColor); return typeof mc === "number" ? `rgb(${mc >> 16 & 255}, ${mc >> 8 & 255}, ${mc & 255})` : "#888888"; }
+function FilterMk3Overlay() {
+	const [rows, setRows] = ReactM.useState([]);
+	const box = ReactM.useRef(null), nodes = ReactM.useRef(new Map());
+	ReactM.useEffect(() => {
+		let raf = 0, lastRows = 0, shown = false;
+		const frame = () => {
+			raf = requestAnimationFrame(frame);
+			const on = mk3Ready && isEnabled() && inGame() && overlayOn() && (mk3.sel || mk3Selected());
+			const el = box.current; if (!el) return;
+			if (!on) { if (shown) { el.style.display = "none"; shown = false; } return; }
+			if (!shown) { el.style.display = ""; shown = true; }
+			const now = Date.now(); if (now - lastRows > 500) { lastRows = now; setRows(mk3Rows()); }
+			const ses = safe(() => sandkit.state.session); if (!ses) return;
+			const M = safe(() => ses.rendering.canvas.getBoundingClientRect()); if (!M) return;
+			const I = ((ses.view && ses.view.zoom) || 1) * (ses.scale || 1), kx = ses.camera.x, ky = ses.camera.y;
+			for (const n of nodes.current.values()) {
+				const r = n.row; if (!r) continue;
+				const sx = M.left + (r.x * 4 - kx) * I, sy = M.top + (r.y * 4 - ky) * I, w = (r.x1 - r.x) * 4 * I;
+				const sel = !!(mk3.sel && mk3.sel.y === r.y && mk3.sel.members.some((m) => m.x === r.x));
+				if (n.box) { n.box.style.transform = `translate(${sx}px, ${sy}px)`; n.box.style.width = w + "px"; n.box.style.height = 16 * I + "px";
+					n.box.style.borderColor = sel ? "#ffe700" : r.mode === "allow" ? "rgba(0,255,71,0.8)" : "rgba(239,68,68,0.8)"; n.box.style.borderStyle = sel ? "solid" : "dashed"; }
+				if (n.label) { n.label.style.transform = `translate(${sx + w / 2}px, ${sy - 4}px) translate(-50%, -100%)`; n.label.style.borderColor = sel ? "#ffe700" : r.mode === "allow" ? "rgb(0,255,71)" : "#ef4444"; }
+			}
+		};
+		raf = requestAnimationFrame(frame);
+		return () => cancelAnimationFrame(raf);
+	}, []);
+	const ref = (key, row, part) => (el) => { let n = nodes.current.get(key); if (!el) { if (n) { n[part] = null; if (!n.box && !n.label) nodes.current.delete(key); } return; } if (!n) { n = {}; nodes.current.set(key, n); } n.row = row; n[part] = el; };
+	return hM("div", { ref: box, style: { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "hidden", fontFamily: "monospace", fontSize: "10px", color: "#fff", zIndex: 30, display: "none" } },
+		rows.map((r) => hM(ReactM.Fragment, { key: r.key },
+			hM("div", { ref: ref(r.key, r, "box"), style: { position: "absolute", left: 0, top: 0, border: "2px dashed rgba(0,255,71,0.8)", boxSizing: "border-box", transformOrigin: "0 0" } }),
+			hM("div", { ref: ref(r.key, r, "label"), role: "button", tabIndex: -1,
+				onMouseDown: (e) => { e.preventDefault(); e.stopPropagation(); },
+				onClick: (e) => { e.preventDefault(); e.stopPropagation(); mk3Select(r.x, r.y); },
+				style: { position: "absolute", left: 0, top: 0, transformOrigin: "0 0", zIndex: 1, pointerEvents: "auto", cursor: "pointer", background: "#000", border: "1px solid rgb(0,255,71)", borderRadius: "3px", padding: "2px 6px", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "5px" } },
+				r.types.map((t) => { const c = colorOfType(t); return hM("span", { key: t, style: { width: "8px", height: "8px", background: c, boxShadow: "0 0 4px " + c, flexShrink: 0 } }); }),
+				hM("span", null, r.types.length ? r.types.map((t) => safe(() => api.elements.getNameByType(t), null) || ("type " + t)).join(" / ") : tr("ui|filterOverlay|none", null, "none")),
+				hM("span", { style: { color: r.mode === "allow" ? "rgb(30,255,0)" : "rgb(255,77,21)", fontWeight: 700 } }, r.mode === "allow" ? "✓" : "✕"),
+				r.count > 1 ? hM("span", { style: { color: "#94a3b8" } }, "×" + r.count) : null))));
+}
 if (hM) {
+	safe(() => api.ui.inject("brandon-filter-mk3-overlay", () => hM(FilterMk3Overlay)));
 	// the same band above the hotbar the game's filter panel lives in; a fixed box if that can't be used
 	// the region calls render() as a plain function and shows what it returns, so the
 	// component (it uses hooks) is mounted through createElement, not called directly

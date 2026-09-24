@@ -58,11 +58,11 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   is: 4s after each world load, 3s after each run, or via `__brandonScreensaver.sweepMap()`;
   it aborts if a run starts. Reason: the 2026-09-24 save's discoveries held 3 tracer types
   (65, 109, 95) - tracer grains had been left on the map.
-- **Manufacturing** `brandon.manufacturing` v0.15.2 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.15.3 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
-- **Improved Filter Options** `brandon.improvedfilters` v0.2.0 (2026-09-24) — a clipboard for
+- **Improved Filter Options** `brandon.improvedfilters` v0.2.1 (2026-09-24) — a clipboard for
   filter settings, built into the filter menus: a strip mounted in the hotbar band
   (`api.ui.overlays.register("hotbar", …)`) whenever a filter menu is up. It reads the
   game's row editor through `sandkit.engine.api.filterGroupEditor` (`getSelection(state)`
@@ -71,8 +71,11 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   (`selection()`, `draft()`, `setDraft(f)`, `apply()`, `refresh()`, added in Manufacturing
   0.15.1). COPY takes what the open menu shows (row draft, else
   `store.options.defaultFilter`); PASTE writes it back the same way (a row via the editor's
-  setDraft + apply). PICK / ONTO arm a click on a placed filter (capture-phase swallow) for
-  rows not open in a menu; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
+  setDraft + apply). PICK / ONTO arm a click on a placed filter for rows not open in a menu — handled on
+  POINTERDOWN (0.2.1: a preventDefault on pointerdown suppresses the browser's follow-up
+  mousedown/click, so the old mousedown handler never fired), with the clicked cell computed
+  from the game's own mapping (screen = canvas rect origin + (world px − camera) × view.zoom
+  × session.scale; cell = world px / 4); only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
   Mk.3, walls) — shakers, growers and critter fences carry a `filter` too but are excluded.
   Clipboard persisted by element id (`brandon.improvedfilters.clip`). UNTESTED in game as
   of 0.2.0 (0.1.0's floating panel was seen in game).
@@ -117,8 +120,13 @@ RETURN an element). It edits `store.options.defaultFilter` like the Mk.2 panel; 
 placed Mk.3 (`api.signals.interactables.register`, fires on `action:intercept` over the
 structure) selects the contiguous same-setting row (the game's row rule) and Apply writes
 it via `engine.api.structures.updateMany(state, members, {propagateToWorkers:true})`.
-Saves that researched the node before 0.14.0 get the building unlocked on load.
-0.14.0 confirmed in game: the building shows up. 0.15.0 (panel, animation) UNTESTED. History: 0.10.0–0.12.2 sped up every Mk.2 Filter instead;
+The panel has the Mk.2's "labels overlay" switch (same setting, `store.options.showFilterOverlay`)
+and, since 0.15.3, its own overlay: the game draws labels only for its own filter ids, so
+`FilterMk3Overlay` (injected, fixed full-screen, pointer-events none) draws a box + label per
+Mk.3 row while a Mk.3 is in hand / edited and the switch is on, positioned per frame with the
+game's mapping above; clicking a label opens the row. Saves that researched the node before
+0.14.0 get the building unlocked on load. 0.14.0 confirmed in game: the building shows up.
+0.15.x (panel, animation, overlay) UNTESTED. History: 0.10.0–0.12.2 sped up every Mk.2 Filter instead;
 rejected, removed in 0.13.0.
 
 ## Sandbox Loop v0.4.5 — what it does

@@ -19,7 +19,7 @@
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.2.0";
+const BUILD = "0.2.1";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -182,21 +182,32 @@ safe(() => {
 	const block = { capture: true, passive: false };
 	const eat = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
 	const ours = (e) => !!(e.target && e.target.closest && e.target.closest("[data-brandon-ifo]"));
-	window.addEventListener("mousedown", (e) => {
+	// the cell under a screen point, the way the game maps its own overlay labels:
+	// screen = canvas origin + (world px - camera) * zoom * scale; a cell is 4 world px
+	function cellFromClient(x, y) {
+		return safe(() => {
+			const ses = state().session, M = ses.rendering.canvas.getBoundingClientRect();
+			const I = ((ses.view && ses.view.zoom) || 1) * ses.scale;
+			return { x: Math.floor(((x - M.left) / I + ses.camera.x) / 4), y: Math.floor(((y - M.top) / I + ses.camera.y) / 4) };
+		}) || safe(() => { const cp = state().session.input.mouse.cellPosition; return { x: Math.floor(cp.x), y: Math.floor(cp.y) }; }) || null;
+	}
+	// The armed click is handled on POINTERDOWN: a preventDefault there also stops the
+	// browser's follow-up mousedown / click (which is what keeps the game from acting),
+	// so a handler waiting on mousedown would never run.
+	window.addEventListener("pointerdown", (e) => {
 		if (!mode || ours(e)) return;
 		if (e.button === 2) { eat(e); swallowUntil = Date.now() + 400; arm(null); msg = "cancelled"; repaint(); return; }
 		if (e.button !== 0) return;
 		eat(e); swallowUntil = Date.now() + 400;
-		const cp = safe(() => state().session.input.mouse.cellPosition);
-		const row = cp ? rowAt(Math.floor(cp.x), Math.floor(cp.y)) : null;
+		const c = cellFromClient(e.clientX, e.clientY);
+		const row = c ? rowAt(c.x, c.y) : null;
 		const m = mode; arm(null);
-		if (!row) { msg = "that isn't a filter — cancelled"; repaint(); return; }
+		if (!row) { msg = "that isn't a filter" + (c ? " (cell " + c.x + "," + c.y + ")" : "") + " — cancelled"; repaint(); return; }
 		if (m === "copy") doCopyRow(row); else doPasteRow(row);
 		repaint();
 	}, block);
-	for (const t of ["pointerdown", "pointerup", "mouseup", "click", "contextmenu"]) window.addEventListener(t, (e) => {
+	for (const t of ["mousedown", "pointerup", "mouseup", "click", "contextmenu"]) window.addEventListener(t, (e) => {
 		if ((!mode && Date.now() > swallowUntil) || ours(e)) return;
-		if (mode && t === "pointerdown" && e.button !== 0 && e.button !== 2) return;
 		eat(e);
 	}, block);
 	window.addEventListener("keydown", (e) => { if (mode && e.code === "Escape") { eat(e); arm(null); msg = "cancelled"; repaint(); } }, block);
