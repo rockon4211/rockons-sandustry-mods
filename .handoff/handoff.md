@@ -54,6 +54,15 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
+- **Improved Filter Options** `brandon.improvedfilters` v0.1.0 (2026-09-24) — a clipboard for
+  filter settings: COPY (click any placed filter: Mk.1 / Mk.2 / Mk.3 / walls) reads its
+  `filter` object; PASTE (click a filter) writes it onto that whole row through
+  `engine.api.structures.updateMany(state, members, {propagateToWorkers:true})` (the game's
+  row rule: same kind, same setting, touching; walls join vertically); NEW FILTERS writes it
+  into `store.options.defaultFilter` (copy does this too, setting `copyAlsoSetsNew`). The
+  armed click is taken in the capture phase (mousedown / pointer / click swallowed) so the
+  game never sees it. Clipboard persisted by element id (`brandon.improvedfilters.clip`),
+  resolved to numbers once in a world. UNTESTED in game as of 0.1.0.
 - **Workshop** — retired on 2026-09-20. Code in `.handoff/workshop/` and git history; the
   early root `workshop/` copy was removed on 2026-09-23. On the PC it was moved to
   `sandustry\_to_delete\retired-2026-09-20\workshop`.

@@ -1,0 +1,26 @@
+{
+	"manifestVersion": 1,
+	"id": "brandon.improvedfilters",
+	"name": "Improved Filter Options",
+	"version": "0.1.0",
+	"apiVersion": 1,
+	"entry": "main.js",
+	"author": "Brandon",
+	"description": "A clipboard for filter settings. COPY the settings (materials, allow/block) of any placed filter - Mk.1, Mk.2, Mk.3 or a filter wall - and PASTE them onto another placed filter row, or use them for every new filter you place next. It works across kinds: copy a Mk.2, paste onto a Mk.3, and back. The clipboard is kept by material name, so it survives reloads and moving to another PC.\n\nHOW\nThe Filter clipboard panel (drag it by its title) has: COPY - then click a placed filter to copy its settings; PASTE - then click a placed filter to give that whole row the copied settings; NEW FILTERS - make the next Mk.2 / Mk.3 filters you place take the copied settings (copying does this automatically); CLEAR. Esc or right-click cancels a copy/paste.",
+	"dependencies": [],
+	"loadOrder": 0,
+	"configSchema": {
+		"enabled": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Mod enabled",
+			"descriptionKey": "Turn the filter clipboard panel off without unsubscribing."
+		},
+		"copyAlsoSetsNew": {
+			"type": "boolean",
+			"default": true,
+			"labelKey": "Copy also sets new filters",
+			"descriptionKey": "When ON, copying a filter's settings also makes the next Mk.2 / Mk.3 filters you place take them (the same setting the filter panel edits). When OFF, use the NEW FILTERS button for that."
+		}
+	}
+}
