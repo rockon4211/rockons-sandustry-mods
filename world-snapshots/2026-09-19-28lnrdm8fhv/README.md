@@ -11,5 +11,7 @@ Files (Sandustry `.save`, restore by copying back into
 - `28lnrdm8fhv-autosave-2.save`
 - `28lnrdm8fhv-autosave-1.save`
 
-The **secondary map** (the Workshop) is committed separately at
-`workshop/brandon_workshop_v0.custommap`.
+The **secondary map** (the Workshop) was committed separately at
+`workshop/brandon_workshop_v0.custommap`. The Workshop is retired and that folder was
+removed on 2026-09-23; get the map back from git history with
+`git checkout c91f789 -- workshop/` (it is also in `.handoff/binaries.md` as base64).

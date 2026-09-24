@@ -283,7 +283,49 @@ const world=document.getElementById('world'), svg=document.getElementById('cv');
 // ---------- custom overlay (your edits, saved in this browser) ----------
 const MATTERS=['Solid','Liquid','Gas','Powder','Slushy','Wisp','Static'];
 let CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],tech:{moves:{},parents:{}}};
-try{const c=JSON.parse(localStorage.getItem('sms.custom')||'null'); if(c)CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],tech:{moves:{},parents:{}},...c};}catch(e){}
+// Everything loaded from localStorage or the shared store is untrusted: keep only
+// well-formed fields (ids match the same rule saveMat uses, numbers are numbers).
+const ID_RE=/^[a-zA-Z0-9_]+$/;
+function cleanCustom(c){
+  const out={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],tech:{moves:{},parents:{}}};
+  if(!c||typeof c!=='object')return out;
+  const isId=x=>typeof x==='string'&&ID_RE.test(x);
+  const num=(x,lo,hi,def)=>{const v=Number(x);return Number.isFinite(v)?Math.min(hi,Math.max(lo,v)):def;};
+  const str=(x,def)=>typeof x==='string'?x.slice(0,200):def;
+  const cleanMat=(id,m,full)=>{
+    if(!m||typeof m!=='object')return null;
+    const o={};
+    if(full||'n' in m)o.n=str(m.n,'Unnamed');
+    if(full||'m' in m)o.m=MATTERS.includes(m.m)?m.m:'Powder';
+    if(full||'d' in m)o.d=num(m.d,1,1000,150);
+    if(full||'c' in m)o.c=Math.trunc(num(m.c,0,0xffffff,0x888888));
+    if(full||'g' in m)o.g=str(m.g,'Custom');
+    if(m.fl&&typeof m.fl==='object')o.fl={grabbable:m.fl.grabbable!==false,transportable:m.fl.transportable!==false};
+    if(full){o.id=id;o.x=num(m.x,-1e6,1e6,100);o.y=num(m.y,-1e6,1e6,100);}
+    return o;
+  };
+  const cleanProc=p=>{
+    if(!p||typeof p!=='object'||!isId(p.f)||!isId(p.t))return null;
+    const o={key:isId(p.key)?p.key:'c'+Math.random().toString(36).slice(2,8),f:p.f,t:p.t,
+      k:['heat','touch','mine','cycle'].includes(p.k)?p.k:'heat',lbl:str(p.lbl,''),note:str(p.note,'')};
+    if(isId(p.via))o.via=p.via; if(isId(p.partner))o.partner=p.partner;
+    return o;
+  };
+  if(c.mats&&typeof c.mats==='object')for(const id in c.mats){if(isId(id)){const m=cleanMat(id,c.mats[id],true);if(m)out.mats[id]=m;}}
+  if(c.over&&typeof c.over==='object')for(const id in c.over){if(isId(id)){const m=cleanMat(id,c.over[id],false);if(m&&Object.keys(m).length)out.over[id]=m;}}
+  if(Array.isArray(c.procs))out.procs=c.procs.map(cleanProc).filter(Boolean);
+  if(Array.isArray(c.dis))out.dis=c.dis.filter(isId);
+  if(Array.isArray(c.hidden))out.hidden=c.hidden.filter(isId);
+  if(c.trash&&typeof c.trash==='object')for(const id in c.trash){const t=c.trash[id];if(isId(id)&&t&&typeof t==='object'){const m=cleanMat(id,t.mat,true);if(m)out.trash[id]={mat:m,procs:Array.isArray(t.procs)?t.procs.map(cleanProc).filter(Boolean):[]};}}
+  if(c.tech&&typeof c.tech==='object'){
+    const mv=c.tech.moves||{}, pa=c.tech.parents||{};
+    for(const id in mv){const r=mv[id];if(isId(id)&&r&&Number.isInteger(r.r)&&Number.isInteger(r.c))out.tech.moves[id]={r:r.r,c:r.c};}
+    for(const id in pa){if(isId(id)&&isId(pa[id]))out.tech.parents[id]=pa[id];}
+  }
+  out.seq=Math.trunc(num(c.seq,0,1e9,0)); if(Number.isFinite(Number(c.ts)))out.ts=Number(c.ts);
+  return out;
+}
+try{const c=JSON.parse(localStorage.getItem('sms.custom')||'null'); if(c)CUSTOM=cleanCustom(c);}catch(e){}
 function saveCustom(){CUSTOM.ts=Date.now();try{localStorage.setItem('sms.custom',JSON.stringify(CUSTOM))}catch(e){} pushDb();}
 // ---------- cloud sync (so edits survive browser resets and Claude can read the graph) ----------
 let dbNS=null, syncT=null;
@@ -300,7 +342,7 @@ function pushDb(){
     const snap=await d.doc('studio/custom').get();
     const remote=snap&&snap.exists?snap.data():null;
     if(remote&&(remote.ts||0)>(CUSTOM.ts||0)){
-      CUSTOM={mats:{},procs:[],over:{},dis:[],seq:0,trash:{},hidden:[],tech:{moves:{},parents:{}},...remote};
+      CUSTOM=cleanCustom(remote);
       try{localStorage.setItem('sms.custom',JSON.stringify(CUSTOM))}catch(e){}
       migrateCustom(); rebuild();
     } else {
@@ -329,7 +371,7 @@ function migrateCustom(){
   }
   if(changed)saveCustom();
 }
-let posStore={}; try{posStore=JSON.parse(localStorage.getItem('sms.pos')||'{}')||{}}catch(e){}
+let posStore={}; try{const ps=JSON.parse(localStorage.getItem('sms.pos')||'{}')||{}; for(const id in ps){const q=ps[id]; if(q&&Number.isFinite(q.x)&&Number.isFinite(q.y))posStore[id]={x:q.x,y:q.y};}}catch(e){}
 function savePos(){ try{for(const id in nodes)posStore[id]={x:nodes[id].x,y:nodes[id].y}; localStorage.setItem('sms.pos',JSON.stringify(posStore))}catch(e){} }
 const nodes={};
 let PROCS=[];
@@ -355,7 +397,7 @@ function rebuild(){
   draw();
 }
 const KCOL={heat:'var(--heat)',touch:'var(--touch)',mine:'var(--mine)',cycle:'var(--cycle)'};
-function hex(c){return '#'+c.toString(16).padStart(6,'0')}
+function hex(c){const v=Number(c);return Number.isFinite(v)?'#'+(Math.trunc(v)&0xffffff).toString(16).padStart(6,'0'):'#888888'}
 function dim(n){return n.type==='machine'?{w:MW,h:MH}:{w:NW,h:NH}}
 const NS='http://www.w3.org/2000/svg';
 function el(t,a){const e=document.createElementNS(NS,t); for(const k in a)e.setAttribute(k,a[k]); return e;}
@@ -460,30 +502,34 @@ function applySel(){
   edgeEls.forEach(e=>{e.path.classList.toggle('hl',sel&&(e.p.f===sel||e.p.t===sel||e.p.via===sel));
     if(e.vl)e.vl.classList.toggle('hl',sel===e.p.via);});
 }
-function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+// For a value placed inside a quoted JS string inside an inline handler attribute
+// (onclick="f('${jsq(x)}')"): JS-escape first, then HTML-escape, because the
+// browser HTML-decodes the attribute before the JS parser sees it.
+function jsq(s){return esc(String(s).replace(/[^a-zA-Z0-9_ .,:;!?()+=*#@%$-]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0')))}
 function confTag(c){return `<span class="conf ${c}">${c==='v'?'verified':'approx'}</span>`}
 function select(id,savedFlash){
   sel=id;applySel();
   const n=nodes[id]; if(!n)return;
   let h='';
   if(n.type==='mat'&&view==='mod'){
-    const ch=`onchange="saveMat('${esc(id)}',false)" onkeydown="if(event.key==='Enter')saveMat('${esc(id)}',false)"`;
+    const ch=`onchange="saveMat('${jsq(id)}',false)" onkeydown="if(event.key==='Enter')saveMat('${jsq(id)}',false)"`;
     h=`<h2><span class="sw" style="background:${hex(n.c)}"></span>${esc(n.n)}${n.custom?'<span class="tag">custom</span>':(n.modded?'<span class="tag">modified</span>':'')}</h2>
     <div class="id">"${esc(n.id)}"${savedFlash?'<span class="savedflash">✓ saved</span>':''}</div><div class="frm">
     <label>name</label><input type="text" id="f_n" value="${esc(n.n)}" ${ch}>
     <div class="row2"><div><label>matter type</label><select id="f_m" ${ch}>${MATTERS.map(m=>`<option${m===n.m?' selected':''}>${m}</option>`).join('')}</select></div>
-    <div><label>density</label><input type="number" id="f_d" value="${n.d}" min="1" max="1000" ${ch}></div></div>
+    <div><label>density</label><input type="number" id="f_d" value="${esc(n.d)}" min="1" max="1000" ${ch}></div></div>
     <label>color</label><input type="color" id="f_c" value="${hex(n.c)}" ${ch}>
     <label>group</label><input type="text" id="f_g" value="${esc(n.g||'Custom')}" ${ch}>
     <label class="chk"><input type="checkbox" id="f_gr" ${!(n.fl&&n.fl.grabbable===false)?'checked':''} ${ch}> grabbable (vacuum can suck it)</label>
     <label class="chk"><input type="checkbox" id="f_tr" ${!(n.fl&&n.fl.transportable===false)?'checked':''} ${ch}> transportable (rides belts)</label>
-    <div class="btns"><button class="btn pri" onmousedown="saveMat('${esc(id)}',false)">Save</button></div>
+    <div class="btns"><button class="btn pri" onmousedown="saveMat('${jsq(id)}',false)">Save</button></div>
     </div>`;
     if(n.dur)h+=`<div class="kv"><span>timer</span><span>${n.dur[0]}–${n.dur[1]}s</span></div>`;
   } else if(n.type==='mat'){
-    h=`<h2><span class="sw" style="background:${hex(n.c)}"></span>${esc(n.n)}</h2><div class="id">"${esc(n.id)}" · <span class="chip">${n.m}</span></div>`;
-    h+=`<div class="kv"><span>density</span><span>${n.d}</span></div>`;
-    h+=`<div class="dbar"><i style="left:0;width:${Math.min(100,n.d/3.2)}%"></i></div><div class="dticks"><span>0</span><span>water 100</span><span>sand 150</span><span>gold 300</span></div>`;
+    h=`<h2><span class="sw" style="background:${hex(n.c)}"></span>${esc(n.n)}</h2><div class="id">"${esc(n.id)}" · <span class="chip">${esc(n.m)}</span></div>`;
+    h+=`<div class="kv"><span>density</span><span>${esc(n.d)}</span></div>`;
+    h+=`<div class="dbar"><i style="left:0;width:${Math.min(100,(+n.d||0)/3.2)}%"></i></div><div class="dticks"><span>0</span><span>water 100</span><span>sand 150</span><span>gold 300</span></div>`;
     if(n.fl)h+=`<div class="kv"><span>grabbable</span><span>${n.fl.grabbable?'yes':'no'}</span></div><div class="kv"><span>transportable</span><span>${n.fl.transportable?'yes (belts)':'no'}</span></div>`;
     if(n.dur)h+=`<div class="kv"><span>timer</span><span>${n.dur[0]}–${n.dur[1]}s</span></div>`;
   } else if(n.type==='terrain'){
@@ -502,8 +548,8 @@ function select(id,savedFlash){
   if(inn.length){h+=`<h3>Made from</h3>`+inn.map(o=>`<div class="proc" onmousedown="selectProc(${o.i});event.stopPropagation()">← ${esc(nodes[o.p.f].n)}${viaTx(o.p)} <span class="via">${esc(o.p.lbl||'')}</span>${o.p.src==='c'?'<span class="conf c">custom</span>':confTag(o.p.conf)}</div>`).join('');}
   if(n.type==='mat'&&view==='mod'){
     h+=`<div class="btns">`;
-    if(n.modded)h+=`<button class="btn" onmousedown="revertMat('${esc(id)}')">Revert to vanilla</button>`;
-    h+=`<button class="btn warn" onmousedown="removeMat('${esc(id)}')">Remove</button></div>`;
+    if(n.modded)h+=`<button class="btn" onmousedown="revertMat('${jsq(id)}')">Revert to vanilla</button>`;
+    h+=`<button class="btn warn" onmousedown="removeMat('${jsq(id)}')">Remove</button></div>`;
     h+=`<div class="note" style="color:var(--faint)">Remove parks it in the Unused list (bottom of the sidebar) with its processes — restore it from there, or delete it for good.</div>`;
   }
   body.innerHTML=h; insp.classList.add('open');
@@ -511,8 +557,8 @@ function select(id,savedFlash){
 function partRow(role,id){
   const n=nodes[id]; if(!n)return '';
   const sw=n.type==='mat'?`<span class="sw" style="background:${hex(n.c)};margin-right:6px;display:inline-block;vertical-align:-1px"></span>`:(SPRITES[id]?`<img src="${SPRITES[id]}" alt="" style="width:15px;height:15px;object-fit:contain;image-rendering:pixelated;vertical-align:-3px;margin-right:6px">`:'');
-  const meta=n.type==='mat'?`${n.m} · density ${n.d}${n.custom?' · custom':(n.modded?' · modified':'')}`:(n.type==='terrain'?`terrain${n.hp?` · hp ${n.hp}`:''}`:'machine');
-  return `<div class="proc" onmousedown="select('${esc(id)}');centerOn('${esc(id)}');event.stopPropagation()"><span style="color:var(--faint)">${role}</span>&nbsp; ${sw}${esc(n.n)} <span class="via">${meta}</span></div>`;
+  const meta=n.type==='mat'?`${esc(n.m)} · density ${esc(n.d)}${n.custom?' · custom':(n.modded?' · modified':'')}`:(n.type==='terrain'?`terrain${n.hp?` · hp ${n.hp}`:''}`:'machine');
+  return `<div class="proc" onmousedown="select('${jsq(id)}');centerOn('${jsq(id)}');event.stopPropagation()"><span style="color:var(--faint)">${role}</span>&nbsp; ${sw}${esc(n.n)} <span class="via">${meta}</span></div>`;
 }
 function compilesTo(p){
   if(p.dis)return 'disabled — stripped from the exported mod';
@@ -545,7 +591,7 @@ function selectProc(i){
   h+=`<div class="kv"><span>compiles to</span><span style="text-align:right;max-width:160px">${compilesTo(p)}</span></div>`;
   if(p.note)h+=`<div class="note">${esc(p.note)}</div>`;
   if((p.via==='m_smelter'||p.via==='m_dryer')&&fa&&fb&&fa.type==='mat'&&fb.type==='mat'&&fb.d>=fa.d)
-    h+=`<div class="note" style="color:#ffb04d">⚠ The output (density ${fb.d}) is not lighter than the input (${fa.d}). The machine converts in place and displacement is pure density — an equal-or-heavier product tends to sit on the machine and jam it. Vanilla recipes always go lighter (gold 300 → 120, copper 200 → 150). Consider density ${Math.max(1,fa.d-10)} or less for ${esc(fb.n)}.</div>`;
+    h+=`<div class="note" style="color:#ffb04d">⚠ The output (density ${esc(fb.d)}) is not lighter than the input (${esc(fa.d)}). The machine converts in place and displacement is pure density — an equal-or-heavier product tends to sit on the machine and jam it. Vanilla recipes always go lighter (gold 300 → 120, copper 200 → 150). Consider density ${esc(Math.max(1,fa.d-10))} or less for ${esc(fb.n)}.</div>`;
   if(p.src==='v'){
     h+=`<div class="note" style="color:var(--faint)">${p.conf==='v'?'Read directly from the decompiled game code or its own text.':'Well-known behaviour, not yet pinned to a line of code.'}</div>`;
     if(view==='mod')h+=`<div class="btns"><button class="btn${p.dis?' pri':''}" onclick="toggleProc(${i})">${p.dis?'Re-enable':'Disable'}</button></div>
@@ -562,12 +608,12 @@ function matForm(n,isNew){
     ${idRow}
     <label>name</label><input type="text" id="f_n" value="${esc(n.n)}">
     <div class="row2"><div><label>matter type</label><select id="f_m">${MATTERS.map(m=>`<option${m===n.m?' selected':''}>${m}</option>`).join('')}</select></div>
-    <div><label>density</label><input type="number" id="f_d" value="${n.d}" min="1" max="1000"></div></div>
+    <div><label>density</label><input type="number" id="f_d" value="${esc(n.d)}" min="1" max="1000"></div></div>
     <label>color</label><input type="color" id="f_c" value="${hex(n.c)}">
     <label>group</label><input type="text" id="f_g" value="${esc(n.g||'Custom')}">
     <label class="chk"><input type="checkbox" id="f_gr" ${!(n.fl&&n.fl.grabbable===false)?'checked':''}> grabbable (vacuum can suck it)</label>
     <label class="chk"><input type="checkbox" id="f_tr" ${!(n.fl&&n.fl.transportable===false)?'checked':''}> transportable (rides belts)</label>
-    <div class="btns"><button class="btn pri" onclick="saveMat('${esc(n.id)}',${isNew?'true':'false'})">${isNew?'Create':'Save'}</button><button class="btn" onclick="${isNew?`insp.classList.remove('open')`:`select('${esc(n.id)}')`}">Cancel</button></div>
+    <div class="btns"><button class="btn pri" onclick="saveMat('${jsq(n.id)}',${isNew?'true':'false'})">${isNew?'Create':'Save'}</button><button class="btn" onclick="${isNew?`insp.classList.remove('open')`:`select('${jsq(n.id)}')`}">Cancel</button></div>
   </div>`;
 }
 function editMat(id){const n=nodes[id]; if(!n)return; body.innerHTML=matForm(n,false); insp.classList.add('open');}
@@ -662,7 +708,7 @@ function procForm(f,t,p,idx){
     ${viaRow}${partnerRow}
     <label>label (shown on the arrow)</label><input type="text" id="p_l" value="${p?esc(p.lbl||''):''}" placeholder="e.g. smelt, + water, dig">
     <label>note</label><textarea id="p_n" placeholder="what happens, in your words">${p?esc(p.note||''):''}</textarea>
-    <div class="btns"><button class="btn pri" onclick="saveProc('${esc(f)}','${esc(t)}',${idx===undefined?'null':idx})">Save</button><button class="btn" onclick="insp.classList.remove('open');setLinkMode(false)">Cancel</button></div>
+    <div class="btns"><button class="btn pri" onclick="saveProc('${jsq(f)}','${jsq(t)}',${idx===undefined?'null':idx})">Save</button><button class="btn" onclick="insp.classList.remove('open');setLinkMode(false)">Cancel</button></div>
   </div>`;
 }
 function saveProc(f,t,idx){
@@ -786,9 +832,9 @@ function techSelect(id){
    const opts=TECHDATA.nodes.map(x=>x.id).concat(MYTECH.map(x=>x.id)).filter(x=>x!==id);
    h+=`<div class="frm"><label>re-parent (which node unlocks this?)</label>
      <select id="tp_sel">${opts.map(o=>`<option value="${esc(o)}"${o===mine.parent?' selected':''}>${esc(safeName(o))}</option>`).join('')}</select>
-     <div class="btns"><button class="btn pri" onmousedown="techSetParent('${esc(id)}')">Save parent</button>
-     <button class="btn" onmousedown="techReset('${esc(id)}')">Reset node</button></div></div>
-   <div class="note" style="color:var(--faint)">Click the node to pick it up, then click any free grid cell to place it (Esc cancels). Moves and re-parenting compile into the mod on the next export.</div>`;
+     <div class="btns"><button class="btn pri" onmousedown="techSetParent('${jsq(id)}')">Save parent</button>
+     <button class="btn" onmousedown="techReset('${jsq(id)}')">Reset node</button></div></div>
+   <div class="note" style="color:var(--faint)">Click the node to pick it up, then click any free grid cell to place it (Esc cancels). Moves and re-parenting are saved here only: compiler.js does not read them, so change the tech node in mods/manufacturing/main.real.js by hand.</div>`;
  } else {
    const outs=TECHDATA.edges.filter(e=>e[0]===id).map(e=>safeName(e[1]));
    const ins=TECHDATA.edges.filter(e=>e[1]===id).map(e=>safeName(e[0]));
@@ -836,7 +882,7 @@ function buildList(filter){
     const gh=document.createElement('div');gh.className='grp';gh.textContent=g;list.appendChild(gh);
     groups[g].forEach(m=>{
       const r=document.createElement('div');r.className='mat';r.dataset.id=m.id;r.tabIndex=0;
-      r.innerHTML=`<span class="sw" style="background:${hex(m.c)}"></span>${esc(m.n)}${m.custom||m.modded?' <span style="color:var(--accent)">•</span>':''}<span class="d">${m.d}</span>`;
+      r.innerHTML=`<span class="sw" style="background:${hex(m.c)}"></span>${esc(m.n)}${m.custom||m.modded?' <span style="color:var(--accent)">•</span>':''}<span class="d">${esc(m.d)}</span>`;
       r.onclick=()=>{select(m.id);centerOn(m.id)};
       r.onkeydown=e=>{if(e.key==='Enter')r.onclick()};
       list.appendChild(r);
@@ -851,7 +897,7 @@ function buildList(filter){
       items.forEach(it=>{
         const r=document.createElement('div');r.className='mat ghost';
         r.innerHTML=`<span class="sw" style="background:${hex(it.c)}"></span><span style="text-decoration:line-through">${esc(it.n)}</span>
-          <span class="act"><button onclick="restoreMat('${esc(it.id)}')" title="put it back, with its processes">restore</button>${it.custom?`<button class="x" onclick="destroyMat('${esc(it.id)}')" title="delete forever">✕</button>`:''}</span>`;
+          <span class="act"><button onclick="restoreMat('${jsq(it.id)}')" title="put it back, with its processes">restore</button>${it.custom?`<button class="x" onclick="destroyMat('${jsq(it.id)}')" title="delete forever">✕</button>`:''}</span>`;
         list.appendChild(r);
       });
     }

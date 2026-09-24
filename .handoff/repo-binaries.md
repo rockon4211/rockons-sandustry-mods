@@ -1,5 +1,9 @@
 # The repo's binary files, as text
 
+> **STALE (as of 2026-09-23).** Written before the 2026-09-23 audit round; there is no
+> documented regenerate script. The PNGs in git (GitHub `main`) are authoritative. PNGs from
+> different installs differ byte-wise but are pixel-identical, so compare by pixels.
+
 Every non-text file tracked in the repo — all 39 PNG sprites and previews across the mods
 and the Material Studio exports, the Workshop `.custommap`, plus the 8 PNGs from the
 retired Workshop mod recovered from git history — packed into a tar.gz, base64-encoded,

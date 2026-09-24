@@ -1,12 +1,17 @@
-# Deployed mods snapshot
+# Mods (source of truth)
 
-Exact copy of the mods installed in %APPDATA%\Roaming\sandustry\mods as of this commit:
-  sandboxloop (v0.3.0), manufacturing (Mod Tools), lavaboiloff, quickstart
+These folders are what gets installed in `%APPDATA%\sandustry\mods\`:
+  sandboxloop (v0.4.3), screensaver (v0.18.1), manufacturing (v0.11.1, Mod Tools),
+  lavaboiloff (v0.1.1), quickstart (v1.0.1)
 
-Retired: `workshop` (removed from master 2026-09-20; still recoverable from git
-history). On the PC it was moved to `sandustry\_to_delete\retired-2026-09-20\workshop`.
+Manufacturing: edit `main.real.js` / `worker.real.js`, then mirror the change into the
+baked copy inside `main.js` / `worker.js` (they must stay identical).
 
-To restore/deploy: copy each folder back into %APPDATA%\Roaming\sandustry\mods\,
-fully quit and relaunch, enable the mods.
+Retired: `workshop` (removed from main 2026-09-20; still recoverable from git history).
+On the desktop it was moved to `sandustry\_to_delete\retired-2026-09-20\workshop`.
+
+To deploy: copy each folder into `%APPDATA%\sandustry\mods\`, fully quit and relaunch
+the game, enable the mods. Images may differ byte-wise from an install (an old copy
+tool re-encoded them) while being pixel-identical.
 
 Sandbox Loop's companion graph page lives in ../tools/resource-history.

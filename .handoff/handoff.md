@@ -1,12 +1,12 @@
 # Sandustry mods — handoff
 
-Everything a new chat needs to pick this work up. Last updated 2026-09-23.
+Everything a new chat needs to pick this work up. Last updated 2026-09-23 (audit round).
 
 ## Start here
 
 The repo is on GitHub: **https://github.com/rockon4211/rockons-sandustry-mods**
-(public). It is the source of truth — every mod, the Material Studio tooling, the graph
-page, the Loamcrest saves, both branches and the tag.
+(public, owned by Brandon's account `rockon4211`). It is the source of truth — every mod,
+the Material Studio tooling, the graph page, the Loamcrest saves, both branches and the tag.
 
 ```bash
 git clone https://github.com/rockon4211/rockons-sandustry-mods.git
@@ -18,66 +18,76 @@ git log --oneline | head
 Then read the rest of this file, which covers what the mods do, what the game's modding
 API allows, how to test without the game, and what is still open.
 
-**Pushing back.** A session can only push to repositories that were attached when the
-session started. If `git push` is refused by the proxy ("not in this session's authorized
-repository set"), do not fight it: either hand Brandon a ready-to-push folder and the three
-commands (`git push origin master:main`, `git push origin snapshot/loamcrest-2026-09-20`,
-`git push --tags origin`), or ask him to start a task with the repo attached as a source.
-Reading and cloning always work, because the repo is public.
+**Pushing.** The live branch is `main`. On the desktop PC the clone is
+`C:\Users\Brand\dev\rockons-sandustry-mods` and git is authenticated through Git Credential
+Manager, so from there pushing is just `git push` (and `git push --tags` if a tag was
+added). A cloud session that is refused by its proxy ("not in this session's authorized
+repository set") should not fight it: hand Brandon the commits (or a patch) to push from
+the desktop, or ask him to start a task with the repo attached.
 
-**If GitHub is not reachable**, this project also holds the code history as text under
-`claude/repo-history/` (git bundle, base64, ten parts, plus `binaries.md` for the sprites);
-its README has the rebuild commands. That mirror has no world saves.
-
-**Before changing a mod**: read its current source, bump `BUILD` in main.js and `version`
-in modinfo.json, run the harnesses in `.handoff/` and `sims/`, and remember Brandon must
-fully quit and relaunch the game for a mod to reload.
+**If GitHub is not reachable**, `.handoff/chunks/` (mirrored in the claude.ai project as
+`claude/repo-history/`) holds the code history as a git bundle in ten base64 parts;
+`repo-history-README.md` has the rebuild commands. It has no binaries and its commit hashes
+differ from GitHub (see that README).
 
 ## Where things live
 
 Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
-The working copies live in a cloud session container, which is ephemeral — treat the
-copies in this project and on the PC as the durable ones.
+- Git repo: GitHub `rockon4211/rockons-sandustry-mods`. Branch `main` is the live line;
+  `snapshot/loamcrest-2026-09-20` (tag `loamcrest-2026-09-20`) is the frozen map + mods.
+- Desktop PC clone: `C:\Users\Brand\dev\rockons-sandustry-mods`. Edit there.
+- Game data on the desktop: `%APPDATA%\sandustry\` (`C:\Users\Brand\AppData\Roaming\sandustry\`)
+  with `mods\`, `saves\`, `_screensaver\`, `_map_backups\`, `_to_delete\`.
+- Steam install: **varies per PC.** On the desktop it is
+  `C:\Program Files (x86)\Steam\steamapps\common\Sandustry`; game code is readable at
+  `resources\app.asar` → `dist/js/bundle.js`.
+- Test harnesses: `.handoff/sim-*.js` (see Testing below).
 
-- Git repo (history of every mod): GitHub, `rockon4211/rockons-sandustry-mods` — clone it
-  (see Start here). Branch `master` is the live line; `snapshot/loamcrest-2026-09-20`
-  (tag `loamcrest-2026-09-20`) is the frozen map + mods.
-- Test harnesses: `.handoff/sim-*.js` in the repo (see Testing below).
-- A session working on the mods keeps loose edit copies of its own; only what is committed
-  and pushed survives, since session containers are wiped.
-- Desktop PC (the machine this session's bridge was linked to):
-  `C:\Users\Brand\AppData\Roaming\sandustry\` with `mods\`, `saves\`, `_screensaver\`,
-  `_map_backups\`, `_to_delete\`. Steam install: `C:\SteamLibrary\steamapps\common\Sandustry`,
-  game code readable at `resources\app.asar` → `dist/js/bundle.js`.
-- The Downloads folder on the PC is also connected (mod exports and tracer logs land there).
+## Mods and versions (after the 2026-09-23 audit round)
 
-## Mods and versions (installed on the desktop, all committed to master)
-
-- **Sandbox Loop** `brandon.sandboxloop` v0.4.2 — Sources and Removers, balance tracker,
+- **Sandbox Loop** `brandon.sandboxloop` v0.4.3 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.18.0 — plays the map when idle and follows one
-  grain through the factory. This is where nearly all recent work went.
-- **Manufacturing (Mod Tools)** v0.10.0, **Lava Boiloff** v0.1.0, **Quickstart** v1.0.0 —
-  Manufacturing 0.10.0 adds the Belt-Speed Filtering upgrade for Mk.2 Filters; Lava Boiloff and Quickstart are unchanged.
-- **Workshop** — retired on 2026-09-20, removed from master, still in git history and
-  saved in this project. On the PC it was moved to
+- **Screensaver** `brandon.screensaver` v0.18.1 — plays the map when idle and follows one
+  grain through the factory. This is where most of the work went.
+- **Manufacturing** `brandon.manufacturing` v0.11.1 — soil/Sand rename + Glass, Mod Tools,
+  and the **Filter Mk.3** upgrade (renamed in 0.11.0 from "Belt-Speed Filtering"; same
+  mechanism). Source of truth: `main.real.js` / `worker.real.js` (see below).
+- **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
+- **Workshop** — retired on 2026-09-20. Code in `.handoff/workshop/` and git history; the
+  early root `workshop/` copy was removed on 2026-09-23. On the PC it was moved to
   `sandustry\_to_delete\retired-2026-09-20\workshop`.
 
-Full current source of each mod is saved in this project under `claude/mods/`. PNG assets
-(Sandbox Loop's `source.png`/`sink.png`, Manufacturing's sprites) are not in the project;
-Sandbox Loop's are regenerated by `claude/mods/sandboxloop-make-sprites.js`, the rest live
-in the repo and on the PC.
+## Manufacturing — how it is built now
 
-## Sandbox Loop v0.4.0 — what it does
+`mods/manufacturing/main.real.js` and `worker.real.js` are hand-maintained and are the
+source of truth. `main.js` / `worker.js` are hot-load stubs: they load the `.real` file
+from the mod's own folder at start-up (so an F10 reload picks up a new `.real`) and fall
+back to a **verbatim baked copy** of it embedded in the stub. Every edit goes into the
+`.real` file **and** is mirrored into the baked copy.
+
+The Material Studio compiler (`compiler.js`) is **retired**: recompiling from `graph.json`
+would drop the hand-written code (HeavyStone, filter boost / Filter Mk.3, red-block fixes,
+probes) and reorder element registration, which changes element ids and breaks saves. It
+now refuses to write into `mods/manufacturing` without `--force`.
+
+**Filter Mk.3.** An On/Off upgrade in a Manufacturing tab of the Upgrades pane. When ON,
+every Mk.2 Filter moves material at Mk.2 belt speed. It is an upgrade, not a new structure,
+because the game hard-codes belt speed and filter behaviour to the `filterLeftMk2` /
+`filterRightMk2` ids and gives any unknown structure id speed 0. `sim-filterboost.js`
+tests it.
+
+## Sandbox Loop v0.4.3 — what it does
 
 A **Source** is a structure that emits a chosen material at an adjustable rate (decimals
 allowed, up to 100/s); a **Remover** is a single block that deletes one chosen material at
-an adjustable rate. Settings are baked into each structure when it is placed. The **Balance**
-panel counts every material on the whole map (time-sliced scan, NORMAL ≈30s a pass or
-GENTLE ≈2min, exact counts only), shows surplus/deficit per material, keeps running totals,
-logs a 30-second history that can be exported as JSON, can lock Thermal Buffers at their peak
-temperature, and freezes every counter while the game is paused.
+an adjustable rate. Settings are baked into each structure when it is placed, stored by
+element id so they travel with the save. The **Balance** panel counts every material on the
+whole map (time-sliced scan, NORMAL ≈30s a pass or GENTLE ≈2min, exact counts only), shows
+surplus/deficit per material, keeps running totals, logs a 30-second history that can be
+exported as JSON (samples carry `t` wall-clock ms and `st` game-time ms), can lock Thermal
+Buffers at their peak temperature, and freezes every counter while the game is paused. It
+hides the Screensaver's tracer copies from its lists.
 
 It exposes a hook other mods use:
 
@@ -90,56 +100,57 @@ window.__brandonSandboxLoop = {
 }
 ```
 
-The `src` argument was added in 0.3.1. Before it, whichever Source fired first took the
-swap, which sent the Screensaver camera flying across the map to a different Source.
+The `src` argument (0.3.1) makes the swap happen at the Source the Screensaver chose, not
+whichever fired first.
 
 The panel also carries the Screensaver row: **🌙 START NOW** and a **⤓ log (n)** button that
 saves the tracer flight recorder. Its companion graph page for history exports is
 `tools/resource-history` in the repo.
 
-## Screensaver v0.17.2 — what it does
+## Screensaver v0.18.1 — what it does
 
 After N minutes without input (or automatically from the main menu, for a Windows "on idle"
 task), it hides the HUD and cursor, goes fullscreen, caps the frame rate, holds a screen wake
 lock, and follows a single grain through the factory.
 
 **The tracer.** A Source is asked to emit one grain as a tracer element instead of a normal
-grain (no extra material is created). The camera rides that grain. Since v0.16 there is one
-tracer element **per material** — a clone that copies the real material's whole definition
-(matter type, density, flags), just a shade brighter, at exactly the same weight since 0.17.2.
-Five generic tracers (one per matter type) remain as a fallback for materials with no clone.
+grain (no extra material is created). The camera rides that grain. Every material (except
+particles, fire and flame) gets a **copy** at launch that carries its whole definition —
+matter type, density, flags, other properties — a shade brighter, same weight; functions
+and timers are not copied. Generic per-matter-type tracers remain as a fallback.
 
-**Reactions.** The clones are taught the game's own tables so the grain keeps being our grain:
+**Recipes (0.18).** Each copy is taught every rule the real material has, read from the
+game's own tables (`sandkit.mods.recipes` plus the hard-wired rules):
 
-- `api.reactions.registerContact({inputA, inputB, outputA, outputB, orientation})` for touch
-  reactions: tracer soil + water → tracer wet soil (water also becomes wet soil, as vanilla),
-  tracer seed + water → tracer wet seed, tracer water + lava/flame → tracer steam.
-- `api.structures.recipes.register(machine, …)` for machines: smelter (tracer copper → tracer
-  liquid copper; tracer gold → tracer liquid gold at 0.5), condenser (tracer florin → tracer
-  florinol; tracer steam → tracer water), steamDryer (tracer petalium → tracer dry petalium),
-  shaker (tracer wet soil → tracer residue above; ordinary gold below at 0.25).
+- every **contact** rule (`api.reactions.registerContact`), e.g. soil copy + water → wet
+  soil copy;
+- every **machine** recipe (`api.structures.recipes.register`): smelter, condenser,
+  steamDryer, synthesizer, snowmaker, shaker (including the hard-wired wet soil rule),
+  **kineticPress** (burnt residue → seed) and **planterBox** growers;
+- **burning**: the copy's `flammable` output points at the product's copy, always
+  (residue copy → burnt residue copy, dry amethelis copy → florin copy).
 
-**Never gold.** By explicit request, wherever a step produces gold and something else, the
-tracer always continues as the something else (shaker → residue, condenser → florinol), and
-the hand-back search never adopts gold.
+**Never gold, main product.** Wherever a step produces gold and something else, the copy
+continues as the something else, and the hand-back search never adopts gold. Where a step
+makes several things it follows the main one.
 
-**Hand-back fallback.** For anything not covered (fire reactions such as residue burning or
-dry petalium → florin, and machines with no clone recipe), the grain is turned back into its
-real material, the spot is watched, and the material the chain says should appear is picked
-up. Frames, launchers, platforms and similar passive structures are excluded, so the grain is
-not handed back for nothing.
+**Hand-back fallback.** Only for the few steps the game hard-wires and a copy cannot carry
+(e.g. a planter growing a flower, steam turning to cloud): the grain is turned back into its
+real material, the spot is watched, and a material the chain says should appear is picked
+up. Passive structures (frames, launchers, platforms) never trigger a hand-back.
 
 **Tracker panel** (top-right, on by default): what the tracer is doing now, counts of
-journeys, marks, losses, re-finds, jumps, stray tracers, clones and armed reactions, a
-"why it was lost" breakdown, and the last nine events in plain language. A **flight recorder**
-keeps up to 500 events and saves `tracer-log-<date>.json` to Downloads — on demand from the
-panel button, and automatically when the screensaver stops if anything went wrong.
+journeys, marks, losses, re-finds, jumps, stray tracers, copies and armed reactions, a
+"why it was lost" breakdown, and the last nine events in plain language. A **flight
+recorder** keeps up to 500 events and saves `tracer-log-<date>.json` to Downloads — on
+demand from the panel button, and automatically when the screensaver stops if anything went
+wrong.
 
 **Other behaviour worth knowing:** if the grain is lost three times within 16 cells in 90
-seconds the spot is abandoned and a new journey starts; extra tracer grains near the followed
-one are turned back into their real material and logged; the tracer grain is **deleted** when
-the screensaver ends (Brandon asked for this — no need to salvage it); only the **E** key ends
-the screensaver and a "press E to exit" tip sits in the top-right, with all other keys and
+seconds the spot is abandoned (`hotspot` log event) and a new journey starts; extra tracer
+grains near the followed one are turned back into their real material and logged; the
+tracer grain is **deleted** when the screensaver ends; only the **E** key ends the
+screensaver and a "press E to exit" tip sits in the top-right, with all other keys and
 clicks swallowed so they can't disturb the game.
 
 Hook: `window.__brandonScreensaver = { build, isActive(), exportLog(), logSize(), stop(), start() }`
@@ -147,10 +158,10 @@ Hook: `window.__brandonScreensaver = { build, isActive(), exportLog(), logSize()
 
 ## Game internals we confirmed (from bundle.js)
 
-Worth keeping; these were dug out of the game's own bundle and are what made v0.16 possible.
+Worth keeping; these were dug out of the game's own bundle.
 
 - Mods run in **strict mode** — an undeclared variable throws and kills the tick.
-- Element types are integers **1–255**; ours registered as 55–89.
+- Element types are integers **1–255**.
 - `api.elements.replaceAtCell` is applied at the sim's next idle moment with no unchanged
   guard, so marking a *moving* grain often misses; `replaceAtCellWhenIdle` silently no-ops on
   moving grains. Emitting the tracer from a Source avoids the race entirely.
@@ -161,9 +172,12 @@ Worth keeping; these were dug out of the game's own bundle and are what made v0.
   table `[Water+Sand→WetSand, Water+Seed→WetSeed, Water+Lava→Steam, Water+Flame→Steam]`.
 - Element definitions also support a `mixes` array, an alternative to registerContact.
 - Machine recipe ids: `smelter`, `condenser`, `steamDryer`, `synthesizer`, `snowmaker`,
-  `shaker` (shaker takes `outputsBelow`/`outputsAbove` instead of `outputs`). Vanilla values:
-  gold → liquid gold 0.5, copper → liquid copper 1, florin → florinol/gold, steam → water 1,
-  petalium → dry petalium 1. The thermofroster is hard-coded and cannot be extended.
+  `shaker` (`outputsBelow`/`outputsAbove` instead of `outputs`), `kineticPress`,
+  `planterBox`. Vanilla values: gold → liquid gold 0.5, copper → liquid copper 1,
+  florin → florinol/gold, steam → water 1, petalium → dry petalium 1. The thermofroster is
+  hard-coded and cannot be extended.
+- Belt speed and filter behaviour are hard-coded to the `filterLeftMk2`/`filterRightMk2`
+  (and belt) ids; an unknown structure id gets speed 0.
 - To read the game code: extract `dist/js/bundle.js` from `resources/app.asar` (plain asar
   header: 4-byte pickle at offset 12, JSON header, then the file blobs).
 
@@ -172,75 +186,101 @@ Worth keeping; these were dug out of the game's own bundle and are what made v0.
 Three Sources: copper at 1788,3028 (1/s) and soil at 1676,3772 and 1440,3144 (3/s each).
 On the belt line at y 2340, x 1968–1987, there are five `filterRightMk2` set to allow only
 Water and Steam. They were briefly suspected of eating resources; Brandon concluded the belt
-just runs faster there, and the screensaver no longer does anything special at filters.
+just runs faster there. A tracer copy is its own element type, so those filters drop it like
+any disallowed material (`sim-filter.js` checks the tracker handles that cleanly).
 An earlier history export showed water running a deficit, cloud climbing about 3,000/min,
 and the gold chain starved (gold, residue, aurixite and auralite all falling).
 
 ## Testing
 
-`.handoff/sim-*.js` holds Node harnesses that `eval` the mod's real `main.js` in strict mode
-against a mocked `sandkit`, exposing internals through getters:
+`.handoff/sim-*.js` are Node harnesses that `eval` a mod's real code in strict mode against
+a mocked `sandkit`. They locate the mods relative to their own file
+(`path.join(__dirname, "..", "mods", …)`), print `ok` / `FAIL` lines, and **exit non-zero
+on any failure**. Run each with `node .handoff/sim-<name>.js`:
 
-- `sim-output.js` — a machine output is picked up and the chain hops.
-- `sim-filter.js` / `sim-lost.js` — a grain riding a belt through the filter section, and a
-  spot that keeps eating the tracer (checks the hot-spot bailout).
-- `sim-clone.js` — registers the clones, arms the reactions, and drives tracer soil + water
-  through a contact rule; prints clones/armed/contacts/recipes counts.
+- `sim-copies.js` — Screensaver 0.18: which copies exist, what each was taught (contacts,
+  burning, machines, gold rule, main-product rule), and four scenes (launcher, fire,
+  planter, shaker).
+- `sim-clone.js` — copies are built and armed, and a soil copy touching water becomes the
+  wet-soil copy and is still followed. Fails if no copies are built.
+- `sim-output.js` — a machine output is picked up and the chain hops (wet soil → residue,
+  not gold).
+- `sim-filter.js` — a tracer riding into the filter section: the loss is logged at the
+  filter and resolved (pick-up / give-up), no stray tracers left.
+- `sim-lost.js` — a spot that keeps eating the tracer: the third loss must fire the
+  `hotspot` bailout, with no further pick-ups there.
+- `sim-loop.js` — Sandbox Loop: a Source keeps its material across PCs (desktop, fresh
+  laptop, baked-in-save all emit soil).
+- `sim-filterboost.js` — Manufacturing's Filter Mk.3 worker patch (on/off, no compounding).
 
-Run them with `node` (they read the mod from `mods/<mod>/main.js`; older copies point at a
-session path — fix the path at the top if so). They are the only way to test without the game.
+They are the only way to test without the game.
 
-## Deploy workflow
+## Before changing a mod / deploy workflow (desktop PC)
 
-Edit `mods/<mod>/main.js` in a clone, bump `BUILD` in main.js and `version` in
-modinfo.json, run the sims, copy the files to `/mnt/user-data/outputs/...`, write them to
-`C:\Users\Brand\AppData\Roaming\sandustry\mods\<mod>\` with the device bridge, copy the same
-files into `material-studio/mods/<mod>/`, and commit. Brandon must **fully quit and relaunch**
-the game for a mod to reload; the tracker panel shows the build number so he can confirm.
+1. Edit in the clone, `C:\Users\Brand\dev\rockons-sandustry-mods\mods\<mod>\`. Read the
+   current source first.
+2. Bump `BUILD` in main.js (the tracker/banner shows it) and `version` in modinfo.json.
+3. Manufacturing: edit `main.real.js` / `worker.real.js`, then mirror the same change into
+   the baked copy inside `main.js` / `worker.js`. Never recompile with `compiler.js`.
+4. Run every `.handoff/sim-*.js`; all must exit 0.
+5. Deploy: copy the mod's files from `mods\<mod>\` into `%APPDATA%\sandustry\mods\<mod>\`.
+6. **Fully quit and relaunch** the game (the game caches mod files at launch); confirm the
+   build number in game.
+7. Commit on a branch, merge to `main`, `git push`. Regenerate `mods-checksums.md` after
+   the commit.
+
+There is no device bridge any more; everything happens directly on the desktop.
 
 ## Open issues / next steps
 
-1. **v0.17.2 is untested in the game.** The last log Brandon sent was build 0.17.0. Needs one
-   run to confirm: the tracker's "reactions armed" count is above zero, wet soil now becomes
-   residue rather than gold, the clones behave at their real weight, and the E key both exits
-   and blocks other input. If "reactions armed" stays 0, the registerContact/recipes calls
-   were refused and everything falls back to hand-back — the log will say why.
-2. **Fire reactions are not cloned** (residue → burnt residue, dry petalium → florin). They run
-   through the game's fire system, not the mixing table, so those steps still hand back.
-   Worth investigating whether flammability fields on the clone definition would work.
-3. **Machines without clone recipes** (growers/planter, snowmaker, synthesizer, collector,
-   thermofroster) still use hand-back.
-4. **Laptop install — done (2026-09-23).** A session on the laptop installed the mods and
-   the 2026-09-20 saves from `loamcrest-transfer.zip` and wrote `claude/laptop-install.md`
-   with the details. Left to do there: delete `mods\\workshop` by hand (the bridge cannot
-   delete), enable the mods in game, and confirm the tracker reads build 0.17.2.
-5. **Repo durability.** The git repo lives only in the session container plus the PC bundle.
-   Re-export a fresh bundle to the PC after any big change.
-6. The desktop's newest saves (2026-09-21) were never committed; the snapshot branch map is
+1. **Screensaver 0.18.x needs an in-game run** to confirm on the real map: the tracker's
+   "reactions armed" count is above zero, a grain follows soil → wet soil → residue →
+   burnt residue → seed without hand-backs, and nothing is refused (the log says why if so).
+2. **Hard-wired steps still hand back** (a planter growing a flower, steam → cloud, the
+   thermofroster). These are game code, not tables; hand-back is the permanent answer
+   unless the game exposes them.
+3. **Laptop** — the mods were installed there on 2026-09-23 (`claude/laptop-install.md`).
+   Left to do: update it to the current versions, delete `mods\workshop` by hand, and
+   confirm the builds in game. Old Sources never opened on the desktop may need their
+   material set once (Sandbox Loop 0.4.0 migration).
+4. The desktop's newest saves (2026-09-21) were never committed; the snapshot branch map is
    from 2026-09-20.
+5. `.handoff/binaries.md` / `binaries-b64.txt` / `repo-binaries.md` are stale (written
+   before this round, no regenerate script). `mods/README.md` still describes an older
+   deployed set.
 
-7. **Laptop emitted the new golden Sand instead of soil — fixed in Sandbox Loop v0.4.0.**
-   The mod stored a Source's material as the NUMBER the game assigns an element, in
-   localStorage, which never leaves the PC it was set on. On a fresh install every Source
-   fell back to the panel default, and the default was chosen by matching the display name
-   `/^sand$/i` — which on this save is Manufacturing's new golden Sand, not the renamed
-   vanilla soil. v0.4.0 stores the material by element id, bakes it into the structure's
-   own data so it travels with the save, migrates old localStorage entries onto the
-   structures, and picks the default by id. Old Sources that were never opened on the
-   desktop (so never migrated) may still need their material set once on the laptop.
+Done, for the record: the 0.17.2 in-game check and the fire-reaction / machine gaps (#1, #2
+in older copies of this file) were superseded by 0.18, which copies burning and teaches
+every contact, machine, kinetic-press and planter rule. The laptop "emitted golden Sand
+instead of soil" bug was fixed in Sandbox Loop 0.4.0 (material stored by element id and
+baked into the structure).
+
+### 2026-09-23 audit — what was fixed this round
+
+- `compiler.js` marked RETIRED/DANGER, refuses to overwrite `mods/manufacturing` without
+  `--force`, usage message instead of a stack trace; bolt-on paths in `compiler-cfg.json`
+  are repo-relative (were a dead `/home/claude/...` path).
+- `studio.html`: handler-attribute escaping (`jsq`), `'` escaped, density/matter escaped,
+  `hex()` safe for non-numbers, synced/localStorage data validated on load; tech-tree note
+  no longer claims moves compile into the mod.
+- `tools/resource-history/page.html`: colours accepted only as `#rrggbb`, names and rates
+  escaped; README documents `st`.
+- Harnesses: `sim-clone.js` rewritten for 0.18 (was passing with 0 clones); `sim-filter.js`,
+  `sim-lost.js` (drives the third loss, asserts `hotspot`) and `sim-loop.js` now assert and
+  exit non-zero; all locate mods from `__dirname`.
+- Docs: `master` → `main`, versions, this PC's paths and deploy workflow; `chunks/`
+  regenerated from `main`; `mods-checksums.md` reset to be regenerated after commit.
+- Removed leftovers: `diag-bolton.js`, root `quickstart/` (duplicate of `mods/quickstart`
+  1.0.0), root `workshop/` (early copy).
+- Mods (by other sessions the same day): Sandbox Loop 0.4.3, Screensaver 0.18.1,
+  Manufacturing 0.11.1, Lava Boiloff 0.1.1, Quickstart 1.0.1.
 
 ## Talking to other chats
 
-Sessions cannot message each other live. This project is the shared channel: write what you
-did to a doc here and the other chat can read it (that is how the laptop install came back).
-
-**The repo itself is in the project.** `claude/repo-history/` holds the whole code history —
-both branches, every commit — as a git bundle split across ten base64 parts, with the rebuild
-commands in its README. The mod sprites and the Workshop custom map are in `claude/repo-history/binaries.md` as
-base64. The world saves are in neither (12 MB); they live in `loamcrest-transfer.zip` and
-on both PCs. Rebuild the repo
-in any session rather than starting from the loose mod docs, and re-export it after big
-changes so the copy here does not go stale.
+Sessions cannot message each other live. The claude.ai project is the shared channel: write
+what you did to a doc there and the other chat can read it (that is how the laptop install
+came back). The repo on GitHub is the durable copy of everything code; the world saves are
+in `world-snapshots/`, `loamcrest-transfer.zip` and on both PCs.
 
 ## Working style
 

@@ -187,9 +187,11 @@
     if (!samples.length) throw new Error("The export has no samples yet — let the game log for a minute and export again.");
     const types = o.types || {};
     const ids = new Set(); for (const s of samples) for (const k of Object.keys(s.c || {})) ids.add(k);
-    const mats = [...ids].map((id) => ({ id, name: (types[id] && types[id].name) || ("type " + id), color: (types[id] && types[id].color) || "#8a8a8a" }));
+    const mats = [...ids].map((id) => ({ id, name: (types[id] && types[id].name) || ("type " + id), color: safeColor(types[id] && types[id].color) }));
     mats.sort((a, b) => a.name.localeCompare(b.name));
-    return { samples, mats, loop: o.loop || { sources: [], removers: [] }, exportedAt: o.exportedAt || null, world: o.world || null, example: !!o.example };
+    const lp = o.loop || {};
+    const loop = { sources: Array.isArray(lp.sources) ? lp.sources : [], removers: Array.isArray(lp.removers) ? lp.removers : [] };
+    return { samples, mats, loop, exportedAt: o.exportedAt || null, world: o.world || null, example: !!o.example };
   }
 
   // ---------- derived series ----------
@@ -268,7 +270,7 @@
           (Math.abs(machines) > 0.3 ? '· machines ' + (machines > 0 ? 'eat ≈ ' + fmt1(machines) : 'make ≈ ' + fmt1(-machines)) + '/s' : '') + '</span>';
       }
       tr.innerHTML = '<td><span class="chk">' + (selected.has(r.m.id) ? "✓" : "") + '</span></td>' +
-        '<td><span class="mat"><span class="sw" style="background:' + r.m.color + '"></span>' + escapeHtml(r.m.name) + '</span></td>' +
+        '<td><span class="mat"><span class="sw" style="background:' + safeColor(r.m.color) + '"></span>' + escapeHtml(r.m.name) + '</span></td>' +
         '<td>' + spark(r.s, r.k) + '</td>' +
         '<td class="num">' + fmtN(r.start) + '</td><td class="num">' + fmtN(r.end) + '</td>' +
         '<td class="num ' + r.k + '">' + fmtS(r.dlt) + '</td><td class="num ' + r.k + '">' + fmtRate(r.rate) + '</td>' +
@@ -279,7 +281,9 @@
       tb.appendChild(tr);
     }
   }
-  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  // Colours come from the export file, so only a plain #rrggbb is accepted (it ends up in style="" and canvas).
+  function safeColor(c) { return (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c)) ? c : "#8a8a8a"; }
   function renderStrip() {
     const smp = rangeSamples(), all = data.samples;
     const exact = smp.filter((s) => s.x).length, up = rowsCache.filter((r) => r.k === "up").length, down = rowsCache.filter((r) => r.k === "down").length;
@@ -289,7 +293,7 @@
       stat("Range shown", fmtDur(gt(smp[smp.length - 1]) - gt(smp[0])) + (axisGame && hasGameClock(smp) ? " of game time" : ""), fmtT(smp[0].t) + " → " + fmtT(smp[smp.length - 1].t)) +
       stat("Samples", smp.length.toLocaleString(), (all.length !== smp.length ? all.length.toLocaleString() + " in the whole log · " : "") + Math.round((100 * exact) / smp.length) + "% exact scans") +
       stat("Materials", rowsCache.length, '<span class="up">' + up + " surplus</span> · <span class=\"down\">" + down + " deficit</span> · " + (rowsCache.length - up - down) + " balanced") +
-      stat("Your loop", src + " src · " + rm + " rmv", data.loop.sources.map((s) => "+" + s.rate + "/s " + matName(s.type)).concat(data.loop.removers.map((s) => "−" + s.rate + "/s " + matName(s.type))).join(", ") || "no Sources or Removers placed");
+      stat("Your loop", src + " src · " + rm + " rmv", data.loop.sources.map((s) => "+" + escapeHtml(s && s.rate) + "/s " + escapeHtml(matName(s && s.type))).concat(data.loop.removers.map((s) => "−" + escapeHtml(s && s.rate) + "/s " + escapeHtml(matName(s && s.type)))).join(", ") || "no Sources or Removers placed");
   }
   function matName(id) { const m = data.mats.find((x) => x.id == id); return m ? m.name : "type " + id; }
   function renderStatus(msg, kind) {
@@ -360,7 +364,7 @@
       const t = hover; const x = X(t); ctx.strokeStyle = accent; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke(); ctx.setLineDash([]);
     }
     // legend
-    $("legend").innerHTML = sel.map((r) => '<span><i style="background:' + r.m.color + '"></i>' + escapeHtml(r.m.name) + '</span>').join("") +
+    $("legend").innerHTML = sel.map((r) => '<span><i style="background:' + safeColor(r.m.color) + '"></i>' + escapeHtml(r.m.name) + '</span>').join("") +
       (smp.some((s) => !s.x) ? '<span class="hatch"><i></i>FAST-scan estimate</span>' : "") +
       '<span class="hint">' + (axisGame ? (hasGameClock(smp) ? "x-axis: game time (pauses removed)" : "x-axis: clock time — this log has no game clock, update the mod") + " · " : "x-axis: clock time · ") + (mode === "delta" ? "cells gained (+) or lost (−) since " + fmtT(smp[0].t) : mode === "rate" ? "cells per minute, ~5 min smoothing" : "whole-map cell count") + "</span>";
   }
@@ -386,7 +390,7 @@
     const sel = rowsCache.filter((r) => selected.has(r.m.id)), key = mode === "delta" ? "d" : mode === "rate" ? "r" : "c";
     const tip = $("tip");
     tip.innerHTML = '<div class="t">' + fmtT(smp[i].t) + (axisGame && typeof smp[i].st === "number" ? " · game +" + fmtDur(smp[i].st - gt(smp[0])) : "") + (smp[i].x ? "" : " · FAST estimate") + '</div>' +
-      sel.map((r) => '<div class="r"><span><i style="background:' + r.m.color + '"></i>' + escapeHtml(r.m.name) + '</span><span class="num">' + (mode === "count" ? fmtN(r.s[key][i]) : fmtS(r.s[key][i])) + '</span></div>').join("");
+      sel.map((r) => '<div class="r"><span><i style="background:' + safeColor(r.m.color) + '"></i>' + escapeHtml(r.m.name) + '</span><span class="num">' + (mode === "count" ? fmtN(r.s[key][i]) : fmtS(r.s[key][i])) + '</span></div>').join("");
     tip.hidden = false;
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
     tip.style.left = Math.min(px + 14, W - tip.offsetWidth - 4) + "px"; tip.style.top = Math.max(4, py - tip.offsetHeight - 10) + "px";

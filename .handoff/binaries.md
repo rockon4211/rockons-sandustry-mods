@@ -1,5 +1,9 @@
 # Binary files from the repo, as base64
 
+> **STALE (as of 2026-09-23).** Written before the 2026-09-23 audit round; there is no
+> documented regenerate script. The PNGs in git (GitHub `main`) are authoritative. PNGs from
+> different installs differ byte-wise but are pixel-identical, so compare by pixels.
+
 Everything in the repo that is not text: the mod sprites and the Workshop custom map.
 The world saves are NOT here (about 12 MB of .save files, far past the project's limit);
 they live in `loamcrest-transfer.zip` and on both PCs.

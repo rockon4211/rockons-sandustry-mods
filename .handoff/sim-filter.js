@@ -1,4 +1,9 @@
-const fs = require("fs"); const src = fs.readFileSync("../mods/screensaver/main.js", "utf8");
+// sim-filter.js — a tracer riding a Mk.2 belt into the five filterRightMk2 at x 1968–1987
+// (allow Water + Steam). The tracer is its own element type, so the filter drops it like
+// any disallowed material. Checks: it rides up to the filter, the loss is logged as a belt
+// loss at the filter, and the tracker resolves it (pick-up or give-up) instead of hanging.
+// Run from .handoff/:  node sim-filter.js   (exit 1 on any failed check)
+const fs = require("fs"), path = require("path"); const src = fs.readFileSync(path.join(__dirname, "..", "mods", "screensaver", "main.js"), "utf8");
 function run(label, rideType) {
   const T = { sand: 1, water: 3, steam: 10 }, NAME = { 1: "soil", 3: "Water", 10: "Steam" }, ID = { 1: "sand", 3: "water", 10: "steam" };
   const cells = new Map(); const K = (x, y) => x + "," + y;
@@ -48,6 +53,18 @@ function run(label, rideType) {
     if (line !== last) { events.push((i * 33 / 1000).toFixed(1) + "s  " + line + "  @" + (M.trc ? M.trc.x : "-")); last = line; }
   }
   console.error("=== " + label); console.error(JSON.stringify(M.stats)); console.error(M.notes.map(n=>n.txt).join("\n")); console.error(M.tlog.map(e=>e.kind+" "+(e.x||"")+" "+JSON.stringify(e.area||e.onStructure||e.became||"")).join("\n")); console.error(events.slice(0, 14).join("\n"));
+  return { tlog: M.tlog.slice(), stats: JSON.parse(JSON.stringify(M.stats)), trc: M.trc, tracerCells: grains.filter((g) => M.tracerTypes.has(g.t) || g.t >= 90).length, events };
 }
-run("riding WATER (the filters allow it)", 3);
-run("riding SOIL (the filters don't allow it)", 1);
+let ok = true; const check = (c, msg) => { console.error((c ? "  ok   " : "  FAIL ") + msg); if (!c) ok = false; };
+for (const [label, t] of [["riding WATER (the filters allow it)", 3], ["riding SOIL (the filters don't allow it)", 1]]) {
+  const r = run(label, t);
+  const lost = r.tlog.filter((e) => e.kind === "LOST");
+  check(r.events.length && /riding/.test(r.events[0]), label + ": riding at the start");
+  check(lost.length >= 1, label + ": the loss was logged (" + lost.length + " LOST)");
+  check(lost.every((e) => e.x >= 1960 && e.x <= 1988), label + ": every loss is at the filter section (x " + lost.map((e) => e.x).join(",") + ")");
+  check(lost.length >= 1 && /belt/.test(lost[0].why || ""), label + ": first loss reason is the belt (" + (lost[0] && lost[0].why) + ")");
+  check(r.tlog.some((e) => e.kind === "giveup" || e.kind === "pickup" || e.kind === "hotspot"), label + ": the tracker resolved the loss (pickup / giveup / hotspot)");
+  check(!r.trc || !r.trc.search, label + ": not stuck searching at the end");
+  check(r.tracerCells <= (r.trc && !r.trc.search ? 1 : 0), label + ": no stray tracer grains left on the belt (" + r.tracerCells + ")");
+}
+console.error(ok ? "\nALL OK" : "\nSOME CHECKS FAILED"); process.exit(ok ? 0 : 1);

@@ -1,5 +1,5 @@
 // Sandbox Loop: does a Source keep its material across PCs? (element ID, not number)
-const fs = require("fs"); const src = fs.readFileSync("../mods/sandboxloop/main.js", "utf8");
+const fs = require("fs"), path = require("path"); const src = fs.readFileSync(path.join(__dirname, "..", "mods", "sandboxloop", "main.js"), "utf8");
 function run(label, ids, names, storedCfg, structData) {
   const byType = {}; for (const k in ids) byType[ids[k]] = k;
   let NOW = 1e9; const RD = Date; global.Date = class extends RD { constructor(...a) { super(...(a.length ? a : [NOW])); } static now() { return NOW; } };
@@ -37,3 +37,5 @@ const a = run("desktop, Source placed here (old numeric store)", DESK, DNAM, { "
 const b = run("laptop, fresh install, nothing stored", LAP, LNAM, null, null);
 const c = run("laptop, save carries the baked material", LAP, LNAM, null, { brandonMat: "sand", brandonRate: 3 });
 console.log("\nall three agree:", a === b && b === c, "->", a, b, c);
+const pass = a === b && b === c && a === "soil";
+console.log(pass ? "ALL OK" : "FAIL: all three setups should emit soil"); process.exit(pass ? 0 : 1);

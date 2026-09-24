@@ -9,11 +9,11 @@ its Mods menu.
 
 | Mod | Version | What it does |
 | --- | --- | --- |
-| **sandboxloop** | 0.4.0 | Sources and Removers for an endless, self-balancing factory, plus a whole-map balance tracker with history export. |
-| **screensaver** | 0.17.2 | After a few idle minutes the HUD hides and the camera follows one real grain through the factory, material by material. Press **E** to exit. |
-| **manufacturing** | 0.9.5 | Mod Tools: the Matter Gun, vacuum tank delete buttons, the Omni Vacuum, and the rename of vanilla sand to "soil" with a new golden Sand. |
-| **lavaboiloff** | 0.1.0 | Lava boiling behaviour. |
-| **quickstart** | 1.0.0 | Skips the intro. |
+| **sandboxloop** | 0.4.3 | Sources and Removers for an endless, self-balancing factory, plus a whole-map balance tracker with history export. |
+| **screensaver** | 0.18.1 | After a few idle minutes the HUD hides and the camera follows one real grain through the factory, material by material. Press **E** to exit. |
+| **manufacturing** | 0.11.1 | Renames vanilla sand to "soil" and adds a golden Sand (→ Glass on the Smelter); Mod Tools (Matter Gun, vacuum tank delete buttons, Omni Vacuum); the **Filter Mk.3** upgrade (ON: every Mk.2 Filter moves at Mk.2 belt speed). |
+| **lavaboiloff** | 0.1.1 | Lava has a 1-in-N chance to burn itself out each time it boils water into steam. |
+| **quickstart** | 1.0.1 | **F10** quick reload: reboots the game straight back into the current save (prefers the F5 quicksave). |
 
 ### Sandbox Loop
 
@@ -28,24 +28,59 @@ an export on it.
 
 ### Screensaver
 
-It borrows one grain from a Source and marks it as its own element — a clone that copies
-the real material's whole definition, a shade brighter. The game's own reaction tables are
-taught the clones' reactions, so the grain wets, burns and gets processed exactly like its
-neighbours while staying identifiable: soil → wet soil → residue, copper → liquid copper.
-A tracker panel shows what it is doing, and a flight recorder saves a JSON log of every
-journey (and every loss, with the reason) to Downloads.
+A Source emits one grain as the mod's own copy of that material — every material gets a
+copy at launch that carries its whole definition, a shade brighter. The copies are taught
+every contact, machine, kinetic-press and planter rule the real material has, and burn
+like it, so the game itself carries the grain through the chain (soil → wet soil →
+residue → burnt residue → seed …) while it stays identifiable. It never becomes gold. The
+few hard-wired steps hand the grain back and pick up what comes out. A tracker panel shows
+what it is doing, and a flight recorder saves a JSON log of every journey (and every loss,
+with the reason) to Downloads.
+
+### Manufacturing — source of truth
+
+Edit `mods/manufacturing/main.real.js` / `worker.real.js` by hand. `main.js` / `worker.js`
+are hot-load stubs that embed a verbatim **baked copy** of the `.real` files; every edit to
+a `.real` file must be mirrored into the baked copy. Do **not** regenerate the mod with
+`compiler.js` (see below).
 
 ## The rest
 
 - `tools/resource-history/` — the graph page for Sandbox Loop history exports.
-- `studio.html`, `compiler.js`, `graph.json` — Material Studio: a graph of Sandustry's
-  materials and the machines between them, which compiles into a mod.
-- `exports-*/` — past compiled builds from the studio.
+- `studio.html`, `graph.json` — Material Studio: a graph of Sandustry's materials and the
+  machines between them. Still useful for browsing the game's recipe graph.
+- `compiler.js`, `compiler-cfg.json`, `tools-bolton.js`, `tech-glass-bolton.js` — the
+  studio's mod compiler. **RETIRED — DANGER.** Manufacturing has grown hand-written code
+  since the last compile (HeavyStone, the filter boost / Filter Mk.3, red-block fixes,
+  probes). A recompile from `graph.json` would drop all of that, **reorder element
+  registration (changing element ids and breaking saves)**, and roll the version back to
+  the 0.8.1 in `compiler-cfg.json`. It refuses to write into `mods/manufacturing` without
+  `--force`. Bolt-on paths in the config are relative to the config file. Its
+  `cfg.hotload` is a `file:///` URL of one PC's installed mod folder
+  (`C:/Users/Brand/...`) — PC-specific; change it before compiling anything else.
+- `exports-*/` — past compiled builds from the studio, kept for history. Note:
+  **`exports-manufacturing-current/` is actually v0.8.1**, not current (the name is kept
+  because other notes point at it). The hot-load URLs baked into these builds are
+  `C:/Users/Brand/...` paths from the desktop PC.
 - `world-snapshots/` — saves of the **Loamcrest** world (`28lnrdm8fhv`). Copy the `.save`
   files into `%APPDATA%\sandustry\saves\`.
 - `.handoff/` — notes, checksums and test harnesses for picking this work up in a new chat.
+  Start with `.handoff/handoff.md`.
 
-## Branches
+The retired Workshop mod lives in `.handoff/workshop/` and in git history (the early root
+`workshop/` copy and its `.custommap` were removed on 2026-09-23; recover with
+`git checkout c91f789 -- workshop/`).
 
-`master` is the live line of work. `snapshot/loamcrest-2026-09-20` (tag
+## Testing
+
+`node .handoff/sim-<name>.js` for each harness (see `.handoff/handoff.md`). Each exits
+non-zero on a failed check.
+
+## Branches and pushing
+
+`main` is the live line of work. `snapshot/loamcrest-2026-09-20` (tag
 `loamcrest-2026-09-20`) is a frozen copy of the map and the mods as they were that day.
+
+The repo is `rockon4211/rockons-sandustry-mods` on GitHub. On the desktop PC the clone is
+`C:\Users\Brand\dev\rockons-sandustry-mods` and git is already authenticated (Git
+Credential Manager), so pushing from it is just `git push`.

@@ -2,7 +2,7 @@
 // The tracer arrives as wetSand (the generic tracer: no per-material copies in this mock), is
 // consumed, and must pick up the RESIDUE — never the gold (0.18 rule) — and keep it without
 // hopping. Before 0.18 it picked up and kept the gold.
-const fs = require("fs"); const src = fs.readFileSync("../mods/screensaver/main.js", "utf8");
+const fs = require("fs"), path = require("path"); const src = fs.readFileSync(path.join(__dirname, "..", "mods", "screensaver", "main.js"), "utf8");
 const T = { sand: 1, wetSand: 2, gold: 3, residue: 4, water: 5 };
 const NAME = { 1: "soil", 2: "Wet Soil", 3: "Gold", 4: "Residue", 5: "Water" };
 const ID = { 1: "sand", 2: "wetSand", 3: "gold", 4: "residue", 5: "water" };

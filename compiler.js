@@ -1,4 +1,29 @@
 #!/usr/bin/env node
+// ============================================================================
+// RETIRED -- DANGER. Do not recompile Manufacturing with this.
+//
+// Manufacturing's source of truth is the HAND-MAINTAINED
+//   mods/manufacturing/main.real.js and mods/manufacturing/worker.real.js
+// (main.js / worker.js are hot-load stubs that embed a verbatim baked copy of
+// the .real files; edit the .real file and mirror the change into the baked
+// copy). Since v0.8.1 the mod has grown hand-written code this compiler knows
+// nothing about (HeavyStone, the filter boost / Filter Mk.3, the red-block
+// fixes, the probes). Recompiling from graph.json would:
+//   - DROP all of that hand-written code, and
+//   - REORDER element registration, which changes element type ids and
+//     breaks existing saves.
+// compiler-cfg.json is also frozen at version 0.8.1, so a recompile would roll
+// the mod back. The compiler is kept for history and for brand-new mods only.
+// It refuses to write into mods/manufacturing unless --force is given.
+// ============================================================================
+//
+// Usage: node compiler.js <graph.json> <outDir> <compiler-cfg.json> [--force]
+//   Bolt-on paths in the config ("append", "appendWorker") are resolved
+//   relative to the config file's own folder.
+//   cfg.hotload is a file:/// URL of the INSTALLED mod folder on one PC
+//   (e.g. file:///C:/Users/<you>/AppData/Roaming/sandustry/mods/manufacturing/)
+//   and is baked into the stubs -- it is PC-specific; change it per machine.
+//
 // Material Studio -> Sandustry mod compiler (Step 3).
 //
 // Input:  a studio graph JSON ({mats, procs, over, dis}) plus a small config.
@@ -326,7 +351,7 @@ function compile(graph, cfg) {
   // hand-written bolt-ons appended verbatim to the generated entry
   for (const p of (cfg.append || [])) {
     L.push("");
-    L.push(fs.readFileSync(p, "utf8"));
+    L.push(fs.readFileSync(path.resolve(cfg._baseDir || process.cwd(), p), "utf8"));
     report.ok.push(`bolt-on appended: ${path.basename(p)}`);
   }
   const files = { "modinfo.json": JSON.stringify(modinfo, null, "\t") + "\n", "main.js": L.join("\n") + "\n" };
@@ -511,9 +536,29 @@ register();
 }
 
 // ---- CLI ----
-const [graphPath, outDir, cfgPath] = process.argv.slice(2);
-const graph = JSON.parse(fs.readFileSync(graphPath, "utf8"));
-const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+const argv = process.argv.slice(2);
+const force = argv.includes("--force");
+const [graphPath, outDir, cfgPath] = argv.filter(a => a !== "--force");
+const usage = "usage: node compiler.js <graph.json> <outDir> <compiler-cfg.json> [--force]\n" +
+  "RETIRED: see the header of compiler.js before using this.";
+if (!graphPath || !outDir || !cfgPath) { console.error(usage); process.exit(2); }
+function readJson(p, what) {
+  try { return JSON.parse(fs.readFileSync(p, "utf8")); }
+  catch (e) { console.error(`cannot read ${what} "${p}": ${e.message}\n${usage}`); process.exit(2); }
+}
+const graph = readJson(graphPath, "graph");
+const cfg = readJson(cfgPath, "config");
+cfg._baseDir = path.dirname(path.resolve(cfgPath));
+const protectedDir = path.resolve(__dirname, "mods", "manufacturing");
+if (path.resolve(outDir) === protectedDir && !force) {
+  console.error("REFUSED: mods/manufacturing is hand-maintained (main.real.js is the source of truth).\n" +
+    "A recompile would drop hand-written code and reorder element ids (breaks saves). Pass --force only if you mean it.");
+  process.exit(3);
+}
+for (const p of [...(cfg.append || []), ...(cfg.appendWorker || [])]) {
+  const abs = path.resolve(cfg._baseDir, p);
+  if (!fs.existsSync(abs)) { console.error(`bolt-on not found: ${p} (resolved to ${abs})`); process.exit(2); }
+}
 const { files, report } = compile(graph, cfg);
 fs.mkdirSync(outDir, { recursive: true });
 // clear generated files a previous compile may have left behind
