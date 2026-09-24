@@ -7,6 +7,7 @@ const api = sandkit.api;
 const React = sandkit.react;
 const h = React.createElement;
 const MOD_ID = "brandon.sandboxloop";
+const BUILD = "0.4.1";
 
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
@@ -121,6 +122,11 @@ function clampRate(v) { v = +v; if (!isFinite(v) || v < 0) v = 0; if (v > RATE_M
 	const raw = safe(() => window.localStorage.getItem(PANEL_KEY));
 	const o = raw && safe(() => JSON.parse(raw));
 	if (o) { if (o.emit) emitCfg = o.emit; if (o.remove) removeCfg = o.remove; }
+	// A number-only entry was saved before 0.4.0. Numbers change between PCs, and the
+	// old default picked Manufacturing's golden "Sand" by name — so on the laptop the
+	// remembered number pointed at golden Sand and every unset Source emitted it.
+	// Throw such entries away; ensureDefaults then picks vanilla sand (soil) by id.
+	for (const c of [emitCfg, removeCfg]) if (c && !c.mat && c.type != null) c.type = null;
 	// stored on an older build (number only) or on another PC: the id wins
 	setTimeout(() => safe(ensureDefaults), 0);
 })();
@@ -145,7 +151,8 @@ function cfgFor(s, fallback) {
 		if (d && c.mat) { d.brandonMat = c.mat; if (typeof c.rate === "number") d.brandonRate = c.rate; }
 		return c;
 	}
-	return fixCfg(fallback);
+	const f = fixCfg(fallback);
+	return f ? Object.assign({}, f, { unset: true }) : f;   // nothing baked: follows the panel
 }
 function bake(s, cfg) {
 	const mat = cfg.mat || eidOfType(cfg.type), rate = cfg.rate;
@@ -153,6 +160,16 @@ function bake(s, cfg) {
 	if (!s.data) s.data = {};
 	s.data.brandonMat = mat; s.data.brandonRate = rate;
 	saveCfg();
+}
+// "set" on the Placed list: bake the panel's current Source (or Remover) setting into a
+// structure that is already on the map, so it never has to be re-placed
+function applyPanelTo(s, isSrc) {
+	const pc = isSrc ? emitCfg : removeCfg;
+	fixCfg(pc);
+	if (pc.type == null) return false;
+	bake(s, { mat: pc.mat || eidOfType(pc.type), type: pc.type, rate: pc.rate });
+	runtime.delete(isSrc ? ikey(s.x, s.y) : "r" + ikey(s.x, s.y));
+	return true;
 }
 
 // --- structure cache ---------------------------------------------------------
@@ -631,6 +648,42 @@ function Row(label, cfg, accent) {
 			style: { width: "52px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px 3px", fontVariantNumeric: "tabular-nums" } }),
 		h("span", { style: { fontSize: "10px", color: "#93a1b0" } }, "/s"));
 }
+// --- placed list: every Source / Remover on the map, what it does, and "set" --
+let placedOpen = true, placedMsg = "";
+(function loadPl() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.placedopen")) === "0") placedOpen = false; })();
+function playerCell() { const p = safe(() => sandkit.state.store.player); return p && typeof p.x === "number" ? { x: p.x / 4, y: p.y / 4 } : null; }
+function PlacedList() {
+	const rows = [];
+	for (const s of eachOf(SRC_ID)) rows.push({ s, src: true, c: cfgFor(s, { type: emitCfg.type, rate: emitCfg.rate }) });
+	for (const s of eachOf(SNK_ID)) rows.push({ s, src: false, c: cfgFor(s, { type: removeCfg.type, rate: removeCfg.rate }) });
+	const unset = rows.filter((r) => r.c && r.c.unset).length;
+	const me = playerCell();
+	let near = null, nd = Infinity;
+	if (me) for (const r of rows) { const d = Math.hypot(r.s.x - me.x, r.s.y - me.y); if (d < nd) { nd = d; near = r; } }
+	const head = h("div", { key: "ph", style: Object.assign({}, SUB_HEAD, { cursor: "pointer" }), onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); placedOpen = !placedOpen; safe(() => window.localStorage.setItem("brandon.sandboxloop.placedopen", placedOpen ? "1" : "0")); if (panelRepaint) panelRepaint((v) => v + 1); } },
+		h("span", null, (placedOpen ? "▾ " : "▸ ") + "Placed (" + rows.length + ")"),
+		unset ? h("span", { style: { fontSize: "9px", color: "#e0b060", fontWeight: 800 } }, unset + " not set") : h("span", { style: SUB_DIM }, "set = use the panel setting above"));
+	if (!placedOpen || !rows.length) return h("div", { key: "placed" }, head);
+	const list = rows.map((r) => {
+		const k = (r.src ? "s" : "r") + r.s.x + "," + r.s.y;
+		const pc = r.src ? emitCfg : removeCfg;
+		const same = !r.c.unset && r.c.type === pc.type && r.c.rate === pc.rate;
+		return h("div", { key: k, style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px", margin: "2px 0" } },
+			h("span", { style: { width: "50px", color: r.src ? "#8fe0aa" : "#e79b9b", fontWeight: 700 } }, r.src ? "Source" : "Remover"),
+			swatch(r.c.type),
+			h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 } },
+				nameOf(r.c.type) + " " + fmt1(r.c.rate) + "/s",
+				r.c.unset ? h("span", { title: "Nothing is baked into this one, so it follows whatever the panel shows. Press set.", style: { color: "#e0b060", fontWeight: 800 } }, " · not set") : null),
+			h("span", { style: { color: "#7f8b98", fontVariantNumeric: "tabular-nums", fontSize: "9.5px" } }, r.s.x + "," + r.s.y + (r === near ? " ◀ you" : "")),
+			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation();
+					placedMsg = applyPanelTo(r.s, r.src) ? ((r.src ? "Source " : "Remover ") + r.s.x + "," + r.s.y + " → " + nameOf(pc.type) + " " + fmt1(pc.rate) + "/s") : "pick a material on the panel first";
+					if (panelRepaint) panelRepaint((v) => v + 1); },
+				title: "Bake the panel's " + (r.src ? "Source" : "Remover") + " setting (" + nameOf(pc.type) + ", " + fmt1(pc.rate) + "/s) into this one.",
+				style: Object.assign({}, SMBTN, { padding: "1px 6px" }, same ? { opacity: 0.45 } : null) }, "set"));
+	});
+	return h("div", { key: "placed" }, head, list,
+		placedMsg ? h("div", { style: { fontSize: "9.5px", color: "#8fb98f", fontWeight: 700 } }, placedMsg) : null);
+}
 // --- balance tracker (per-material surplus / deficit) -----------------------
 let trackerOpen = true;
 (function loadTk() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.tkopen")) === "0") trackerOpen = false; })();
@@ -854,7 +907,7 @@ const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a
 function TitleBar() {
 	return h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "4px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
 		h("span", { style: { color: "#5b6470", fontSize: "13px", lineHeight: 1 } }, "⠿"),
-		h("span", null, "Sandbox Loop" + (regErr ? "  (err: " + regErr.slice(0, 20) + ")" : "")),
+		h("span", null, "Sandbox Loop " + BUILD + (regErr ? "  (err: " + regErr.slice(0, 20) + ")" : "")),
 		h("span", { style: { flex: "1 1 auto" } }),
 		simPaused ? h("span", { title: "Game is paused: sources, removers, rates, the map scan, the running totals and the history log are all frozen until it resumes.", style: { background: "#3a2f12", color: "#e0b060", fontSize: "9px", fontWeight: 800, letterSpacing: ".06em", padding: "2px 8px", borderRadius: "10px", whiteSpace: "nowrap", flexShrink: 0 } }, "⏸ PAUSED") : null,
 		h("button", { title: panelMin ? "expand" : "minimize", onMouseDown: (e) => { if (e.stopPropagation) e.stopPropagation(); }, onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setMin(!panelMin); }, style: MINBTN }, panelMin ? "▢" : "–"));
@@ -879,7 +932,8 @@ function Panel() {
 		TitleBar(),
 		Row("Source", emitCfg, "#8fe0aa"),
 		Row("Remover", removeCfg, "#e79b9b"),
-		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now."),
+		h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now. To change one already placed, press set on it below."),
+		PlacedList(),
 		ThermalRow(),
 		ScreensaverRow(),
 		Tracker(),
