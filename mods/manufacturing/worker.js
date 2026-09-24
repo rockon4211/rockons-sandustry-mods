@@ -104,6 +104,43 @@ function register() {
 }
 register();
 
+
+// --------------------------------------------- Mk2 filter speed (worker) --
+// The belt pass reads each belt type's cells-per-pass from this worker's own
+// transport config on every pass. Mk.2 Filters run in the regular belt pass
+// (every 332 ms); the Mk.2 Conveyor Belt runs twice as often. With the upgrade
+// ON, Mk.2 Filters move 2 cells per pass instead of 1 - the same speed as the
+// Mk.2 belt. The config object is frozen, so a patched copy is swapped in, and
+// the original is put back when it's switched OFF.
+(function filterBoost() {
+	let buf = null, original = null, applied = -1;
+	const TYPES = ["filterLeftMk2", "filterRightMk2"];
+	function sk() { return sandkit.state && sandkit.state.sandkit; }
+	function apply(on) {
+		const k = sk();
+		if (!k || !k.jsonConfigs || !k.jsonConfigs.transport) return false;
+		if (!original) original = k.jsonConfigs;
+		if (!on) { k.jsonConfigs = original; return true; }
+		const transport = JSON.parse(JSON.stringify(original.transport));
+		const structs = transport && transport.conveyors && transport.conveyors.structures;
+		if (!structs) return false;
+		for (const id of TYPES) if (structs[id]) structs[id].maxDisplacementCellsPerPass = 2 * (original.transport.conveyors.structures[id].maxDisplacementCellsPerPass || 1);
+		k.jsonConfigs = Object.assign({}, original, { transport: transport });
+		return true;
+	}
+	function tick() {
+		if (!buf) buf = safe(() => api.shared.buffers.require("filterBoost", { type: "uint32", length: 2 })) || null;
+		if (buf) {
+			const on = buf[0] === 1 ? 1 : 0;
+			if (on !== applied && apply(on === 1)) {
+				applied = on; buf[1] = on + 1;
+				console.log(`[${MOD_ID}] worker: Mk.2 Filter belt speed ${on ? "ON (2 cells per pass)" : "OFF"}`);
+			}
+		}
+		if (typeof setTimeout === "function") setTimeout(tick, 400);
+	}
+	tick();
+})();
 }
 (function () {
 	var src = null;

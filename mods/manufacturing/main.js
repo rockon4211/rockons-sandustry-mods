@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.9.5 running"));
+		safe(() => api.ui.toast("Manufacturing v0.10.0 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -715,6 +715,66 @@ function armGlassRecipe() {
 armGlassRecipe();
 setInterval(armGlassRecipe, 1500);
 
+// =========================================================================
+// MK2 FILTER SPEED - an On/Off upgrade in the Upgrades pane
+//
+// A "Manufacturing" tab appears in the Upgrades pane once MANUFACTURING is
+// researched. It holds one upgrade on the Mk.2 Filter: bought once, it becomes
+// an On/Off switch (the game's own one-off upgrade toggle). ON makes every Mk.2
+// Filter move material at Mk.2 BELT speed: 2 cells per belt pass instead of 1,
+// which is the same 6 cells/s the Mk.2 belt manages with 1 cell twice as often.
+// Everything else about the filter (settings, allow/block, pass-through) is the
+// game's own. The speed lives in the simulation worker's transport config, so
+// the switch is handed to worker.js through a shared buffer.
+// =========================================================================
+const FILTER_BOOST_CATEGORY = "brandonManufacturingUpgrades";
+const FILTER_BOOST_ITEM = "filterRightMk2";      // the card is the Mk.2 Filter itself
+const FILTER_BOOST_UPGRADE = "brandonFilterBeltSpeed";
+const FILTER_BOOST_COST = 500;
+let filterBoost = null;   // uint32[2]: [0] = on (1) / off (0), [1] = the worker's last applied state + 1
+try { filterBoost = api.shared.buffers.create("filterBoost", { type: "uint32", length: 2 }); }
+catch (e) { console.error(`[${MOD_ID}] filter boost buffer failed:`, e); }
+
+safe(() => api.i18n.register("en", {
+	[`upgrades|${FILTER_BOOST_CATEGORY}|name`]: "Manufacturing",
+	[`upgrades|${FILTER_BOOST_UPGRADE}|name`]: "Belt-Speed Filtering",
+	[`upgrades|${FILTER_BOOST_UPGRADE}|description`]:
+		"Mk.2 Filters move material as fast as a Mk.2 Conveyor Belt (twice their normal speed). Sorting works exactly as before. Switch it on or off at any time once bought.",
+}));
+function registerFilterBoost() {
+	safe(() => api.upgrades.registerCategory({
+		id: FILTER_BOOST_CATEGORY, name: "Manufacturing", nameKey: `upgrades|${FILTER_BOOST_CATEGORY}|name`,
+		requirement: { techId: TECH_MANU },
+	}));
+	safe(() => api.upgrades.register({
+		itemId: FILTER_BOOST_ITEM, itemName: "Filter Mk.2", itemNameKey: "structures|filterMk2|name",
+		categoryId: FILTER_BOOST_CATEGORY,
+		requirement: { building: "filterRightMk2" },   // shown once you can build Mk.2 Filters
+		upgrade: {
+			id: FILTER_BOOST_UPGRADE,
+			name: "Belt-Speed Filtering", nameKey: `upgrades|${FILTER_BOOST_UPGRADE}|name`,
+			description: "Mk.2 Filters move material at Mk.2 belt speed.", descriptionKey: `upgrades|${FILTER_BOOST_UPGRADE}|description`,
+			maxLevel: 1, costs: [FILTER_BOOST_COST], oneOff: true,
+		},
+	}));
+}
+registerFilterBoost();
+// a save loaded after start-up may not carry the upgrade's slot yet; registering again only fills it in
+safe(() => api.events.on("game:ready", () => safe(registerFilterBoost)));
+function filterBoostOn() {
+	return isEnabled() && (safe(() => api.upgrades.getLevelById(FILTER_BOOST_ITEM, FILTER_BOOST_UPGRADE)) || 0) >= 1;
+}
+let filterBoostLast = null;
+setInterval(() => {
+	if (!filterBoost) return;
+	const on = filterBoostOn();
+	filterBoost[0] = on ? 1 : 0;
+	if (on !== filterBoostLast) {
+		if (filterBoostLast !== null) console.log(`[${MOD_ID}] Mk.2 Filter belt speed ${on ? "ON" : "OFF"}`);
+		filterBoostLast = on;
+	}
+}, 400);
+
 
 // ------------------------------------------------- Mod Tools: red-block fix --
 // Stuck "red blocks" are orphaned Block terrain (cell id 15): the engine stamps
@@ -833,7 +893,6 @@ if (ReactM && hM) {
 	}
 	safe(() => api.ui.inject("brandon-cell-probe", CellProbe));
 }
-
 }
 (function () {
 	var src = null;
