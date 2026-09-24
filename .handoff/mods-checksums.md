@@ -1,6 +1,6 @@
-# Mod file checksums — main, 5f9f5d5, 2026-09-24
+# Mod file checksums — main, 764e1da, 2026-09-24
 
-Versions: sandboxloop 0.4.5, screensaver 0.18.1, manufacturing 0.14.0, lavaboiloff 0.1.1, quickstart 1.0.1.
+Versions: sandboxloop 0.4.5, screensaver 0.18.1, manufacturing 0.15.0, lavaboiloff 0.1.1, quickstart 1.0.1.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
 text files out with CRLF, so hash those after converting, or compare with `git hash-object`.
 
@@ -24,11 +24,11 @@ b77d7dbf8f5d674034316ff9af034f1da170dad21f4bcdf12c63540916c1c653  lavaboiloff/ma
 1e4b15b61a5006819fc8d69eeca740b230348493f97440d081812ed1c29e9fcd  lavaboiloff/worker.js
 ff36b12798a7aa8d6983f2c165326ddb38391d218443498bc07cd9ab31c935cc  manufacturing/filter_left_mk3.png
 9bf29fe79ee1c8870df691face431ddd948c2af078fa7524a32a7535c52c5b3e  manufacturing/filter_right_mk3.png
-51e3b4769d3e79a7d8350d7dbf9e07ac177d90556b9f15e254226034e384a1f5  manufacturing/main.js
-1f639ec4e3b3d435a3086f9707f4d188e364cb8586455225204b30ea902ac4f4  manufacturing/main.real.js
+b20bcb818ca97e64dc52523024f29511a097f7bdad20a7510a363aa788d880c8  manufacturing/main.js
+470f63d7f6c74cb6d1d1ad224ccbd7b1071b3351365b3372b8eaa12c8c780a07  manufacturing/main.real.js
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun.png
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun_icon.png
-73371439835c77121665cf0c7f5c8b76da1130c47de2a78a881e4a3ef5d6026f  manufacturing/modinfo.json
+6a610b914ed7a7f3592661ee311f03d70b48cd35d6e72b0a7e86207b3ffa56cd  manufacturing/modinfo.json
 bb6b7ac569af46b8b32072d79df284210d4f8b70e5a84ffa0407fac9c1475189  manufacturing/preview.png
 8018d0144f77848af41857926ed3d93d02d0db2a5482c9ef37b590839876c1f6  manufacturing/worker.js
 b5d6484016e77e14a2650302ea7da93e24213a94e7b87e0fef8facc00965310a  manufacturing/worker.real.js
