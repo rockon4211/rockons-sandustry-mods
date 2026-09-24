@@ -210,7 +210,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.15.1 running"));
+		safe(() => api.ui.toast("Manufacturing v0.15.2 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -264,6 +264,9 @@ function buildGunPalette() {
 			};
 		})
 		.filter((p) => p.matterType !== (safe(() => sandkit.enums.MatterType.Particle)))
+		// never the Screensaver's tracer copies: they exist only for the Sandbox Loop to emit.
+		// The game's own "keep out of pickers" flag, plus their ids in case the flag was dropped
+		.filter((p) => !(safe(() => api.elements.getDefinitionByType(p.type).showInFilterPicker) === false || /^brandonTrc_|^brandonTracer/.test(safe(() => api.elements.getIdByType(p.type)) || "")))
 		.sort((a, b) => a.name.localeCompare(b.name));
 	if (gunType === null && gunPalette.length > 0) gunType = gunPalette[0].type;
 }

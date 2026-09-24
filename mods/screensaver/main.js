@@ -131,7 +131,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.18.1";
+const BUILD = "0.18.2";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -188,7 +188,8 @@ const tracerTypes = new Set();    // every tracer element type
 	const MT = safe(() => sandkit.enums.MatterType) || {};
 	for (const [id, matter, density] of TRACER_KINDS) {
 		const mt = MT[matter]; if (typeof mt !== "number") continue;
-		const r = safe(() => api.elements.register({ id: id, name: "Tracer", matterType: mt, density: density, metaColor: 0xffffff, colors: { variants: [[255, 255, 255, 255]] }, isGrabbable: true, isTransportable: true }));
+		// showInFilterPicker: false is the game's own "keep it out of pickers" flag - tracers exist only for the Sandbox Loop to emit
+		const r = safe(() => api.elements.register({ id: id, name: "Tracer", matterType: mt, density: density, metaColor: 0xffffff, colors: { variants: [[255, 255, 255, 255]] }, isGrabbable: true, isTransportable: true, showInFilterPicker: false }));
 		if (r && typeof r.elementType === "number") { tracerFor.set(mt, r.elementType); tracerTypes.add(r.elementType); }
 	}
 	dbg.tracers = tracerTypes.size;
@@ -257,9 +258,10 @@ function cloneDefFor(realType, id, cloneIds) {
 		if (top + 1 > MAX_TYPE) { cloneSkipped++; continue; }
 		const def = cloneDefFor(it.rt, it.id, cloneIds);
 		if (!def || typeof def.matterType !== "number") continue;
-		let r = safe(() => api.elements.register(Object.assign({ id: CLONE_PREFIX + it.id }, def)));
+		// never in a picker (the game's own flag; it overrides whatever the real material says)
+		let r = safe(() => api.elements.register(Object.assign({ id: CLONE_PREFIX + it.id }, def, { showInFilterPicker: false })));
 		if (!(r && typeof r.elementType === "number")) {   // fall back to the basics, then patch the rest in
-			r = safe(() => api.elements.register({ id: CLONE_PREFIX + it.id, name: def.name, matterType: def.matterType, density: def.density, metaColor: def.metaColor, colors: def.colors, isGrabbable: true, isTransportable: true }));
+			r = safe(() => api.elements.register({ id: CLONE_PREFIX + it.id, name: def.name, matterType: def.matterType, density: def.density, metaColor: def.metaColor, colors: def.colors, isGrabbable: true, isTransportable: true, showInFilterPicker: false }));
 		}
 		if (r && typeof r.elementType === "number") {
 			cloneOf.set(it.rt, r.elementType); realOf.set(r.elementType, it.rt); cloneDefs.set(r.elementType, def); tracerTypes.add(r.elementType);
@@ -924,6 +926,40 @@ function sweepTracers() {
 	waitEmit = null;
 	if (trc) discard();
 }
+// --- whole-map sweep: remove every tracer grain, wherever it is ----------------------
+// A tracer grain should exist only while a run follows it; a crash, a reload or a save
+// taken mid-journey can leave some behind, anywhere. On every world load and after each
+// run the whole map is read - a slice per tick, so no frame stalls (~30s for 14.7M
+// cells) - and every cell holding a tracer type is emptied. Aborted if a run starts.
+let mapSweep = null;   // { W, total, cursor, found, why }
+const MAP_SWEEP_BUDGET = 25000;   // cells per 50ms tick
+function startMapSweep(why) {
+	if (!setting("enabled", true) || !inWorld() || active || !tracerTypes.size) return false;
+	const d = safe(() => api.world.getDimensions()) || {};
+	const W = d.widthCells | 0, H = d.heightCells | 0;
+	if (W <= 0 || H <= 0) return false;
+	mapSweep = { W, total: W * H, cursor: 0, found: 0, why };
+	return true;
+}
+setInterval(() => {
+	const s = mapSweep; if (!s) return;
+	if (!inWorld() || active) { mapSweep = null; return; }
+	const el = api.elements; let n = 0;
+	try {   // tight loop, one try/catch for the slice (a wrapper per cell was most of the cost)
+		while (s.cursor < s.total && n < MAP_SWEEP_BUDGET) {
+			const cx = s.cursor % s.W, cy = (s.cursor / s.W) | 0;
+			const t = el.getResolvedTypeAtCell(cx, cy);
+			if (t !== null && t !== undefined && tracerTypes.has(t)) { el.removeAtCellWhenIdle(cx, cy); s.found++; }
+			s.cursor++; n++;
+		}
+	} catch (e) { s.cursor++; }
+	if (s.cursor >= s.total) {
+		mapSweep = null;
+		const what = s.found + " stray tracer grain" + (s.found === 1 ? "" : "s");
+		if (s.found) { logEvt("map-sweep", { removed: s.found, why: s.why }); track("removed " + what + " from the map (" + s.why + ")", true); safe(() => api.ui.toast("Screensaver: removed " + what + " from the map")); }
+		console.log("[" + MOD_ID + "] map sweep (" + s.why + "): " + what + " removed");
+	}
+}, 50);
 
 // --- belt index ----------------------------------------------------------------
 // Probing cells under a Source doesn't work — a Source may drop into a pit, a
@@ -1190,6 +1226,7 @@ function stop(reason) {
 	safe(() => window.localStorage.setItem(ACTIVE_KEY, "0"));
 	lastInput = Date.now();   // don't restart immediately
 	console.log("[" + MOD_ID + "] stopped (" + reason + ") after " + Math.round((Date.now() - startedAt) / 1000) + "s");
+	setTimeout(() => startMapSweep("after the run"), 3000);   // once the run's own clean-up sweeps (up to 2.5s) are done
 	if (repaint) repaint((v) => v + 1);
 }
 // the browser drops the lock whenever the page is hidden (and fires "release"); a request that
@@ -1234,6 +1271,7 @@ safe(() => { window.__brandonScreensaver = {
 	isActive: () => active,
 	exportLog: () => exportLog(),
 	logSize: () => tlog.length,
+	sweepMap: () => startMapSweep("hook"),   // remove every tracer grain on the map (false = already running / not in a world)
 	stop: () => stop("hook"),
 	// returns a short status string so the Sandbox Loop button can say what happened
 	start: () => {
@@ -1341,7 +1379,7 @@ if (h) { safe(() => api.ui.inject("brandon-screensaver-pill", Pill)); setInterva
 
 // Teach the copies after the game's content (and other mods) have registered their recipes;
 // look again for a while, since some mods add recipes late. Only new or changed rules are sent.
-safe(() => api.events.on("game:ready", () => { indexBelts(true); safe(armCloneReactions); }));
+safe(() => api.events.on("game:ready", () => { indexBelts(true); safe(armCloneReactions); setTimeout(() => startMapSweep("world load"), 4000); }));
 for (const ms of [3000, 9000, 20000, 45000]) setTimeout(() => safe(() => { if (inWorld()) armCloneReactions(); }), ms);
 setInterval(() => safe(() => { if (inWorld() && Date.now() - lastArmAt > 60000) armCloneReactions(); }), 15000);
 setTimeout(() => safe(() => indexBelts(true)), 8000);

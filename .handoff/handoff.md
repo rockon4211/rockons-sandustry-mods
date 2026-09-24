@@ -48,9 +48,17 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
 - **Sandbox Loop** `brandon.sandboxloop` v0.4.5 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.18.1 — plays the map when idle and follows one
-  grain through the factory. This is where most of the work went.
-- **Manufacturing** `brandon.manufacturing` v0.15.1 — soil/Sand rename + Glass, Mod Tools,
+- **Screensaver** `brandon.screensaver` v0.18.2 — plays the map when idle and follows one
+  grain through the factory. This is where most of the work went. 0.18.2: every tracer
+  element (the 5 generic tracers and every clone) is registered with the game's own
+  `showInFilterPicker: false`, so no picker lists them - they exist only for the Sandbox
+  Loop to emit (Manufacturing's Matter Gun and the Sandbox Loop palette also drop them by
+  id, `brandonTrc_*` / `brandonTracer*`, in case the flag is lost). And a whole-map sweep
+  (`startMapSweep`, 25k cells per 50ms tick, ~30s) removes every tracer grain wherever it
+  is: 4s after each world load, 3s after each run, or via `__brandonScreensaver.sweepMap()`;
+  it aborts if a run starts. Reason: the 2026-09-24 save's discoveries held 3 tracer types
+  (65, 109, 95) - tracer grains had been left on the map.
+- **Manufacturing** `brandon.manufacturing` v0.15.2 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
