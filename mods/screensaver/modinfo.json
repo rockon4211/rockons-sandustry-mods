@@ -2,11 +2,11 @@
 	"manifestVersion": 1,
 	"id": "brandon.screensaver",
 	"name": "Screensaver",
-	"version": "0.17.2",
+	"version": "0.18.0",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",
-	"description": "Turns the running world into a screensaver. After N minutes without input the HUD and cursor hide and the camera follows a single grain through your factory: the mod borrows one real grain, marks it as a unique tracer element (same physics, a shade brighter), and rides it along the belts; when it reaches a machine the grain is handed back so the machine processes it normally, and the camera picks up whatever comes out — following the crafting chain from material to material. The frame rate is capped (and the simulation optionally slowed) to save power, and the screen is kept awake. Press E to exit (a small tip in the top-right says so); other keys and clicks are ignored while it runs. Left alone at the main menu it presses Continue and starts by itself, so a Windows 'on idle' task can launch the game into it.",
+	"description": "Turns the running world into a screensaver. After N minutes without input the HUD and cursor hide and the camera follows a single grain through your factory: a Source emits one grain as the mod's copy of that material (every material gets a copy at launch, with all its properties, a shade brighter), and the copy is taught every reaction, machine recipe and burn the real material has, so the game itself carries it through the whole chain — soil, wet soil, residue, burnt residue, seed… It never becomes gold (gold is still made as normal), and where a step makes several things it follows the main one. The few steps the game hard-wires (a planter growing a flower, steam turning to cloud) hand the grain back and pick up what comes out. The frame rate is capped (and the simulation optionally slowed) to save power, and the screen is kept awake. Press E to exit (a small tip in the top-right says so); other keys and clicks are ignored while it runs. Left alone at the main menu it presses Continue and starts by itself, so a Windows 'on idle' task can launch the game into it.",
 	"dependencies": [],
 	"loadOrder": 0,
 	"configSchema": {
@@ -32,13 +32,13 @@
 			"type": "boolean",
 			"default": true,
 			"labelKey": "Follow a real grain (tracer)",
-			"descriptionKey": "Borrow one grain from a Sandbox Loop Source and follow it exactly: it is marked as the mod's own element so it can never be confused with its neighbours, and handed back to its real material whenever it reaches a machine so the factory behaves normally. Turn off to fall back to following the belt route instead."
+			"descriptionKey": "Borrow one grain from a Sandbox Loop Source and follow it exactly: it is marked as the mod's own element so it can never be confused with its neighbours, and every reaction and machine recipe of the real material is copied to it, so it changes exactly as the real grain would. Turn off to fall back to following the belt route instead."
 		},
 		"handBackSeconds": {
 			"type": "number",
 			"default": 2,
 			"labelKey": "Consider it settled after (seconds still)",
-			"descriptionKey": "How long the grain must sit still before the mod treats it as settled. It is only handed back to its real material if there's a reason — it's on a machine (which would never consume our element) or touching something it should react with. Default 2."
+			"descriptionKey": "How long the grain must sit still before the mod treats it as settled. It is only handed back to its real material if there's a reason — it's on a machine it has no copied recipe for, or touching something it should react with that its copy doesn't react with. Default 2."
 		},
 		"pileSeconds": {
 			"type": "number",

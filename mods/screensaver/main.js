@@ -126,7 +126,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.17.2";
+const BUILD = "0.18.0";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -136,23 +136,40 @@ let dbg = { phase: "idle", note: "-", tracers: 0, belts: 0, cells: 0, near: -1, 
 
 // --- the tracer ----------------------------------------------------------------
 // We can't tell two grains of soil apart — but we CAN make one of them unique.
-// The mod registers its own element (one per matter type, so physics match) and
-// POSSESSES a real grain: that cell becomes the tracer, keeping the material's
-// density and a slightly brighter version of its colour, so it rides belts,
-// falls and flows exactly like the grain it replaced. Nothing is added to the
-// factory — one grain is borrowed and handed back.
+// Since 0.18 the mod registers a copy ("clone") of EVERY material in the game when
+// it loads, each carrying all of its material's properties, and teaches each copy
+// every reaction and recipe the game has for the real material (touch reactions,
+// every machine, burning) with the outputs pointed at the matching copies. The
+// Source emits one grain as the copy, and the game itself then carries it through
+// the whole chain: soil → wet soil → residue → burnt residue → seed …
 //
-// A machine won't accept a foreign element, so when the tracer stops moving we
-// hand the grain back (it becomes its real material again and the machine eats
-// it normally), watch the spot, and possess whatever comes out: a material the
-// crafting chain says it should become, or failing that whatever new material
-// appears. That's how one journey runs soil → wet soil → gold → liquid gold.
-// where a step makes gold AND something else, follow the something else — gold is
-// just banked, the other material keeps the chain going
-const CHAIN = {"wetSand":["residue"],"sand":["wetSand"],"residue":["burntResidue"],"gold":["liquidGold"],"copper":["liquidCopper"],"water":["steam","freezingIce"],"steam":["water"],"sunsand":["wetSand"],"seed":["wetSeed"],"wetSeed":["seedling"],"seedling":["petalium"],"petalium":["dryPetalium"],"dryPetalium":["florin"],"florin":["florinol"],"lava":["basalt"],"fire":["flame"],"moonhop":["prismite"],"prismite":["prismaline"],"voidSeeds":["growingVoidSeed"],"burntResidue":["seed"],"florinol":["aurixite"],"aurixite":["auralite"]};
+// Two rules decide what the grain becomes when a step has more than one product:
+//   · it never becomes gold — gold is produced as normal, the grain stays the
+//     other product;
+//   · otherwise it follows the MAIN product (the one the game makes most of).
+// Anything the game does in hard-wired code that a copy can't take part in (the
+// planter growing a flower, steam turning to cloud…) still hands the grain back
+// and picks up what comes out — but only a material that step can really make.
+//
+// Element copies must exist before the world starts: the simulation workers only
+// learn the element list once, at load, so a copy made later would not exist for
+// them. That is why every material is copied up front rather than on demand.
 const TRACER_KINDS = [["brandonTracerPowder", "Powder", 1600], ["brandonTracerLiquid", "Liquid", 1000], ["brandonTracerGas", "Gas", 2], ["brandonTracerSolid", "Solid", 2000], ["brandonTracerSlushy", "Slushy", 1300]];
-const PASSIVE = /clearingFrame|launcher|frame|platform|ladder|support|scaffold|wall|pipe|chute|door|light|sign|button/i;
-const IN_CHAIN = new Set(Object.keys(CHAIN).concat(...Object.values(CHAIN)));
+// structures that only hold, carry or move material — never a reason to hand the grain back
+const PASSIVE = /clearingFrame|launcher|frame|platform|ladder|support|scaffold|wall|pipe|chute|door|light|sign|button|foundation|splitter|dropper|conveyor|belt|filter|soundBox|pump|liquidVent|quantumPortal/i;
+// the game's own structures report a NUMBER as their type; these are their names (build 0.5.6)
+const VANILLA_STRUCTS = [null, "conveyorLeft", "conveyorRight", "shakerLeft", "shakerRight", "launcherUp", "launcherLeft", "launcherRight", "splitterLeft", "splitterRight", "dropper", "foundation", "foundationAngledLeft", "foundationTriangleLeftDel", "foundationAngledRight", "foundationTriangleRightDel", "collector", "filterLeft", "filterRight", "slidingFoundation", "velocitySoaker", "grower", "soundBox", "pipe", "pump", "liquidVent", "light", "gloomEmitter"];
+// which recipe table a machine runs, by its structure name
+const FAMILY_OF = [[/shaker/i, "shaker"], [/velocitySoaker|kineticPress/i, "kineticPress"], [/grower|planter/i, "planterBox"], [/thermofroster|condenser/i, "condenser"], [/thermodryer|steamDryer/i, "steamDryer"], [/crystallizer|synthesizer/i, "synthesizer"], [/snowmaker/i, "snowmaker"], [/smelter/i, "smelter"]];
+function familyOf(sid) { if (!sid) return null; for (const [re, f] of FAMILY_OF) if (re.test(sid)) return f; return null; }
+// Steps the game does in hard-wired code (not in a table a copy can join). Used only
+// to know what to look for after handing the grain back. Gold is never followed.
+const EXTRA_STEPS = {"wetSeed":["seedling"],"seedling":["petalium"],"steam":["cloud","water"],"cloud":["water"],"water":["steam","freezingIce"],"lava":["basalt"],"moonhop":["prismite"],"prismite":["prismaline"],"voidSeeds":["growingVoidSeed"],"growingVoidSeed":["voidPetal"],"burntResidue":["seed"],"florin":["florinol"],"florinol":["aurixite"],"aurixite":["auralite"],"sunsand":["wetSand"]};
+// growth stages: never ride one (a copy can't grow) — look straight for what it grows into
+const NO_POSSESS = new Set(["seedling", "growingVoidSeed", "fire", "flame"]);
+// materials the game changes on a timer in hard-wired code; the grain is handed back when it
+// stops moving so the real material's timer can run
+const TIMED_IDS = new Set(["steam", "cloud"]);
 function isGasType(t) { const d = safe(() => api.elements.getDefinitionByType(t)); const G = safe(() => sandkit.enums.MatterType.Gas); return !!d && typeof G === "number" && d.matterType === G; }
 const tracerFor = new Map();      // matterType -> our element type
 const tracerTypes = new Set();    // every tracer element type
@@ -167,95 +184,248 @@ const tracerTypes = new Set();    // every tracer element type
 })();
 const idOf = (t) => safe(() => api.elements.getIdByType(t));
 const typeOfId = (id) => safe(() => api.elements.getTypeFromId(id));
+const defOf = (t) => safe(() => api.elements.getDefinitionByType(t));
 function brightChan(v) { return Math.max(0, Math.min(255, Math.round(v * 0.55 + 118))); }
 function brightenVariants(vs) { return (vs || []).map((c) => [brightChan(c[0]), brightChan(c[1]), brightChan(c[2]), c.length > 3 ? c[3] : 255]); }
 function brightenMeta(n) {
 	if (typeof n !== "number") return 0xffffff;
 	return (brightChan((n >> 16) & 255) << 16) | (brightChan((n >> 8) & 255) << 8) | brightChan(n & 255);
 }
-// --- clones: one tracer element PER MATERIAL -----------------------------------
-// Each clone copies its material's whole definition (physics, matter type, flags…)
-// so the grain behaves exactly like its neighbours, a shade brighter. The game's own
-// reaction tables are then taught the clones' reactions — clone soil + water → clone
-// wet soil, clone copper in a Smelter → clone liquid copper — so the grain keeps
-// being OUR grain through the chain instead of being handed back and re-guessed.
-const CLONE_IDS = [...new Set(["sand", "copper", "water"].concat([...IN_CHAIN]))];
+// --- clones: one tracer element PER MATERIAL, for every material -------------------
+const CLONE_PREFIX = "brandonTrc_";
+const isOurId = (id) => typeof id === "string" && (id.indexOf(CLONE_PREFIX) === 0 || id.indexOf("brandonTracer") === 0);
+const NEVER_CLONE = new Set(["particle", "fire", "flame", "shake", "empty"]);   // effects, not materials
+const MAX_TYPE = 250;        // the game allows element types 1–255; leave a little room
 const cloneOf = new Map();   // real type -> clone type
 const realOf = new Map();    // clone type -> real type
 const cloneDefs = new Map(); // clone type -> the definition we keep re-applying
-const SKIP_KEYS = new Set(["id", "elementType", "type", "nameKey", "descriptionKey", "mixes", "name"]);
-function cloneDefFor(realType, id) {
-	const d = safe(() => api.elements.getDefinitionByType(realType));
+const burnsInto = new Map(); // real type -> real type its clone becomes when burnt
+const timedReal = new Set(); // real types the game changes on a timer
+let cloneSkipped = 0;
+// everything the definition holds is copied, except what would make the copy BE the real
+// one (id, names) and what the game runs by itself: a timer would delete the copy, since
+// the code that acts on it looks for the real material; burning is copied, pointed at copies
+const NO_COPY = new Set(["id", "elementType", "type", "nameKey", "descriptionKey", "name", "description", "mixes", "duration", "durationRandom", "flammable"]);
+function cloneDefFor(realType, id, cloneIds) {
+	const d = defOf(realType);
 	if (!d || typeof d !== "object") return null;
 	const def = {};
-	for (const k of Object.keys(d)) { const v = d[k]; if (SKIP_KEYS.has(k) || typeof v === "function") continue; def[k] = v; }
+	for (const k of Object.keys(d)) { const v = d[k]; if (NO_COPY.has(k) || typeof v === "function") continue; def[k] = v; }
 	def.name = "· " + (d.name || matName(realType) || id);
-	// same weight as the real material (the clones now react and change like it, so no need to float)
 	def.metaColor = brightenMeta(d.metaColor);
 	if (d.colors && Array.isArray(d.colors.variants)) def.colors = Object.assign({}, d.colors, { variants: brightenVariants(d.colors.variants) });
+	// burning: the copy burns into the COPY of what the real material burns into, every time
+	// (the real one sometimes burns away to nothing; the traced grain always survives)
+	const fl = d.flammable;
+	let outId = null;
+	if (fl && typeof fl === "object" && typeof fl.outputElementId === "string") outId = fl.outputElementId;
+	else if (id === "residue") outId = "burntResidue";   // hard-wired in the game's fire code
+	if (outId && outId !== "gold" && cloneIds.has(outId)) {
+		def.flammable = Object.assign({}, (fl && typeof fl === "object") ? fl : {}, { outputElementId: CLONE_PREFIX + outId, outputChance: 1 });
+		const ot = typeOfId(outId); if (typeof ot === "number") burnsInto.set(realType, ot);
+	} else if (fl) def.flammable = fl;   // burns away (or into gold): same as the real material
+	if (d.duration !== undefined || d.durationRandom !== undefined || TIMED_IDS.has(id)) timedReal.add(realType);
 	return def;
 }
 (function registerClones() {
-	for (const id of CLONE_IDS) {
-		const rt = safe(() => api.elements.getTypeFromId(id));
-		if (typeof rt !== "number") continue;
-		const def = cloneDefFor(rt, id);
+	const MT = safe(() => sandkit.enums.MatterType) || {};
+	const types = (safe(() => api.elements.getRegisteredTypes(), []) || []).slice();
+	const items = [];
+	for (const rt of types) {
+		const id = idOf(rt);
+		if (!id || isOurId(id) || tracerTypes.has(rt) || NEVER_CLONE.has(String(id).toLowerCase())) continue;
+		const d = defOf(rt);
+		if (!d || typeof d.matterType !== "number" || d.matterType === MT.Particle) continue;
+		items.push({ rt: rt, id: String(id) });
+	}
+	// a fixed order, so every copy gets the same number on every launch
+	items.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : a.rt - b.rt));
+	const cloneIds = new Set(items.map((i) => i.id));
+	let top = Math.max(0, ...types, ...tracerTypes);
+	for (const it of items) {
+		if (top + 1 > MAX_TYPE) { cloneSkipped++; continue; }
+		const def = cloneDefFor(it.rt, it.id, cloneIds);
 		if (!def || typeof def.matterType !== "number") continue;
-		let r = safe(() => api.elements.register(Object.assign({ id: "brandonTrc_" + id }, def)));
+		let r = safe(() => api.elements.register(Object.assign({ id: CLONE_PREFIX + it.id }, def)));
 		if (!(r && typeof r.elementType === "number")) {   // fall back to the basics, then patch the rest in
-			r = safe(() => api.elements.register({ id: "brandonTrc_" + id, name: def.name, matterType: def.matterType, density: def.density, metaColor: def.metaColor, colors: def.colors, isGrabbable: true, isTransportable: true }));
+			r = safe(() => api.elements.register({ id: CLONE_PREFIX + it.id, name: def.name, matterType: def.matterType, density: def.density, metaColor: def.metaColor, colors: def.colors, isGrabbable: true, isTransportable: true }));
 		}
 		if (r && typeof r.elementType === "number") {
-			cloneOf.set(rt, r.elementType); realOf.set(r.elementType, rt); cloneDefs.set(r.elementType, def); tracerTypes.add(r.elementType);
+			cloneOf.set(it.rt, r.elementType); realOf.set(r.elementType, it.rt); cloneDefs.set(r.elementType, def); tracerTypes.add(r.elementType);
+			top = Math.max(top, r.elementType);
 		}
 	}
 	dbg.tracers = tracerTypes.size;
-	console.log("[" + MOD_ID + "] tracer clones registered: " + cloneOf.size + " materials");
+	console.log("[" + MOD_ID + "] tracer copies registered: " + cloneOf.size + " materials" + (cloneSkipped ? " (" + cloneSkipped + " skipped: out of element slots)" : ""));
 })();
 // updateDefinition only reaches the render/sim workers once they exist, so re-apply
 function applyCloneDefs() { for (const [t, def] of cloneDefs) safe(() => api.elements.updateDefinition(t, Object.assign({ nameKey: undefined }, def))); }
-const cloneT = (id) => { const rt = typeOfId(id); return typeof rt === "number" ? cloneOf.get(rt) : undefined; };
-const realT = (id) => typeOfId(id);
-// Touch reactions the game itself would do to the real material (the game's
-// hard-coded mixing table): [material, touching, material becomes, partner becomes]
-const CLONE_CONTACTS = [["sand", "water", "wetSand", "wetSand"], ["seed", "water", "wetSeed", null], ["water", "lava", "steam", "lava"], ["water", "flame", "steam", null], ["lava", "water", "lava", "steam"]];
-// Machine recipes (from the game's own recipe tables)
-const CLONE_RECIPES = [
-	["smelter", "gold", [["liquidGold", 0.5]]], ["smelter", "copper", [["liquidCopper", 1]]],
-	["condenser", "florin", [["florinol", 1]]], ["condenser", "steam", [["water", 1]]],
-	["steamDryer", "petalium", [["dryPetalium", 1]]],
-];
-const covered = new Map();      // real type -> Set of partner real types the clone reacts with by itself
-const cloneMachines = new Map(); // real type -> Set of machine ids with a clone recipe
-let reactionsArmed = 0;
-function armCloneReactions() {
-	if (!cloneOf.size) return;
-	let n = 0;
-	for (const [a, b, ao, bo] of CLONE_CONTACTS) {
-		const A = cloneT(a), B = realT(b), AO = cloneT(ao), BO = bo === null ? null : realT(bo);
-		if (A === undefined || typeof B !== "number" || AO === undefined || BO === undefined) continue;
-		const ok = safe(() => { api.reactions.registerContact({ inputA: A, inputB: B, outputA: AO, outputB: BO, orientation: "any" }); return true; });
-		if (ok) { n++; const ra = realT(a); if (!covered.has(ra)) covered.set(ra, new Set()); covered.get(ra).add(B); }
+const goldT = () => typeOfId("gold");
+const isGold = (t) => typeof t === "number" && t === goldT();
+const clonable = (t) => typeof t === "number" && cloneOf.has(t) && !isGold(t);
+
+// --- what each material turns into, and what its copy was taught ---------------------
+const succ = new Map();          // real type -> Map(next real type -> weight)  (never gold)
+const partnersOf = new Map();    // real type -> Set of real types it reacts with on touch
+const covered = new Map();       // real type -> Set of partners its copy reacts with by itself
+const cloneMachines = new Map(); // real type -> Set of recipe families its copy runs in
+const armedKeys = new Map();     // "kind|…" -> signature of what was registered
+let reactionsArmed = 0, armErrors = 0, lastArmAt = 0;
+function addSucc(a, b, w) {
+	if (typeof a !== "number" || typeof b !== "number" || a === b || isGold(b)) return;
+	let m = succ.get(a); if (!m) { m = new Map(); succ.set(a, m); }
+	m.set(b, Math.max(m.get(b) || 0, typeof w === "number" ? w : 0.01));
+}
+function addTo(map, k, v) { let s = map.get(k); if (!s) { s = new Set(); map.set(k, s); } s.add(v); }
+function recipesTable() { return safe(() => state.sandkit.mods.recipes) || {}; }
+// every touch reaction the game knows, as [material, partner, material becomes, partner becomes]
+function contactRules() {
+	const out = [];
+	const T = (id) => typeOfId(id);
+	// the game's hard-wired mixing table (sand = the game's "soil")
+	for (const [a, b, ao, bo] of [["sand", "water", "wetSand", "wetSand"], ["water", "sand", "wetSand", "wetSand"], ["seed", "water", "wetSeed", null], ["water", "seed", "wetSeed", null],
+		["water", "lava", "steam", "lava"], ["lava", "water", "lava", "steam"], ["water", "flame", "steam", null]]) {
+		const A = T(a), B = T(b), AO = T(ao), BO = bo === null ? null : T(bo);
+		if (typeof A !== "number" || typeof B !== "number" || typeof AO !== "number" || BO === undefined) continue;
+		out.push([A, B, AO, BO]);
 	}
-	for (const [machine, inp, outs] of CLONE_RECIPES) {
-		const I = cloneT(inp), O = outs.map(([id, c]) => ({ elementType: cloneT(id), chance: c }));
-		if (I === undefined || O.some((o) => o.elementType === undefined)) continue;
-		const ok = safe(() => { api.structures.recipes.register(machine, { input: I, outputs: O }); return true; });
-		if (ok) { n++; const ri = realT(inp); if (!cloneMachines.has(ri)) cloneMachines.set(ri, new Set()); cloneMachines.get(ri).add(machine.toLowerCase()); }
-	}
-	// the Shaker: our wet soil always comes out as our RESIDUE; the gold it can shake
-	// out alongside is ordinary gold, as for any grain
-	{
-		const I = cloneT("wetSand"), G = realT("gold"), R = cloneT("residue");
-		if (I !== undefined && typeof G === "number" && R !== undefined) {
-			const rec = { input: I, outputsBelow: [{ elementType: G, chance: 0.25 }], outputsAbove: [{ elementType: R, chance: 1 }] };
-			const ok = safe(() => { api.structures.recipes.register("shaker", rec); return true; }) || safe(() => { api.structures.processing.registerShaker(rec); return true; });
-			if (ok) { n++; const ri = realT("wetSand"); if (!cloneMachines.has(ri)) cloneMachines.set(ri, new Set()); cloneMachines.get(ri).add("shaker"); }
+	// "mixes" written into element definitions
+	for (const rt of cloneOf.keys()) {
+		const d = defOf(rt), mx = d && Array.isArray(d.mixes) ? d.mixes : [];
+		for (const m of mx) {
+			if (!m || typeof m.elementType !== "number" || typeof m.result !== "number") continue;
+			const sec = typeof m.secondaryResult === "number" ? m.secondaryResult : m.result;
+			out.push([rt, m.elementType, m.result, sec]); out.push([m.elementType, rt, m.result, sec]);
 		}
 	}
-	reactionsArmed = n;
+	// contact reactions registered by the game's content and by mods
+	for (const c of (recipesTable().contacts || [])) {
+		if (!c || typeof c.inputA !== "number" || typeof c.inputB !== "number") continue;
+		if (tracerTypes.has(c.inputA) || tracerTypes.has(c.inputB)) continue;   // ours
+		out.push([c.inputA, c.inputB, c.outputA, c.outputB, c.orientation]);
+		if (c.inputA !== c.inputB) out.push([c.inputB, c.inputA, c.outputB, c.outputA, c.orientation]);
+	}
+	return out;
+}
+// the product the grain follows: the one made most often, never gold, and one we have a copy of
+function mainOut(outs) {
+	let best = null;
+	for (const o of outs || []) {
+		if (!o || !clonable(o.elementType) || NO_POSSESS.has(idOf(o.elementType))) continue;
+		if (!best || (o.chance || 0) > (best.chance || 0)) best = o;
+	}
+	return best;
+}
+const armedOk = new Set();      // keys whose registration the game accepted
+// register once per rule; again only if the rule itself changed; returns whether it is armed
+function armOnce(key, sig, fn) {
+	if (armedKeys.get(key) === sig) return armedOk.has(key);
+	let err = null;
+	try { fn(); } catch (e) { err = e; }
+	armedKeys.set(key, sig);   // don't retry a refusal every pass
+	if (!err) { if (!armedOk.has(key)) reactionsArmed++; armedOk.add(key); return true; }
+	if (armedOk.delete(key)) reactionsArmed--;
+	armErrors++; console.log("[" + MOD_ID + "] couldn't teach " + key + ": " + (err && err.message ? err.message : err));
+	return false;
+}
+function armCloneReactions() {
+	lastArmAt = Date.now();
+	const flameT = typeOfId("flame"), lavaT = typeOfId("lava");
+	// 1) touch reactions (the first rule found for a pair wins: the game's own table, then mixes, then mods)
+	const pairs = new Set();
+	for (const [a, b, ao, bo, orient] of contactRules()) {
+		if (tracerTypes.has(a) || tracerTypes.has(b) || pairs.has(a + "|" + b)) continue;
+		pairs.add(a + "|" + b);
+		addTo(partnersOf, a, b);
+		const usable = (t) => typeof t === "number" && !isGold(t) && !NO_POSSESS.has(idOf(t));
+		const follows = usable(ao) ? ao : usable(bo) ? bo : null;
+		if (follows === null) continue;   // only gold / nothing comes out: leave it to the hand-back
+		addSucc(a, follows, 1);
+		if (!cloneOf.has(a) || !cloneOf.has(follows)) continue;
+		const outA = follows === ao ? cloneOf.get(ao) : (ao === undefined ? null : ao), outB = follows === ao ? bo : cloneOf.get(bo);
+		const rule = { inputA: cloneOf.get(a), inputB: b, outputA: outA, outputB: outB, orientation: orient === "stacked" ? "stacked" : "any" };
+		if (armOnce("contact|" + a + "|" + b, JSON.stringify(rule), () => api.reactions.registerContact(rule))) addTo(covered, a, b);
+	}
+	// 2) burning (the copies' definitions already carry it)
+	for (const [rt, into] of burnsInto) {
+		for (const p of [flameT, lavaT]) if (typeof p === "number") { addTo(partnersOf, rt, p); addTo(covered, rt, p); }
+		addSucc(rt, into, 1);
+	}
+	const resT = typeOfId("residue"), brT = typeOfId("burntResidue");
+	if (typeof resT === "number" && typeof brT === "number") { addSucc(resT, brT, 0.25); for (const p of [flameT, lavaT]) if (typeof p === "number") addTo(partnersOf, resT, p); }
+	for (const rt of cloneOf.keys()) {   // burns away / into gold: still a reason to hand back near fire
+		const d = defOf(rt); if (d && d.flammable && !burnsInto.has(rt)) for (const p of [flameT, lavaT]) if (typeof p === "number") addTo(partnersOf, rt, p);
+	}
+	// 3) machines — every recipe table the game keeps, plus the two it hard-wires
+	const R = recipesTable();
+	const reg = (family, rec) => api.structures.recipes.register(family, rec);
+	for (const [table, family] of [["condensers", "condenser"], ["steamDryers", "steamDryer"], ["synthesizers", "synthesizer"], ["snowmakers", "snowmaker"], ["smelters", "smelter"]]) {
+		for (const r of (R[table] || [])) {
+			if (!r) continue;
+			for (const o of r.outputs || []) addSucc(r.input, o.elementType, o.chance);
+			if (!cloneOf.has(r.input)) continue;
+			const m = mainOut(r.outputs); if (!m) continue;
+			const rec = { input: cloneOf.get(r.input), outputs: [{ elementType: cloneOf.get(m.elementType), chance: 1 }] };
+			if (armOnce(family + "|" + r.input, JSON.stringify(rec), () => reg(family, rec))) addTo(cloneMachines, r.input, family);
+		}
+	}
+	const shakers = (R.shakers || []).slice();
+	const wetSand = typeOfId("wetSand"), residue = typeOfId("residue"), burnt = typeOfId("burntResidue"), seed = typeOfId("seed"), gold = goldT();
+	// the Shaker's own wet soil rule is hard-wired: residue on top, gold below 1 time in 4
+	if (typeof wetSand === "number" && !shakers.some((r) => r && r.input === wetSand) && typeof residue === "number" && typeof gold === "number")
+		shakers.push({ input: wetSand, outputsAbove: [{ elementType: residue, chance: 1 }], outputsBelow: [{ elementType: gold, chance: 0.25 }] });
+	for (const r of shakers) {
+		if (!r) continue;
+		const all = (r.outputsAbove || []).concat(r.outputsBelow || []);
+		for (const o of all) addSucc(r.input, o.elementType, o.chance);
+		if (!cloneOf.has(r.input)) continue;
+		const m = mainOut(all); if (!m) continue;
+		const swap = (list) => (list || []).map((o) => o === m ? { elementType: cloneOf.get(o.elementType), chance: 1 } : { elementType: o.elementType, chance: o.chance });
+		const rec = { input: cloneOf.get(r.input), outputsAbove: swap(r.outputsAbove), outputsBelow: swap(r.outputsBelow) };
+		const k = "shaker|" + r.input, sig = JSON.stringify(rec);
+		if (armOnce(k, sig, () => { try { reg("shaker", rec); } catch (e) { api.structures.processing.registerShaker(rec); } })) addTo(cloneMachines, r.input, "shaker");
+	}
+	const presses = (R.kineticPresses || []).slice();
+	// the Kinetic Press's burnt residue rule is hard-wired: seed and gold. The copy can't
+	// carry the game's drop-height check, so it is pressed whenever it lands on the press.
+	if (typeof burnt === "number" && !presses.some((r) => r && r.input === burnt) && typeof seed === "number" && typeof gold === "number")
+		presses.push({ input: burnt, minimumDownwardVelocity: 0, outputs: [{ elementType: seed, chance: 1 }, { elementType: gold, chance: 1 }] });
+	for (const r of presses) {
+		if (!r) continue;
+		for (const o of r.outputs || []) addSucc(r.input, o.elementType, o.chance);
+		if (!cloneOf.has(r.input)) continue;
+		const m = mainOut(r.outputs); if (!m) continue;
+		const rec = { input: cloneOf.get(r.input), minimumDownwardVelocity: r.input === burnt ? 0 : (r.minimumDownwardVelocity || 0),
+			outputs: r.outputs.map((o) => o === m ? { elementType: cloneOf.get(o.elementType), chance: 1 } : { elementType: o.elementType, chance: o.chance }) };
+		const k = "kineticPress|" + r.input, sig = JSON.stringify(rec);
+		if (armOnce(k, sig, () => reg("kineticPress", rec))) addTo(cloneMachines, r.input, "kineticPress");
+	}
+	for (const r of (R.growers || [])) {
+		if (!r) continue;
+		addSucc(r.input, r.output, r.chance);
+		if (!cloneOf.has(r.input) || !clonable(r.output) || NO_POSSESS.has(idOf(r.output))) continue;
+		const rec = { input: cloneOf.get(r.input), output: cloneOf.get(r.output), chance: 1 };
+		const k = "planterBox|" + r.input, sig = JSON.stringify(rec);
+		if (armOnce(k, sig, () => reg("planterBox", rec))) addTo(cloneMachines, r.input, "planterBox");
+	}
+	// 4) the hard-wired steps (only used to know what to look for after a hand-back)
+	for (const id in EXTRA_STEPS) { const a = typeOfId(id); if (typeof a !== "number") continue; for (const b of EXTRA_STEPS[id]) addSucc(a, typeOfId(b), 0.5); }
 	applyCloneDefs();
-	console.log("[" + MOD_ID + "] tracer clone reactions armed: " + n);
+	console.log("[" + MOD_ID + "] tracer copies taught " + reactionsArmed + " reactions/recipes" + (armErrors ? " (" + armErrors + " refused)" : ""));
+}
+// what a material can turn into next (skipping growth stages, which are never ridden)
+function nextOf(t) {
+	const out = new Map();
+	const walk = (x, depth, w) => {
+		const m = succ.get(x); if (!m) return;
+		for (const [y, wy] of m) {
+			if (isGold(y) || tracerTypes.has(y)) continue;
+			if (NO_POSSESS.has(idOf(y))) { if (depth < 3) walk(y, depth + 1, w * wy); continue; }
+			out.set(y, Math.max(out.get(y) || 0, w * wy));
+		}
+	};
+	walk(t, 0, 1);
+	return out;
 }
 // --- flight recorder ----------------------------------------------------------
 // Guessing at why the tracer vanishes hasn't worked, so let the game tell us:
@@ -285,11 +455,17 @@ function speedOf(v) {
 	const x = +(v.x !== undefined ? v.x : v[0]) || 0, y = +(v.y !== undefined ? v.y : v[1]) || 0;
 	return Math.hypot(x, y);
 }
+// the game's own structures report a number; 0.17 printed them as "#7" and so never
+// recognised a Launcher as passive — the grain was handed back on one and lost
+function structName(s) {
+	if (!s) return null;
+	if (typeof s.type === "number") return VANILLA_STRUCTS[s.type] || ("#" + s.type);
+	return String(s.type);
+}
 function structIdAt(x, y) {
 	const s = safe(() => api.structures.getAtCell(x, y));
 	if (!s) return null;
-	const id = (typeof s.type === "number") ? (safe(() => api.structures.getIdByType(s.type)) || ("#" + s.type)) : String(s.type);
-	return id + (beltAt(x, y) ? "(belt)" : "");
+	return structName(s) + (beltAt(x, y) ? "(belt)" : "");
 }
 // everything around a cell: materials, structures, and the immediate neighbours
 function areaReport(cx, cy, R) {
@@ -304,7 +480,9 @@ function areaReport(cx, cy, R) {
 }
 function exportLog() {
 	const payload = { format: "sandustry-tracer-log", build: BUILD, exportedAt: new Date().toISOString(),
-		sources: sourcesList(), tracerElementTypes: [...tracerTypes], stats: stats, notes: recentNotes, events: tlog };
+		sources: sourcesList(), tracerElementTypes: [...tracerTypes], copies: cloneOf.size, copiesSkipped: cloneSkipped, recipesTaught: reactionsArmed, recipesRefused: armErrors,
+		taught: [...armedOk].map((k) => { const p = k.split("|"); return p[0] + ": " + matName(+p[1]) + (p[2] ? " + " + matName(+p[2]) : ""); }),
+		stats: stats, notes: recentNotes, events: tlog };
 	try {
 		const blob = new Blob([JSON.stringify(payload, null, 1)], { type: "application/json" });
 		const url = URL.createObjectURL(blob), a = document.createElement("a"), d = new Date(), pad = (n) => String(n).padStart(2, "0");
@@ -370,20 +548,11 @@ function findTracer(cx, cy, R) {
 	}
 	return null;
 }
-// Only real reagents count. "Touching any other material" was far too broad: a
-// grain picked up at a machine's output is surrounded by the machine's OTHER
-// outputs, so it was handed straight back, the next output picked up, handed
-// back… — the camera hopping from pixel to pixel. These are the touch reactions
-// from the Material Studio chain.
-const PARTNERS = { sand: ["water"], residue: ["fire", "flame", "lava"], seed: ["water"], water: ["lava", "fire"], lava: ["water"], snow: ["lava", "fire", "flame"], wetSand: [], gold: [] };
-const partnerTypes = new Map();   // material type -> Set of reagent types (resolved lazily)
-function reagentsOf(orig) {
-	if (partnerTypes.has(orig)) return partnerTypes.get(orig);
-	const set = new Set();
-	for (const id of (PARTNERS[idOf(orig)] || [])) { const t = typeOfId(id); if (typeof t === "number") set.add(t); }
-	partnerTypes.set(orig, set);
-	return set;
-}
+// Only real reagents count: the partners the game's own reaction tables list for this
+// material (and fire/lava for anything that burns). "Touching any other material" was
+// far too broad — a grain at a machine's output sits among the machine's other outputs.
+const NO_PARTNERS = new Set();
+function reagentsOf(orig) { return partnersOf.get(orig) || NO_PARTNERS; }
 function touchingOther(x, y, orig) {
 	const want = reagentsOf(orig);
 	if (!want.size) return 0;
@@ -482,44 +651,52 @@ function handoff(now) {
 		stats.refound++;
 		logEvt("refound", { at: alive.x + "," + alive.y, cells: gap, afterMs: ms });
 		track("…it wasn't gone: found it " + gap + " cells away after " + (ms / 1000).toFixed(1) + "s" + (s.lostWhy ? " (it had " + s.lostWhy + ")" : ""), true); trc.x = alive.x; trc.y = alive.y; trc.miss = 0; trc.search = null; trc.lastMove = now; dbg.note = "found it again at " + alive.x + "," + alive.y; return; }
-	const want = new Set();
-	for (const id of (CHAIN[idOf(s.orig)] || [])) { const t = typeOfId(id); if (typeof t === "number") want.add(t); }
+	// only a material this one can really turn into (the game's own tables), best first —
+	// 0.17 also grabbed "anything new nearby", which is how wet soil became a Copper grain
+	const want = nextOf(s.orig);
 	const b = snapArea(s.x, s.y, R);
-	// don't walk the chain backwards into what we just came from
-	const recent = new Set((trc.hopTypes || []).slice(-2));
-	let hinted = null, hd = Infinity, other = null, od = Infinity, same = null, sd = Infinity;
+	let hinted = null, hs = -Infinity, same = null, sd = Infinity;
 	// LOST (not handed back): the grain most likely just slipped out of sight, so the
-	// best guess is the nearest grain of the SAME material. Before, same-material was
-	// skipped here, so it grabbed whatever changed nearby — usually rising steam or
-	// cloud — and the camera drifted upwards after it.
+	// best guess is the nearest grain of the SAME material (after giving it a moment to
+	// reappear — grabbing a second grain too early left two tracers in the world)
 	const lostIt = !!s.lostWhy;
 	for (const [k, t] of b) {
 		if (tracerTypes.has(t)) continue;
-		if (t === s.orig) {
-			if (lostIt) { const x = +k.slice(0, k.indexOf(",")), y = +k.slice(k.indexOf(",") + 1), d = Math.hypot(x - s.x, y - s.y); if (d < sd) { sd = d; same = { x: x, y: y, t: t }; } }
-			continue;
-		}
-		// never jump to a gas (steam, cloud…) or anything outside the known crafting
-		// chain unless it is exactly what this material turns into
-		if (!want.has(t) && (isGasType(t) || !IN_CHAIN.has(idOf(t)))) continue;
-		if (!want.has(t) && idOf(t) === "gold") continue;   // never switch to gold — follow the other product
-		if (recent.has(t) && !want.has(t) && now - s.t0 < 3000) continue;
 		const x = +k.slice(0, k.indexOf(",")), y = +k.slice(k.indexOf(",") + 1), d = Math.hypot(x - s.x, y - s.y);
-		if (want.has(t) && d < hd) { hd = d; hinted = { x: x, y: y, t: t }; }
-		if (s.before.get(k) !== t && d < od) { od = d; other = { x: x, y: y, t: t }; }
+		if (t === s.orig) { if (lostIt && d < sd) { sd = d; same = { x: x, y: y, t: t }; } continue; }
+		if (!want.has(t) || isGold(t)) continue;
+		// something new (wasn't there when we let go), the likelier product first, then the nearest
+		const fresh = s.before.get(k) !== t ? 1 : 0, score = fresh * 1000 + want.get(t) * 100 - d;
+		if (score > hs) { hs = score; hinted = { x: x, y: y, t: t, fresh: fresh }; }
 	}
 	const settled = (c) => c && !safe(() => api.elements.isFreeFallingAtCell(c.x, c.y));
 	const atMachine = lostIt && /gone into|sitting on/.test(s.lostWhy);
-	if (lostIt && same && sd <= 12 && (!atMachine || (!hinted && now - s.t0 > 3000))) {
+	if (lostIt && same && sd <= 12 && now - s.t0 > 1500 && (!atMachine || (!hinted && now - s.t0 > 3000))) {
 		stats.pickups++; track("lost it, so picked up the nearest " + matName(same.t) + " " + Math.round(sd) + " cells away at " + same.x + "," + same.y);
 		logEvt("pickup", { became: matName(same.t), how: "same material", at: same.x + "," + same.y, cells: Math.round(sd) });
 		possess(same.x, same.y, same.t); return;
 	}
-	const pick = (settled(hinted) ? hinted : null) || (settled(other) && now - s.t0 > 800 ? other : null) || hinted || (now - s.t0 > 1800 ? other : null);
-	if (pick) { stats.pickups++; track((s.lostWhy ? "lost it, so " : "") + "picked up " + matName(pick.t) + (hinted ? " (next in the chain)" : " (something new nearby)") + " at " + pick.x + "," + pick.y); dbg.note = "picked up " + matName(pick.t) + (hinted ? " (chain)" : " (new material)"); logEvt("pickup", { became: matName(pick.t), how: hinted ? "chain" : "new material", at: pick.x + "," + pick.y }); possess(pick.x, pick.y, pick.t); return; }
-	const waitMs = setting("handoffSeconds", 8) * 1000;
+	// prefer a grain that has come to rest (a falling one is hard to mark); a fresh product over
+	// one that was already lying there
+	const pick = hinted && (hinted.fresh || now - s.t0 > 2500) && (settled(hinted) || now - s.t0 > 1200) ? hinted : null;
+	if (pick) { stats.pickups++; track((s.lostWhy ? "lost it, so " : "") + "picked up " + matName(pick.t) + " (what " + matName(s.orig) + " turns into) at " + pick.x + "," + pick.y); dbg.note = "picked up " + matName(pick.t); logEvt("pickup", { became: matName(pick.t), how: "next step", at: pick.x + "," + pick.y }); possess(pick.x, pick.y, pick.t); return; }
+	const waitMs = (s.waitMs || setting("handoffSeconds", 8) * 1000);
 	dbg.phase = "waiting for what it becomes (" + Math.ceil((waitMs - (now - s.t0)) / 1000) + "s)";
-	if (now - s.t0 > waitMs) { dbg.note = "nothing came out at " + s.x + "," + s.y + " — new journey"; logEvt("giveup", { area: areaReport(s.x, s.y, 6) }); stats.giveups++; track("nothing came out at " + s.x + "," + s.y + " — starting a new journey", true); trc = null; }
+	if (now - s.t0 > waitMs) { dbg.note = "nothing came out at " + s.x + "," + s.y + " — new journey"; logEvt("giveup", { wanted: [...want.keys()].map(matName), area: areaReport(s.x, s.y, 6) }); stats.giveups++; track("nothing " + matName(s.orig) + " turns into showed up at " + s.x + "," + s.y + " — starting a new journey", true); trc = null; }
+}
+// the structure at a cell, if it is one that PROCESSES material (not a belt, frame, launcher…)
+function machineAt(x, y) {
+	const s = safe(() => api.structures.getAtCell(x, y));
+	const n = structName(s);
+	if (!n || beltAt(x, y) || PASSIVE.test(n)) return null;
+	return n;
+}
+let flameType;
+function flameNear(x, y, R) {
+	if (flameType === undefined) flameType = typeOfId("flame");
+	if (typeof flameType !== "number") return false;
+	for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (typeAt(x + dx, y + dy) === flameType) return true;
+	return false;
 }
 function tracerTick(now) {
 	if (!tracerTypes.size) { dbg.note = "tracer element not registered"; return null; }
@@ -539,12 +716,18 @@ function tracerTick(now) {
 	}
 	trc.miss = trc.miss || 0;
 	const f = findTracer(trc.x, trc.y, 14) || findTracer(trc.x, trc.y, 44) || (trc.miss >= 2 ? findTracer(trc.x, trc.y, 130) : null);
+	// burning: for a moment the grain IS a flame (the game's fire code swaps it for a Flame
+	// that remembers what to leave behind), then it comes back as the burnt copy — wait for it
+	if (!f && !trc.pending && flameNear(trc.x, trc.y, 3)) {
+		if (!trc.burnAt) { trc.burnAt = now; logEvt("burning", { onStructure: structIdAt(trc.x, trc.y) || structIdAt(trc.x, trc.y + 1) }); track(matName(trc.orig) + " caught fire — waiting for it to burn"); }
+		if (now - trc.burnAt < 6000) { dbg.phase = "burning…"; return { x: trc.x * CELL + CELL / 2, y: trc.y * CELL + CELL / 2 }; }
+	}
 	if (!f && ++trc.miss < 8) {   // a hitch can move it further than one scan window
 		if (trc.miss === 1) logEvt("miss", { area: areaReport(trc.x, trc.y, 4) });
 		dbg.phase = "looking for the tracer (" + trc.miss + "/8)";
 		return { x: trc.x * CELL + CELL / 2, y: trc.y * CELL + CELL / 2 };
 	}
-	if (f) trc.miss = 0;
+	if (f) { trc.miss = 0; if (trc.burnAt) { stats.burns = (stats.burns || 0) + 1; trc.burnAt = 0; } }
 	if (f) {
 		// the grain changed INTO another clone (a touch reaction or a machine recipe
 		// did it, exactly as it would the real material) — follow the new material
@@ -562,7 +745,9 @@ function tracerTick(now) {
 		if (trc.pending) { stats.marksLanded++; logEvt("marked", { afterMs: now - (trc.pendingAt || now), tries: trc.tries }); track("marked a " + matName(trc.orig) + " grain" + (trc.tries ? " (took " + (trc.tries + 1) + " tries)" : "")); }
 		trc.pending = false;
 		const step = Math.max(Math.abs(f.x - trc.x), Math.abs(f.y - trc.y));
-		if (step > 12 && now - trc.since > 500) {   // no grain moves that far in one look — a second tracer?
+		const portal = step > 12 && /quantumPortal/i.test((structIdAt(trc.x, trc.y) || "") + (structIdAt(f.x, f.y) || "") + JSON.stringify(areaReport(f.x, f.y, 2).structures));
+		if (portal) { logEvt("teleported", { from: trc.x + "," + trc.y, to: f.x + "," + f.y, cells: step }); track("went through a quantum portal (" + step + " cells)"); }
+		else if (step > 12 && now - trc.since > 500) {   // no grain moves that far in one look — a second tracer?
 			stats.jumps++;
 			logEvt("jump", { from: trc.x + "," + trc.y, to: f.x + "," + f.y, cells: step, area: areaReport(f.x, f.y, 3) });
 			track("jumped " + step + " cells in one step (" + trc.x + "," + trc.y + " → " + f.x + "," + f.y + ") — possibly a second tracer", true);
@@ -597,27 +782,36 @@ function tracerTick(now) {
 		const reacting = settledIn && trc.touchSince && now - trc.touchSince > (selfReacts ? 6000 : 1200);
 		// only a structure that PROCESSES material counts — frames, launchers and the like
 		// just hold or move it (handing back on a clearing frame lost the grain for nothing)
-		const sid = still > stillFor ? structIdAt(trc.x, trc.y) : null;
-		// a machine that has a clone recipe for this material processes the grain itself
-		const selfMachine = !!sid && realOf.has(trc.t) && cloneMachines.has(trc.orig) && [...cloneMachines.get(trc.orig)].some((m) => sid.toLowerCase().indexOf(m.toLowerCase()) >= 0);
-		const onMachine = settledIn && arrived && !!sid && !beltAt(trc.x, trc.y) && !PASSIVE.test(sid) && (!selfMachine || still > 12000);
+		// the grain sits ON a machine, so look at its own cell and the one below it
+		const sid = still > stillFor ? (machineAt(trc.x, trc.y) || machineAt(trc.x, trc.y + 1)) : null;
+		// a machine whose recipe the copy was taught processes the grain itself — leave it be
+		const fam = familyOf(sid);
+		const selfMachine = !!fam && realOf.has(trc.t) && cloneMachines.has(trc.orig) && cloneMachines.get(trc.orig).has(fam);
+		const onMachine = settledIn && arrived && !!sid && (!selfMachine || still > 15000);
+		// steam, cloud…: the game changes these on a timer that only runs for the real material
+		const timed = settledIn && timedReal.has(trc.orig) && still > 4000;
 		const pileMs = setting("pileSeconds", 25) * 1000;
 		if (reacting) dbg.phase = "touching " + matName(touch) + " — handing back to react";
 		else if (onMachine) dbg.phase = "at a machine — handing the grain back";
+		else if (timed) dbg.phase = "letting " + matName(trc.orig) + " change on its own";
+		else if (selfMachine) dbg.phase = "in the " + sid + " — the machine is processing it";
 		else if (still > stillFor) dbg.phase = "settled in " + matName(trc.orig) + " — waiting (" + Math.ceil((pileMs - still) / 1000) + "s)";
-		if (still > pileMs && !reacting && !onMachine) {   // nothing is going to happen here
+		if (still > pileMs && !reacting && !onMachine && !timed) {   // nothing is going to happen here
 			dbg.note = "sat in a pile at " + trc.x + "," + trc.y + " — new journey";
 			logEvt("pile-giveup", { onStructure: structIdAt(trc.x, trc.y) });
 			stats.piles++; track("sat still in a pile for " + Math.round(pileMs / 1000) + "s at " + trc.x + "," + trc.y + " — new journey");
 			release(); return null;
 		}
-		if (reacting || onMachine) {
+		if (reacting || onMachine || timed) {
 			const x = trc.x, y = trc.y, orig = trc.orig;
 			safe(() => api.elements.replaceAtCell(x, y, orig));
-			trc.search = { x: x, y: y, orig: orig, at: now, t0: now, before: snapArea(x, y, 20) };
-			dbg.note = "handed " + matName(orig) + " back at " + x + "," + y + (reacting ? " (to react)" : " (stalled)");
-			logEvt("handback", { why: reacting ? ("touching " + matName(touch)) : "on a machine", onStructure: structIdAt(x, y) });
-			stats.handbacks++; track("handed " + matName(orig) + " back " + (reacting ? "to react with " + matName(touch) : "on " + (structIdAt(x, y) || "a machine")) + " — watching for what it becomes");
+			// a planter grows a whole flower before anything comes out, so wait longer there
+			const waitMs = fam === "planterBox" ? 90000 : timed ? 30000 : setting("handoffSeconds", 8) * 1000;
+			trc.search = { x: x, y: y, orig: orig, at: now, t0: now, before: snapArea(x, y, 20), waitMs: waitMs };
+			const why = reacting ? ("touching " + matName(touch)) : onMachine ? ("on a machine (" + sid + ")") : "changes on a timer";
+			dbg.note = "handed " + matName(orig) + " back at " + x + "," + y + " — " + why;
+			logEvt("handback", { why: why, onStructure: sid || structIdAt(x, y), wants: [...nextOf(orig).keys()].map(matName) });
+			stats.handbacks++; track("handed " + matName(orig) + " back (" + why + ") — watching for " + ([...nextOf(orig).keys()].map(matName).join(" / ") || "what it becomes"));
 		}
 	} else if (trc && trc.pending) {
 		// the mark applies at the sim's next idle moment; until it shows up, keep
@@ -669,13 +863,15 @@ function censusTick(now) {
 	lastCensus = now;
 	const R = 40, extra = [];
 	for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
-		if (!dx && !dy) continue;
+		// right next to it is most likely the SAME grain seen twice while it flies (a moving
+		// grain is drawn as a particle linked to it) — turning that back would lose our grain
+		if (Math.abs(dx) <= 3 && Math.abs(dy) <= 3) continue;
 		const t = typeAt(trc.x + dx, trc.y + dy);
 		if (t !== undefined && t !== null && tracerTypes.has(t)) extra.push({ x: trc.x + dx, y: trc.y + dy, t: t });
 	}
 	if (!extra.length) return;
 	stats.ghosts += extra.length;
-	logEvt("ghost", { cells: extra.map((c) => c.x + "," + c.y) });
+	logEvt("ghost", { cells: extra.map((c) => c.x + "," + c.y), kinds: extra.map((c) => matName(c.t) + (safe(() => api.elements.getInfoAtCell(c.x, c.y).isParticle) ? " (flying)" : "")) });
 	track(extra.length + " extra tracer grain" + (extra.length > 1 ? "s" : "") + " near it (e.g. " + extra[0].x + "," + extra[0].y + ") — turned back into their real material", true);
 	const orig = trc.orig;
 	for (const c of extra) { const real = realOf.get(c.t) !== undefined ? realOf.get(c.t) : orig; safe(() => api.elements.replaceAtCell(c.x, c.y, real)); }
@@ -908,6 +1104,7 @@ function tick() {
 function start(reason) {
 	if (active || !inWorld() || !setting("enabled", true)) return;
 	active = true; startedAt = Date.now(); tour = null; fol = null; cam = null; path = null; trc = null; waitEmit = null; indexBelts(true);
+	safe(armCloneReactions);
 	graceUntil = Date.now() + (reason === "menu" ? 2500 : 0);   // started by hand (panel button): ignore the mouse settling after the click
 	saved = {
 		hud: !!safe(() => state.session.ui.hudHidden),
@@ -1055,7 +1252,7 @@ function Tracker() {
 		row("TRACKER  ·  build " + BUILD, "#8fb3d9", 700),
 		row("now: " + state, trc && !trc.search && !trc.miss && !trc.pending ? "#9fe0a8" : "#f2c46b"),
 		row("journeys " + stats.journeys + " · grains marked " + stats.marksLanded + "/" + stats.marksAsked + " · lost " + lost + " · re-found " + stats.refound),
-		row("clones " + cloneOf.size + " · reactions armed " + reactionsArmed + " · changes followed " + (stats.transforms || 0)),
+		row("copies " + cloneOf.size + (cloneSkipped ? " (" + cloneSkipped + " skipped)" : "") + " · recipes taught " + reactionsArmed + (armErrors ? " (" + armErrors + " refused)" : "") + " · changes followed " + (stats.transforms || 0) + " · burns " + (stats.burns || 0)),
 		row("jumps " + stats.jumps + " · extra tracers " + stats.ghosts + " · hand-backs " + stats.handbacks + " · longest ride " + secs(stats.longestMs)),
 	];
 	const reasons = Object.entries(stats.losses).sort((a, b2) => b2[1] - a[1]);
@@ -1088,8 +1285,10 @@ function Pill() {
 }
 if (h) { safe(() => api.ui.inject("brandon-screensaver-pill", Pill)); setInterval(() => { if (repaint) repaint((v) => v + 1); }, 15000); }
 
+// Teach the copies after the game's content (and other mods) have registered their recipes;
+// look again for a while, since some mods add recipes late. Only new or changed rules are sent.
 safe(() => api.events.on("game:ready", () => { indexBelts(true); safe(armCloneReactions); }));
-for (const ms of [3000, 9000, 20000]) setTimeout(() => safe(() => { if (inWorld()) { if (reactionsArmed === 0) armCloneReactions(); else applyCloneDefs(); } }), ms);
-setInterval(() => safe(() => { if (inWorld() && reactionsArmed === 0) armCloneReactions(); }), 15000);
+for (const ms of [3000, 9000, 20000, 45000]) setTimeout(() => safe(() => { if (inWorld()) armCloneReactions(); }), ms);
+setInterval(() => safe(() => { if (inWorld() && Date.now() - lastArmAt > 60000) armCloneReactions(); }), 15000);
 setTimeout(() => safe(() => indexBelts(true)), 8000);
 console.log("[" + MOD_ID + "] loaded — build " + BUILD);

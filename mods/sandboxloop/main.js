@@ -7,7 +7,7 @@ const api = sandkit.api;
 const React = sandkit.react;
 const h = React.createElement;
 const MOD_ID = "brandon.sandboxloop";
-const BUILD = "0.4.1";
+const BUILD = "0.4.2";
 
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
@@ -49,6 +49,10 @@ const PANEL_KEY = "brandon.sandboxloop.panel";     // current panel selections
 
 // --- material palette (same enumeration the Matter Gun uses) ----------------
 let palette = [], paletteByType = new Map();
+// The Screensaver mod registers a tracer copy of every material (ids "brandonTrc_…" and
+// "brandonTracer…"). They are not materials you'd emit or remove, so keep them out of the
+// pickers and the whole-map list.
+function isTracerType(t) { const id = safe(() => api.elements.getIdByType(t)); return typeof id === "string" && /^brandonTrc_|^brandonTracer/.test(id); }
 function buildPalette() {
 	const types = safe(() => api.elements.getRegisteredTypes(), []) || [];
 	const MT = safe(() => sandkit.enums.MatterType) || {};
@@ -61,7 +65,7 @@ function buildPalette() {
 			matterType: def.matterType,
 			color: mc === null ? "#8a8a8a" : "#" + mc.toString(16).padStart(6, "0"),
 		};
-	}).filter((p) => p.matterType !== (safe(() => sandkit.enums.MatterType.Particle)))
+	}).filter((p) => p.matterType !== (safe(() => sandkit.enums.MatterType.Particle)) && !isTracerType(p.type))
 	  .sort((a, b) => a.name.localeCompare(b.name));
 	paletteByType = new Map(palette.map((p) => [p.type, p]));
 }
@@ -801,7 +805,7 @@ function Tracker() {
 		} else if (!census.size) {
 			if (censusInfo.at) kids.push(h("div", { key: "cn", style: { fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "No loose material found on the map."));
 		} else {
-			const present = [...census.entries()].filter((p) => p[1] > 0);
+			const present = [...census.entries()].filter((p) => p[1] > 0 && !isTracerType(p[0]));
 			const ordered = pinnedFirst(present, (p) => p[0], (a, b) => (Math.abs(censusTrend.get(b[0]) || 0) - Math.abs(censusTrend.get(a[0]) || 0)) || (b[1] - a[1]));
 			const pinnedCount = ordered.filter((p) => pinned.has(p[0])).length;
 			const top = ordered.slice(0, Math.max(12, pinnedCount));   // always keep every pinned row visible
