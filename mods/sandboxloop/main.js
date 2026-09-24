@@ -7,7 +7,7 @@ const api = sandkit.api;
 const React = sandkit.react;
 const h = React.createElement;
 const MOD_ID = "brandon.sandboxloop";
-const BUILD = "0.4.4";
+const BUILD = "0.4.5";
 
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
@@ -166,11 +166,13 @@ function cfgFor(s, fallback) {
 function bake(s, cfg) {
 	const mat = cfg.mat || eidOfType(cfg.type), rate = cfg.rate;
 	cfgMap.set(ikey(s.x, s.y), { mat: mat, type: cfg.type, rate: rate });
-	if (!s.data) s.data = {};
-	s.data.brandonMat = mat; s.data.brandonRate = rate;
+	// through the game's own setter (it tells the game the structure changed); poking
+	// s.data directly is only the fallback
+	const viaApi = safe(() => { api.structures.updateData(s, { brandonMat: mat, brandonRate: rate }); return true; }, false);
+	if (!viaApi || !s.data || s.data.brandonMat !== mat) { if (!s.data) s.data = {}; s.data.brandonMat = mat; s.data.brandonRate = rate; }
 	saveCfg();
 }
-// "set" on the Placed list: bake the panel's current Source (or Remover) setting into a
+// "use panel" in a Placed row's editor: bake the panel's current Source (or Remover) setting into a
 // structure that is already on the map, so it never has to be re-placed
 function applyPanelTo(s, isSrc) {
 	const pc = isSrc ? emitCfg : removeCfg;
@@ -797,8 +799,9 @@ function Row(label, cfg, accent) {
 			style: { width: "52px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px 3px", fontVariantNumeric: "tabular-nums" } }),
 		h("span", { style: { fontSize: "10px", color: "#93a1b0" } }, "/s"));
 }
-// --- placed list: every Source / Remover on the map, what it does, and "set" --
+// --- placed list: every Source / Remover on the map, what it does, and ✎ to edit or remove it --
 let placedOpen = true, placedMsg = "";
+let placedEdit = null, placedRm = null;   // which Placed row has its editor open / its remove armed
 (function loadPl() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.placedopen")) === "0") placedOpen = false; })();
 function playerCell() { const p = safe(() => sandkit.state.store.player); return p && typeof p.x === "number" ? { x: p.x / 4, y: p.y / 4 } : null; }
 function PlacedList() {
@@ -811,24 +814,54 @@ function PlacedList() {
 	if (me) for (const r of rows) { const d = Math.hypot(r.s.x - me.x, r.s.y - me.y); if (d < nd) { nd = d; near = r; } }
 	const head = h("div", { key: "ph", style: Object.assign({}, SUB_HEAD, { cursor: "pointer" }), onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); placedOpen = !placedOpen; safe(() => window.localStorage.setItem("brandon.sandboxloop.placedopen", placedOpen ? "1" : "0")); if (panelRepaint) panelRepaint((v) => v + 1); } },
 		h("span", null, (placedOpen ? "▾ " : "▸ ") + "Placed (" + rows.length + ")"),
-		unset ? h("span", { style: { fontSize: "9px", color: "#e0b060", fontWeight: 800 } }, unset + " not set") : h("span", { style: SUB_DIM }, "set = use the panel setting above"));
+		unset ? h("span", { style: { fontSize: "9px", color: "#e0b060", fontWeight: 800 } }, unset + " not set") : h("span", { style: SUB_DIM }, "✎ = change this one"));
 	if (!placedOpen || !rows.length) return h("div", { key: "placed" }, head);
+	const repaint = () => { if (panelRepaint) panelRepaint((v) => v + 1); };
+	const stop = (e) => { if (e && e.stopPropagation) e.stopPropagation(); };   // keep clicks / typing away from the game
 	const list = rows.map((r) => {
 		const k = (r.src ? "s" : "r") + r.s.x + "," + r.s.y;
-		const pc = r.src ? emitCfg : removeCfg;
-		const same = !r.c.unset && r.c.type === pc.type && r.c.rate === pc.rate;
-		return h("div", { key: k, style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px", margin: "2px 0" } },
+		const who = (r.src ? "Source " : "Remover ") + r.s.x + "," + r.s.y;
+		const open = placedEdit === k, arming = placedRm === k;
+		const line = h("div", { key: k, style: { display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px", margin: "2px 0" } },
 			h("span", { style: { width: "50px", color: r.src ? "#8fe0aa" : "#e79b9b", fontWeight: 700 } }, r.src ? "Source" : "Remover"),
 			swatch(r.c.type),
 			h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 } },
 				nameOf(r.c.type) + " " + fmt1(r.c.rate) + "/s",
-				r.c.unset ? h("span", { title: "Nothing is baked into this one, so it follows whatever the panel shows. Press set.", style: { color: "#e0b060", fontWeight: 800 } }, " · not set") : null),
+				r.c.unset ? h("span", { title: "Nothing is baked into this one, so it follows whatever the panel shows. Press ✎ to give it its own setting.", style: { color: "#e0b060", fontWeight: 800 } }, " · not set") : null),
 			h("span", { style: { color: "#7f8b98", fontVariantNumeric: "tabular-nums", fontSize: "9.5px" } }, r.s.x + "," + r.s.y + (r === near ? " ◀ you" : "")),
-			h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation();
-					placedMsg = applyPanelTo(r.s, r.src) ? ((r.src ? "Source " : "Remover ") + r.s.x + "," + r.s.y + " → " + nameOf(pc.type) + " " + fmt1(pc.rate) + "/s") : "pick a material on the panel first";
-					if (panelRepaint) panelRepaint((v) => v + 1); },
-				title: "Bake the panel's " + (r.src ? "Source" : "Remover") + " setting (" + nameOf(pc.type) + ", " + fmt1(pc.rate) + "/s) into this one.",
-				style: Object.assign({}, SMBTN, { padding: "1px 6px" }, same ? { opacity: 0.45 } : null) }, "set"));
+			h("button", { onClick: (e) => { stop(e); placedEdit = open ? null : k; placedRm = null; repaint(); },
+				title: open ? "close" : "change this " + (r.src ? "Source" : "Remover") + "'s material and rate, or remove it",
+				style: Object.assign({}, SMBTN, { padding: "1px 6px" }, open ? { background: "#2a3645" } : null) }, open ? "✓" : "✎"));
+		if (!open) return line;
+		// the editor: this structure's OWN material and rate (changes apply at once), copy the
+		// panel's setting, or take it off the map
+		const cur = r.c;
+		const put = (type, rate) => {
+			if (type == null) return;
+			bake(r.s, { mat: eidOfType(type), type: type, rate: clampRate(rate) });
+			runtime.delete(r.src ? ikey(r.s.x, r.s.y) : "r" + ikey(r.s.x, r.s.y));
+			placedMsg = who + " → " + nameOf(type) + " " + fmt1(clampRate(rate)) + "/s"; repaint();
+		};
+		const opts = [h("option", { value: "", key: "_none", disabled: true }, "— pick —")].concat(palette.map((p) => h("option", { value: p.type, key: p.type }, p.name)));
+		const pc = r.src ? emitCfg : removeCfg;
+		const editor = h("div", { key: k + "ed", onMouseDown: stop, style: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: "5px", margin: "1px 0 5px 55px", fontSize: "10.5px" } },
+			h("select", { value: cur.unset || cur.type == null || !paletteByType.has(cur.type) ? "" : cur.type, onChange: (e) => { if (e.target.value !== "") put(+e.target.value, cur.rate); },
+				style: { width: "100px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px" } }, opts),
+			h("input", { type: "number", min: "0", max: String(RATE_MAX), step: "0.1", value: cur.rate, onChange: (e) => put(cur.type, e.target.value), onKeyDown: stop, onKeyUp: stop, onKeyPress: stop,
+				title: "particles per second — decimals OK, up to " + RATE_MAX,
+				style: { width: "52px", background: "#11161d", color: "#e8edf3", border: "1px solid #37414d", borderRadius: "4px", fontSize: "11px", padding: "2px 3px", fontVariantNumeric: "tabular-nums" } }),
+			h("span", { style: { fontSize: "10px", color: "#93a1b0" } }, "/s"),
+			h("button", { onClick: (e) => { stop(e); placedMsg = applyPanelTo(r.s, r.src) ? (who + " → " + nameOf(pc.type) + " " + fmt1(pc.rate) + "/s") : "pick a material on the panel first"; repaint(); },
+				title: "Copy the panel's " + (r.src ? "Source" : "Remover") + " setting (" + nameOf(pc.type) + ", " + fmt1(pc.rate) + "/s) into this one.",
+				style: Object.assign({}, SMBTN, { padding: "1px 6px" }) }, "use panel"),
+			h("button", { onClick: (e) => { stop(e);
+					if (!arming) { placedRm = k; repaint(); return; }   // first click arms, second removes
+					const ok = safe(() => { api.structures.removeAtCell(r.s.x, r.s.y); return true; }, false);
+					placedRm = null; placedEdit = null; placedMsg = ok ? who + " removed" : "couldn't remove " + who + " — deconstruct it in the game";
+					repaint(); },
+				title: "Take this " + (r.src ? "Source" : "Remover") + " off the map (click twice)",
+				style: Object.assign({}, SMBTN, { padding: "1px 6px", color: "#e79b9b", borderColor: arming ? "#e79b9b" : "#3a4550" }) }, arming ? "sure? remove" : "remove"));
+		return [line, editor];
 	});
 	return h("div", { key: "placed" }, head, list,
 		placedMsg ? h("div", { style: { fontSize: "9.5px", color: "#8fb98f", fontWeight: 700 } }, placedMsg) : null);
@@ -1085,7 +1118,7 @@ function Panel() {
 		h("div", { style: { flex: "1 1 auto", minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingRight: "4px" } },
 			Row("Source", emitCfg, "#8fe0aa"),
 			Row("Remover", removeCfg, "#e79b9b"),
-			h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now. To change one already placed, press set on it below."),
+			h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now. To change or remove one already placed, press ✎ on it below."),
 			PlacedList(),
 			ThermalRow(),
 			ScreensaverRow(),

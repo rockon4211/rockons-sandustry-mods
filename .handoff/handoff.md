@@ -46,7 +46,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
 ## Mods and versions (after the 2026-09-23 audit round)
 
-- **Sandbox Loop** `brandon.sandboxloop` v0.4.4 — Sources and Removers, balance tracker,
+- **Sandbox Loop** `brandon.sandboxloop` v0.4.5 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
 - **Screensaver** `brandon.screensaver` v0.18.1 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went.
@@ -79,7 +79,7 @@ because the game hard-codes belt speed and filter behaviour to the `filterLeftMk
 `filterRightMk2` ids and gives any unknown structure id speed 0. `sim-filterboost.js`
 tests it.
 
-## Sandbox Loop v0.4.4 — what it does
+## Sandbox Loop v0.4.5 — what it does
 
 A **Source** is a structure that emits a chosen material at an adjustable rate (decimals
 allowed, up to 100/s); a **Remover** is a single block that deletes one chosen material at
