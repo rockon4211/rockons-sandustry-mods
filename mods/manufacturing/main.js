@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.12.0 running"));
+		safe(() => api.ui.toast("Manufacturing v0.12.1 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -729,7 +729,7 @@ setInterval(armGlassRecipe, 1500);
 // transport config, so the state is handed to worker.js through a shared buffer.
 // =========================================================================
 const TECH_FILTER_MK3 = "brandonFilterMk3";
-const FILTER_MK3_COST = 500000;   // placeholder price - to be tuned later
+const FILTER_MK3_COST = 25000;    // placeholder price - to be tuned later
 let filterBoost = null;   // uint32[2]: [0] = on (1) / off (0), [1] = the worker's last applied state + 1
 try { filterBoost = api.shared.buffers.create("filterBoost", { type: "uint32", length: 2 }); }
 catch (e) { console.error(`[${MOD_ID}] filter boost buffer failed:`, e); }
