@@ -54,12 +54,12 @@ copies in this project and on the PC as the durable ones.
 
 ## Mods and versions (installed on the desktop, all committed to master)
 
-- **Sandbox Loop** `brandon.sandboxloop` v0.4.0 — Sources and Removers, balance tracker,
+- **Sandbox Loop** `brandon.sandboxloop` v0.4.2 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.17.2 — plays the map when idle and follows one
+- **Screensaver** `brandon.screensaver` v0.18.0 — plays the map when idle and follows one
   grain through the factory. This is where nearly all recent work went.
-- **Manufacturing (Mod Tools)** v0.9.5, **Lava Boiloff** v0.1.0, **Quickstart** v1.0.0 —
-  unchanged this session; they are the versions installed on the PC.
+- **Manufacturing (Mod Tools)** v0.10.0, **Lava Boiloff** v0.1.0, **Quickstart** v1.0.0 —
+  Manufacturing 0.10.0 adds the Belt-Speed Filtering upgrade for Mk.2 Filters; Lava Boiloff and Quickstart are unchanged.
 - **Workshop** — retired on 2026-09-20, removed from master, still in git history and
   saved in this project. On the PC it was moved to
   `sandustry\_to_delete\retired-2026-09-20\workshop`.
