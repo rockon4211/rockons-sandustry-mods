@@ -1,6 +1,6 @@
-# Mod file checksums — main, e62b809, 2026-09-23
+# Mod file checksums — main, e8b4dd8, 2026-09-23
 
-Versions: sandboxloop 0.4.3, screensaver 0.18.1, manufacturing 0.12.1, lavaboiloff 0.1.1, quickstart 1.0.1.
+Versions: sandboxloop 0.4.4, screensaver 0.18.1, manufacturing 0.12.1, lavaboiloff 0.1.1, quickstart 1.0.1.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
 text files out with CRLF, so hash those after converting, or compare with `git hash-object`.
 
@@ -33,9 +33,9 @@ d2ada6a4c01c2438a5b8f8a472d9b59ae15ece21c03b195b54b6775532944d8d  manufacturing/
 6d4f399c4dffcecd3c0a94738438a2d76cd9b438135ea5c3bae94b938871a4cf  quickstart/main.js
 cbe98a26414ea9cdeca5a1739a8900e1a798d274084370ca45ecfd730b34ab4e  quickstart/modinfo.json
 93da1be7de59ea4f5db0384e5d83098567fbdf5e9f75ca92f20ee2c0a05708b2  quickstart/preview.png
-09dfeab0fb2939bbdb395fe9d93bc51e1dc209f886efd9e6f3375f597c542667  sandboxloop/main.js
+6bee02ddd9c510385a43cfcbc1ec58b90b1101c4c881bb9bb8c1d409a684b7aa  sandboxloop/main.js
 c67969b7ba30cb5a1f8967aebd2571d31cfa2945b7bed51623c4f0b4647f22d8  sandboxloop/make-sprites.js
-ae471362c32897f935439fed70296c7694bdfbb95adab756a434811f1fe50805  sandboxloop/modinfo.json
+cc40af57912803753c7fa9f86f92f27a012791832d1879e78e49b95e2f2c3e87  sandboxloop/modinfo.json
 d03eb83fbe5c5aba303955cdd28dfe08fcdfc9089a18fd5117b57cbf529b703a  sandboxloop/sink.png
 2fcbee7b58f45f11f52db540b59894490f89bfa6096a1abcf0c1e7aea0d54d18  sandboxloop/source.png
 3ba37c94226cc7a2ec360f39444ae318f52d194e415e35770ad97ba6396a2293  screensaver/main.js
