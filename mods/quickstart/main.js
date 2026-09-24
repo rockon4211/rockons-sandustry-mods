@@ -16,11 +16,13 @@ function setting(key, fallback) {
 const isEnabled = () => setting("enabled", true);
 function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
 
-let sawQuickSave = false;
+let sawQuickSave = false, reloading = false;
 safe(() => window.addEventListener("keydown", (e) => { if (e.key === "F5") sawQuickSave = true; }));
 safe(() => window.addEventListener("keydown", (e) => {
 	if (e.key !== "F10" || !isEnabled()) return;
 	e.preventDefault();
+	if (e.repeat || reloading) return;   // holding F10 (or a double tap) must not queue reloads
+	reloading = true;
 	let id = null;
 	if (sawQuickSave) {
 		const worldId = safe(() => sandkit.state.store.meta.worldId);
@@ -37,7 +39,7 @@ safe(() => window.addEventListener("keydown", (e) => {
 	safe(() => api.ui.toast(id ? "Quick reload - back into the save…" : "Quick reload - to the menu…"));
 	const base = window.location.protocol + "//" + window.location.host + window.location.pathname;
 	setTimeout(() => {
-		try { window.history.replaceState({}, "", id ? base + "?db_load=" + id : base); } catch (_) {}
+		try { window.history.replaceState({}, "", id ? base + "?db_load=" + encodeURIComponent(String(id)) : base); } catch (_) {}
 		window.location.reload();
 	}, 150);
 }));
