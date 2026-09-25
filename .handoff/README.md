@@ -2,6 +2,8 @@
 
 Notes and test harnesses for whoever picks this up next — a person or a new chat.
 
+- `lessons.md` — what went wrong along the way and the rule each became (human version of
+  the root `CLAUDE.md`, which Claude Code loads automatically).
 - `handoff.md` — **start here.** What the mods are, what the game's modding API allows,
   how to test without the game, what is still open.
 - `mods-checksums.md` — sha256 of every file in `mods/`, for comparing two PCs.

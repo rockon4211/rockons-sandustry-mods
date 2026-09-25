@@ -18,6 +18,11 @@ git log --oneline | head
 Then read the rest of this file, which covers what the mods do, what the game's modding
 API allows, how to test without the game, and what is still open.
 
+**For Claude:** `CLAUDE.md` at the repo root is loaded automatically by Claude Code and holds
+the rules, the verification checklist, the mistakes already made once, and the recipe for
+menus that match the game's. `.handoff/lessons.md` is the human-readable version of those
+lessons. `tools/rebuild-manufacturing-stubs.js` rebuilds Manufacturing's baked copies.
+
 **Pushing.** The live branch is `main`. On the desktop PC the clone is
 `C:\Users\Brand\dev\rockons-sandustry-mods` and git is authenticated through Git Credential
 Manager, so from there pushing is just `git push` (and `git push --tags` if a tag was
