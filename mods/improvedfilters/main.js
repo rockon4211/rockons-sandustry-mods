@@ -19,7 +19,7 @@
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.2.4";
+const BUILD = "0.2.5";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -71,7 +71,9 @@ setInterval(() => { if (clipLoaded || !inWorld()) return; loadClip(); clipLoaded
 
 // --- filters on the map ------------------------------------------------------------
 const ST = safe(() => sandkit.enums.StructureType) || {};
-const VAN = new Set([ST.FilterLeft, ST.FilterRight, "filterLeftMk2", "filterRightMk2", "filterWall", "filterWallMk2"].filter((v) => v !== undefined));
+// Mk.2 (and its wall) only - the clipboard holds between Mk.2 and Mk.3; the Mk.1 filter
+// (StructureType.FilterLeft/Right, one material) and its wall are left alone
+const VAN = new Set(["filterLeftMk2", "filterRightMk2", "filterWallMk2"]);
 const MK3 = new Set(["filterLeftMk3", "filterRightMk3"]);
 const WALLS = new Set(["filterWall", "filterWallMk2"]);
 const isFilter = (s) => !!s && (VAN.has(s.type) || MK3.has(s.type));   // real filter kinds only
@@ -104,7 +106,7 @@ const vanSel = () => { const ed = vanEditor(); return ed ? (safe(() => ed.getSel
 const mk3 = () => safe(() => window.__brandonFilterMk3) || null;
 const mk3Sel = () => { const k = mk3(); return k ? (safe(() => k.selection()) || null) : null; };
 function menuUp() {
-	if (vanSel()) return "van-row";
+	const vs = vanSel(); if (vs) return VAN.has(vs.structureType) ? "van-row" : null;   // a Mk.1 row open in the game's editor: not ours
 	if (mk3Sel()) return "mk3-row";
 	const st = safe(state); if (!st) return null;
 	// the game's panel shows while one of its filters is the active structure - same gate

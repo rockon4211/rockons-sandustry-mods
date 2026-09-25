@@ -2,11 +2,11 @@
 	"manifestVersion": 1,
 	"id": "brandon.improvedfilters",
 	"name": "Improved Filter Options",
-	"version": "0.2.4",
+	"version": "0.2.5",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",
-	"description": "A clipboard for filter settings, built into the filter menus. COPY the settings (materials, allow/block) shown by the filter menu that is open - the row being edited, or the setting new filters take - and PASTE the clipboard into any other filter menu: onto a Mk.1, Mk.2 or Mk.3 row, or into new filters. It works across kinds: copy a Mk.2, paste onto a Mk.3, and back. The clipboard is kept by material name, so it survives reloads and moving to another PC.\n\nHOW\nWhenever a filter menu is up (a filter in hand, or a placed row opened in its editor), a Clipboard strip appears in the same band above the hotbar: COPY / PASTE work on what that menu shows. PICK FROM MAP and PASTE ONTO MAP arm a click on any placed filter instead, for a row that isn't open in a menu - while you pick, the building in hand is put down and every filter row on screen shows the game's kind of label (what it filters, allow/block), and you can click a label instead of the filter; the building is handed back after. Esc or right-click cancels.",
+	"description": "A clipboard for filter settings, built into the filter menus. COPY the settings (materials, allow/block) shown by the filter menu that is open - the row being edited, or the setting new filters take - and PASTE the clipboard into any other filter menu: onto a Mk.2 or Mk.3 row, or into new filters. (Mk.1 filters are left alone.) It works across kinds: copy a Mk.2, paste onto a Mk.3, and back. The clipboard is kept by material name, so it survives reloads and moving to another PC.\n\nHOW\nWhenever a filter menu is up (a filter in hand, or a placed row opened in its editor), a Clipboard strip appears in the same band above the hotbar: COPY / PASTE work on what that menu shows. PICK FROM MAP and PASTE ONTO MAP arm a click on any placed filter instead, for a row that isn't open in a menu - while you pick, the building in hand is put down and every filter row on screen shows the game's kind of label (what it filters, allow/block), and you can click a label instead of the filter; the building is handed back after. Esc or right-click cancels.",
 	"dependencies": [],
 	"loadOrder": 0,
 	"configSchema": {

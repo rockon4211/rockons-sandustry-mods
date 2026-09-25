@@ -62,7 +62,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
-- **Improved Filter Options** `brandon.improvedfilters` v0.2.4 (2026-09-25) — a clipboard for
+- **Improved Filter Options** `brandon.improvedfilters` v0.2.5 (2026-09-25) — a clipboard for
   filter settings, built into the filter menus: a strip mounted in the hotbar band
   (`api.ui.overlays.register("hotbar", …)`) whenever a filter menu is up. It reads the
   game's row editor through `sandkit.engine.api.filterGroupEditor` (`getSelection(state)`
@@ -89,7 +89,9 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   slot) — so the Mk.3 panel and the strip close exactly when the game puts the filter away
   (they lingered before, reading player.action / activeStructureType themselves). The game's
   own filter panel is gated only on `bk(activeStructureType)`; `session.windows.building.
-  filterConfig` is cleared in places but never set true — not a mechanism to rely on; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
+  filterConfig` is cleared in places but never set true — not a mechanism to rely on. 0.2.5: Mk.1 filters (StructureType 17/18) and the Mk.1 wall
+  are out entirely — no strip for them, not pickable, no labels; the clipboard holds between
+  Mk.2 (+ wall Mk.2) and Mk.3 only, as asked; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
   Mk.3, walls) — shakers, growers and critter fences carry a `filter` too but are excluded.
   Clipboard persisted by element id (`brandon.improvedfilters.clip`). UNTESTED in game as
   of 0.2.0 (0.1.0's floating panel was seen in game).
