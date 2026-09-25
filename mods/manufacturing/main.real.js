@@ -210,7 +210,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.15.4 running"));
+		safe(() => api.ui.toast("Manufacturing v0.15.5 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -869,7 +869,17 @@ function mk3Apply() {
 	safe(() => sandkit.engine.api.structures.updateMany(sandkit.engine.state, row.members, { propagateToWorkers: true }));
 	mk3Cancel();
 }
-const mk3Cfg = () => mk3.sel ? mk3.draft : (safe(() => sandkit.state.store.options.defaultFilter) || { mode: "allow" });
+// what a new Mk.3 would get: the row draft while editing, else the shared default. A Mk.3
+// picked up with the Copier is placed with customData.copiedStructure.filter instead, and
+// the game mirrors that into defaultFilter only for its own filter ids (the Copier keeps no
+// type on copiedStructure - the held type is what action.getActive says), so it is mirrored
+// here the same way; changing anything in the panel drops the copied filter (mk3Set).
+const mk3Mirror = (cf) => Object.assign({ elementType: Array.isArray(cf.elementType) ? cf.elementType.slice() : cf.elementType, mode: cf.mode || "allow" }, cf.affectsLiquid && { affectsLiquid: true }, cf.affectsGas && { affectsGas: true });
+const mk3Cfg = () => mk3.sel ? mk3.draft : (safe(() => {
+	const st = sandkit.state, cd = st.session.action.customData, cf = cd && cd.copiedStructure && cd.copiedStructure.filter;
+	if (cf && mk3Selected()) { const m = mk3Mirror(cf); if (JSON.stringify(m) !== JSON.stringify(st.store.options.defaultFilter)) st.store.options.defaultFilter = m; }
+	return st.store.options.defaultFilter;
+}) || { mode: "allow" });
 function mk3Set(next) {
 	if (mk3.sel) mk3.draft = next;
 	else safe(() => {   // as the game's panel does: the shared default, and a copied filter no longer applies
@@ -986,14 +996,19 @@ function FilterMk3Overlay() {
 	const [rows, setRows] = ReactM.useState([]);
 	const box = ReactM.useRef(null), nodes = ReactM.useRef(new Map());
 	ReactM.useEffect(() => {
-		let raf = 0, lastRows = 0, shown = false;
+		let raf = 0, lastRows = 0, shown = false, lastSig = null;
 		const frame = () => {
 			raf = requestAnimationFrame(frame);
 			const on = mk3Ready && isEnabled() && inGame() && overlayOn() && (mk3.sel || mk3Selected());
 			const el = box.current; if (!el) return;
 			if (!on) { if (shown) { el.style.display = "none"; shown = false; } return; }
 			if (!shown) { el.style.display = ""; shown = true; }
-			const now = Date.now(); if (now - lastRows > 500) { lastRows = now; setRows(mk3Rows()); }
+			const now = Date.now();
+			if (now - lastRows > 500) {   // re-read the rows; only re-render when they differ
+				lastRows = now;
+				const next = mk3Rows(), sig = next.map((r) => r.key + ":" + r.count + ":" + r.mode + ":" + r.types.join("|")).join(";");
+				if (sig !== lastSig) { lastSig = sig; setRows(next); }
+			}
 			const ses = safe(() => sandkit.state.session); if (!ses) return;
 			const M = safe(() => ses.rendering.canvas.getBoundingClientRect()); if (!M) return;
 			const I = ((ses.view && ses.view.zoom) || 1) * (ses.scale || 1), kx = ses.camera.x, ky = ses.camera.y;
@@ -1062,17 +1077,20 @@ setInterval(() => {
 }, 2000);
 
 // Filter Mk.3 - under Manufacturing, beside Glass. Also needs Advanced Filters
-// (the vanilla research that unlocks the Mk.2 Filter), looked up by enum name.
+// (the vanilla research that unlocks the Mk.2 Filter), looked up by enum name. Without
+// that gate the node is not registered at all: the vertical variant is the vanilla Mk.2
+// filter wall, which the node would otherwise unlock before Advanced Filters.
 {
-	if (safe(() => api.tech.getDefinitionById(TECH_MANU)) && !safe(() => api.tech.getDefinitionById(TECH_FILTER_MK3))) {
-		const adv = safe(() => sandkit.enums.Tech.AdvancedFilters);
+	const adv = safe(() => sandkit.enums.Tech.AdvancedFilters);
+	if (adv === undefined || adv === null) console.error(`[${MOD_ID}] Filter Mk.3 research node NOT registered: sandkit.enums.Tech.AdvancedFilters is missing (the Advanced Filters gate cannot be resolved)`);
+	else if (safe(() => api.tech.getDefinitionById(TECH_MANU)) && !safe(() => api.tech.getDefinitionById(TECH_FILTER_MK3))) {
 		const definition = {
 			nameKey: `tech|${TECH_FILTER_MK3}|name`,
 			descriptionKey: `tech|${TECH_FILTER_MK3}|description`,
 			cost: FILTER_MK3_COST,
 			currencyType: "gold",
 			branch: "heat",
-			requires: adv !== undefined && adv !== null ? [TECH_MANU, adv] : [TECH_MANU],
+			requires: [TECH_MANU, adv],
 			unlocks: mk3Ready ? { structures: [MK3_R] } : {},
 		};
 		let done = false;
