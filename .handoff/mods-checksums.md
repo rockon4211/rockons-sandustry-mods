@@ -1,6 +1,6 @@
-# Mod file checksums — main, bf5601a, 2026-09-25
+# Mod file checksums — main, f581787, 2026-09-25
 
-Versions: sandboxloop 0.4.5, screensaver 0.18.2, manufacturing 0.15.3, lavaboiloff 0.1.1, quickstart 1.0.1, improvedfilters 0.2.3.
+Versions: sandboxloop 0.4.5, screensaver 0.18.2, manufacturing 0.15.4, lavaboiloff 0.1.1, quickstart 1.0.1, improvedfilters 0.2.4.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
 text files out with CRLF, so hash those after converting, or compare with `git hash-object`.
 
@@ -19,18 +19,18 @@ To compare an install, run the same `find … | xargs sha256sum` inside
 `%APPDATA%\sandustry\mods\` (Git Bash: `cd "$APPDATA/sandustry/mods"`).
 
 ```
-4a05e00227d0733dec1c6ef98c3481c444bc1a07f849eb07c169edd6f8992c9e  improvedfilters/main.js
-bd608c1af91a02ade94e45fc33f6fe6ad3528f0783d7b190fbb1400bb93716aa  improvedfilters/modinfo.json
+c63f0dc44aa9ee8fedc8f84595b91759ba8bdfc32090794bbbc79dcb282afe98  improvedfilters/main.js
+bf37cac49c21593e198a5c6f90e7866b9aa7c8765c0738b48d517fd88f499a04  improvedfilters/modinfo.json
 b77d7dbf8f5d674034316ff9af034f1da170dad21f4bcdf12c63540916c1c653  lavaboiloff/main.js
 311973d685f93b75546a1af856febf8a8e293bc8e6d1b98da2c616459b436509  lavaboiloff/modinfo.json
 1e4b15b61a5006819fc8d69eeca740b230348493f97440d081812ed1c29e9fcd  lavaboiloff/worker.js
 ff36b12798a7aa8d6983f2c165326ddb38391d218443498bc07cd9ab31c935cc  manufacturing/filter_left_mk3.png
 9bf29fe79ee1c8870df691face431ddd948c2af078fa7524a32a7535c52c5b3e  manufacturing/filter_right_mk3.png
-86f72836a83ade488204a8378831d04f1fe35032defe57d2a1573024d7f1ea68  manufacturing/main.js
-1208910a22f60789605ef32073027844515876c29b16dc1c1a72c067e2d7f8aa  manufacturing/main.real.js
+23c77120ce093a2a76d48480f9767a857775d8de1a924156fe84e88729c7906c  manufacturing/main.js
+609550ab1008e4b3243d603b33e6b0dca62135d6bd0f60c319f7ae31be54381e  manufacturing/main.real.js
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun.png
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun_icon.png
-7515b85fb69a87af2ffab91f48d321a64443a9b633958f1a34c1ae511652d39d  manufacturing/modinfo.json
+43ad52d38004c5ebbaade82301749f85e298d87a34f0d51c0e162e310e718b4f  manufacturing/modinfo.json
 bb6b7ac569af46b8b32072d79df284210d4f8b70e5a84ffa0407fac9c1475189  manufacturing/preview.png
 8018d0144f77848af41857926ed3d93d02d0db2a5482c9ef37b590839876c1f6  manufacturing/worker.js
 b5d6484016e77e14a2650302ea7da93e24213a94e7b87e0fef8facc00965310a  manufacturing/worker.real.js
