@@ -19,7 +19,7 @@
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.2.1";
+const BUILD = "0.2.2";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -160,11 +160,20 @@ function pasteIntoMenu(which) {
 // PICK / ONTO: a click on any placed filter, taken before the game sees it (capture),
 // so nothing gets built or grabbed. Esc / right-click cancels.
 let mode = null, cursorStyle = null, swallowUntil = 0;
+// While a pick is armed the building in hand is put down (its placement ghost would sit
+// over the cursor and the game would build on the click), and handed back afterwards
+// through the game's own selectStructure - which also brings its filter menu back.
+let held = null;
 function arm(m) {
+	if (m && !mode) {
+		held = safe(() => { const st = state(); const t = st.session.building.activeStructureType, a = st.store.player.action; return t || (a && a.id) || null; }) || null;
+		safe(() => engine().api.building.cancelPlacement(engine().state));
+	}
 	mode = m;
 	if (cursorStyle) { safe(() => cursorStyle.remove()); cursorStyle = null; }
 	if (m) safe(() => { cursorStyle = document.createElement("style"); cursorStyle.textContent = "*{cursor:" + (m === "copy" ? "copy" : "cell") + " !important}"; document.head.appendChild(cursorStyle); });
 	if (m) msg = m === "copy" ? "click a placed filter to copy its settings (Esc cancels)" : "click a placed filter: its whole row gets the clipboard (Esc cancels)";
+	if (!m && held) { const id = held; held = null; safe(() => engine().api.building.selectStructure(engine().state, id)); }
 	repaint();
 }
 function doCopyRow(row) {

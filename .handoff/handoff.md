@@ -62,7 +62,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
-- **Improved Filter Options** `brandon.improvedfilters` v0.2.1 (2026-09-24) — a clipboard for
+- **Improved Filter Options** `brandon.improvedfilters` v0.2.2 (2026-09-25) — a clipboard for
   filter settings, built into the filter menus: a strip mounted in the hotbar band
   (`api.ui.overlays.register("hotbar", …)`) whenever a filter menu is up. It reads the
   game's row editor through `sandkit.engine.api.filterGroupEditor` (`getSelection(state)`
@@ -75,7 +75,9 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   POINTERDOWN (0.2.1: a preventDefault on pointerdown suppresses the browser's follow-up
   mousedown/click, so the old mousedown handler never fired), with the clicked cell computed
   from the game's own mapping (screen = canvas rect origin + (world px − camera) × view.zoom
-  × session.scale; cell = world px / 4); only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
+  × session.scale; cell = world px / 4). 0.2.2: arming a pick records the building in hand
+  and calls `engine.api.building.cancelPlacement` (the ghost sat over the cursor); disarming
+  hands it back via `engine.api.building.selectStructure(state, id)`; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
   Mk.3, walls) — shakers, growers and critter fences carry a `filter` too but are excluded.
   Clipboard persisted by element id (`brandon.improvedfilters.clip`). UNTESTED in game as
   of 0.2.0 (0.1.0's floating panel was seen in game).
