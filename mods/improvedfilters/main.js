@@ -19,7 +19,7 @@
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.2.2";
+const BUILD = "0.2.3";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -163,17 +163,46 @@ let mode = null, cursorStyle = null, swallowUntil = 0;
 // While a pick is armed the building in hand is put down (its placement ghost would sit
 // over the cursor and the game would build on the click), and handed back afterwards
 // through the game's own selectStructure - which also brings its filter menu back.
+// "In hand" is three things to the game: session.building.activeStructureType, then
+// store.player.action, then the active hotbar slot - and its own deselect clears all
+// three plus the placing flag (cancelPlacement alone only resets the placement).
 let held = null;
-function arm(m) {
-	if (m && !mode) {
-		held = safe(() => { const st = state(); const t = st.session.building.activeStructureType, a = st.store.player.action; return t || (a && a.id) || null; }) || null;
+const uiHotbar = () => { const CID = safe(() => sandkit.enums.ComponentId) || {}; if (CID.Hotbar !== undefined) safe(() => api.ui.update(CID.Hotbar)); safe(() => api.ui.overlays.update("hotbar")); };
+function stash() {
+	held = safe(() => {
+		const st = state(), b = st.session.building, pl = st.store.player;
+		const o = { active: b.activeStructureType, action: pl.action ? Object.assign({}, pl.action) : null, slot: pl.hotbar.activeSlotIndex };
 		safe(() => engine().api.building.cancelPlacement(engine().state));
-	}
+		b.activeStructureType = null; b.placing = false; pl.action = null; pl.hotbar.activeSlotIndex = null;
+		safe(() => engine().api.input.resetMouseState(engine().state));
+		return o;
+	}) || null;
+	uiHotbar();
+}
+function unstash() {
+	const o = held; held = null; if (!o) return;
+	safe(() => {
+		const pl = state().store.player;
+		if (o.active) engine().api.building.selectStructure(engine().state, o.active);   // the game's own "put this building in hand"
+		else if (o.action) pl.action = o.action;
+		if (o.slot !== null && o.slot !== undefined) pl.hotbar.activeSlotIndex = o.slot;
+	});
+	uiHotbar();
+}
+function arm(m) {
+	if (m && !mode) stash();
 	mode = m;
 	if (cursorStyle) { safe(() => cursorStyle.remove()); cursorStyle = null; }
 	if (m) safe(() => { cursorStyle = document.createElement("style"); cursorStyle.textContent = "*{cursor:" + (m === "copy" ? "copy" : "cell") + " !important}"; document.head.appendChild(cursorStyle); });
-	if (m) msg = m === "copy" ? "click a placed filter to copy its settings (Esc cancels)" : "click a placed filter: its whole row gets the clipboard (Esc cancels)";
-	if (!m && held) { const id = held; held = null; safe(() => engine().api.building.selectStructure(engine().state, id)); }
+	if (m) msg = m === "copy" ? "click a filter (or its label) to copy its settings — Esc cancels" : "click a filter (or its label): its whole row gets the clipboard — Esc cancels";
+	if (!m) unstash();
+	repaint();
+}
+function pickRow(r) {   // a label was clicked
+	const m = mode; if (!m) return;
+	const row = rowAt(r.x, r.y); arm(null);
+	if (!row) { msg = "that row is gone"; repaint(); return; }
+	if (m === "copy") doCopyRow(row); else doPasteRow(row);
 	repaint();
 }
 function doCopyRow(row) {
@@ -256,7 +285,69 @@ function Strip() {
 		clip ? btn("Clear", () => { clip = null; saveClip(); arm(null); msg = "cleared"; repaint(); }) : null,
 		msg ? h("span", { className: "text-[10px] " + (mode ? "text-[#ffe700]" : "text-white/70") }, msg) : null);
 }
+// --- while a pick is armed: the game's own labels, for every filter kind ----------------
+// The game's labels overlay draws only while one of ITS filters is in hand, and the hand
+// is empty during a pick - so the strip draws the same thing itself: a box and a label
+// (materials, allow/block, count) on every filter row of every kind, placed the way the
+// game places its own (screen = canvas origin + (world px - camera) * zoom * scale),
+// refreshed every frame; the rows are re-read twice a second. Clicking a label picks it.
+function allRows() {
+	const N = 4, rows = [];
+	for (const id of [...VAN, ...MK3]) {
+		const list = []; safe(() => api.structures.forEachOfType(id, (s) => { if (typeof s.x === "number") list.push(s); }));
+		if (!list.length) continue;
+		const vert = WALLS.has(id), groups = new Map();
+		for (const s of list) { const k = (vert ? s.x : s.y) + "_" + filterKey(s); let g = groups.get(k); if (!g) { g = []; groups.set(k, g); } g.push(s); }
+		for (const g of groups.values()) {
+			g.sort(vert ? (a, b) => a.y - b.y : (a, b) => a.x - b.x);
+			let run = [];
+			const flush = () => { if (!run.length) return; const s0 = run[0], f = s0.filter || {};
+				rows.push({ key: String(s0.type) + "_" + s0.x + "_" + s0.y, type: s0.type, x: s0.x, y: s0.y, w: vert ? N : run.length * N, hh: vert ? run.length * N : N, count: run.length, mode: f.mode === "block" ? "block" : "allow", types: asList(f.elementType) }); run = []; };
+			for (const s of g) { if (run.length) { const p = run[run.length - 1]; if (vert ? s.y !== p.y + N : s.x !== p.x + N) flush(); } run.push(s); }
+			flush();
+		}
+	}
+	return rows;
+}
+function PickOverlay() {
+	const [rows, setRows] = ReactM.useState([]);
+	const box = ReactM.useRef(null), nodes = ReactM.useRef(new Map());
+	ReactM.useEffect(() => {
+		let raf = 0, last = 0, shown = false;
+		const frame = () => {
+			raf = requestAnimationFrame(frame);
+			const el = box.current; if (!el) return;
+			if (!mode || !inWorld()) { if (shown) { el.style.display = "none"; shown = false; setRows([]); } return; }
+			if (!shown) { el.style.display = ""; shown = true; last = 0; }
+			const now = Date.now(); if (now - last > 500) { last = now; setRows(allRows()); }
+			const ses = safe(() => state().session); if (!ses) return;
+			const M = safe(() => ses.rendering.canvas.getBoundingClientRect()); if (!M) return;
+			const I = ((ses.view && ses.view.zoom) || 1) * (ses.scale || 1), kx = ses.camera.x, ky = ses.camera.y;
+			for (const n of nodes.current.values()) {
+				const r = n.row; if (!r) continue;
+				const sx = M.left + (r.x * 4 - kx) * I, sy = M.top + (r.y * 4 - ky) * I, w = r.w * 4 * I, hh = r.hh * 4 * I;
+				if (n.box) { n.box.style.transform = `translate(${sx}px, ${sy}px)`; n.box.style.width = w + "px"; n.box.style.height = hh + "px"; }
+				if (n.label) n.label.style.transform = `translate(${sx + w / 2}px, ${sy - 4}px) translate(-50%, -100%)`;
+			}
+		};
+		raf = requestAnimationFrame(frame);
+		return () => cancelAnimationFrame(raf);
+	}, []);
+	const ref = (key, row, part) => (el) => { let n = nodes.current.get(key); if (!el) { if (n) { n[part] = null; if (!n.box && !n.label) nodes.current.delete(key); } return; } if (!n) { n = {}; nodes.current.set(key, n); } n.row = row; n[part] = el; };
+	return h("div", { ref: box, "data-brandon-ifo": "1", style: { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "hidden", fontFamily: "monospace", fontSize: "10px", color: "#fff", zIndex: 31, display: "none" } },
+		rows.map((r) => { const col = r.mode === "allow" ? "rgb(0,255,71)" : "#ef4444"; return h(ReactM.Fragment, { key: r.key },
+			h("div", { ref: ref(r.key, r, "box"), style: { position: "absolute", left: 0, top: 0, border: "2px dashed " + col, boxSizing: "border-box", transformOrigin: "0 0" } }),
+			h("div", { ref: ref(r.key, r, "label"), role: "button", tabIndex: -1, title: (mode === "copy" ? "copy from " : "paste onto ") + kindName(r.type) + " row",
+				onMouseDown: (e) => { e.preventDefault(); e.stopPropagation(); }, onPointerDown: (e) => { e.stopPropagation(); },
+				onClick: (e) => { e.preventDefault(); e.stopPropagation(); pickRow(r); },
+				style: { position: "absolute", left: 0, top: 0, transformOrigin: "0 0", zIndex: 1, pointerEvents: "auto", cursor: "pointer", background: "#000", border: "1px solid " + col, borderRadius: "3px", padding: "2px 6px", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "5px" } },
+				r.types.map((t) => { const c = colorOf(t); return h("span", { key: t, style: { width: "8px", height: "8px", background: c, boxShadow: "0 0 4px " + c, flexShrink: 0 } }); }),
+				h("span", null, r.types.length ? r.types.map(nameOf).join(" / ") : "none"),
+				h("span", { style: { color: r.mode === "allow" ? "rgb(30,255,0)" : "rgb(255,77,21)", fontWeight: 700 } }, r.mode === "allow" ? "✓" : "✕"),
+				h("span", { style: { color: "#94a3b8" } }, kindName(r.type) + (r.count > 1 ? " ×" + r.count : "")))); }));
+}
 if (h) {
+	safe(() => api.ui.inject("brandon-improvedfilters-pick-overlay", () => h(PickOverlay)));
 	// the same band above the hotbar the filter menus live in; a fixed box if that can't be used
 	const mounted = safe(() => { api.ui.overlays.register("hotbar", "brandonFilterClipboard", () => h(Strip)); return true; }, false);
 	if (!mounted) safe(() => api.ui.inject("brandon-improvedfilters-strip", () => h("div", { style: { position: "fixed", left: "50%", bottom: "96px", transform: "translateX(-50%)", zIndex: 40, pointerEvents: "auto" } }, h(Strip))));

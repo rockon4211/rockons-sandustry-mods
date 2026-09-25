@@ -62,7 +62,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
-- **Improved Filter Options** `brandon.improvedfilters` v0.2.2 (2026-09-25) — a clipboard for
+- **Improved Filter Options** `brandon.improvedfilters` v0.2.3 (2026-09-25) — a clipboard for
   filter settings, built into the filter menus: a strip mounted in the hotbar band
   (`api.ui.overlays.register("hotbar", …)`) whenever a filter menu is up. It reads the
   game's row editor through `sandkit.engine.api.filterGroupEditor` (`getSelection(state)`
@@ -77,7 +77,13 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   from the game's own mapping (screen = canvas rect origin + (world px − camera) × view.zoom
   × session.scale; cell = world px / 4). 0.2.2: arming a pick records the building in hand
   and calls `engine.api.building.cancelPlacement` (the ghost sat over the cursor); disarming
-  hands it back via `engine.api.building.selectStructure(state, id)`; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
+  hands it back via `engine.api.building.selectStructure(state, id)`. 0.2.3: cancelPlacement
+  alone left the Mk.3 in hand — "in hand" is activeStructureType, then player.action, then
+  the active hotbar slot (bundle: `B=e=>activeStructureType?…:player.action?…:I(e)`), so
+  stash() clears all three + `placing` and restores them (selectStructure for a structure,
+  else player.action, plus the slot). While armed, `PickOverlay` (injected) draws a
+  game-style box + label on every filter row of every kind (the game's own overlay only
+  draws while one of ITS filters is in hand); clicking a label picks that row; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
   Mk.3, walls) — shakers, growers and critter fences carry a `filter` too but are excluded.
   Clipboard persisted by element id (`brandon.improvedfilters.clip`). UNTESTED in game as
   of 0.2.0 (0.1.0's floating panel was seen in game).
