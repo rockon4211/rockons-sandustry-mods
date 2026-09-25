@@ -19,7 +19,7 @@
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.2.3";
+const BUILD = "0.2.4";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -107,10 +107,13 @@ function menuUp() {
 	if (vanSel()) return "van-row";
 	if (mk3Sel()) return "mk3-row";
 	const st = safe(state); if (!st) return null;
-	const t = safe(() => st.session.building.activeStructureType), a = safe(() => st.store.player.action && st.store.player.action.id);
-	if (VAN.has(t)) return "van-new";
-	if (MK3.has(t) || MK3.has(a)) return "mk3-new";
-	return null;
+	// the game's panel shows while one of its filters is the active structure - same gate
+	if (VAN.has(safe(() => st.session.building.activeStructureType))) return "van-new";
+	// the Mk.3 panel shows while the game says a Mk.3 is in hand (action.getActive is what
+	// the game itself goes by), so the strip closes exactly when that panel does
+	const act = safe(() => engine().api.action.getActive(engine().state));
+	if (act !== undefined) return act && MK3.has(act.id) ? "mk3-new" : null;
+	const k = mk3(); return k && safe(() => k.inHand()) ? "mk3-new" : null;
 }
 function menuFilter(which) {   // what the menu is showing right now
 	if (which === "van-row") { const s = vanSel(); return s && s.draft; }

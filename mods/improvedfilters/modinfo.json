@@ -2,7 +2,7 @@
 	"manifestVersion": 1,
 	"id": "brandon.improvedfilters",
 	"name": "Improved Filter Options",
-	"version": "0.2.3",
+	"version": "0.2.4",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",

@@ -58,11 +58,11 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   is: 4s after each world load, 3s after each run, or via `__brandonScreensaver.sweepMap()`;
   it aborts if a run starts. Reason: the 2026-09-24 save's discoveries held 3 tracer types
   (65, 109, 95) - tracer grains had been left on the map.
-- **Manufacturing** `brandon.manufacturing` v0.15.3 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.15.4 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
-- **Improved Filter Options** `brandon.improvedfilters` v0.2.3 (2026-09-25) — a clipboard for
+- **Improved Filter Options** `brandon.improvedfilters` v0.2.4 (2026-09-25) — a clipboard for
   filter settings, built into the filter menus: a strip mounted in the hotbar band
   (`api.ui.overlays.register("hotbar", …)`) whenever a filter menu is up. It reads the
   game's row editor through `sandkit.engine.api.filterGroupEditor` (`getSelection(state)`
@@ -83,7 +83,13 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   stash() clears all three + `placing` and restores them (selectStructure for a structure,
   else player.action, plus the slot). While armed, `PickOverlay` (injected) draws a
   game-style box + label on every filter row of every kind (the game's own overlay only
-  draws while one of ITS filters is in hand); clicking a label picks that row; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
+  draws while one of ITS filters is in hand); clicking a label picks that row. 0.2.4 / Manufacturing 0.15.4: "a Mk.3 is in hand" is now
+  asked of the game — `engine.api.action.getActive(state)` (what the game uses to decide what
+  is held / whether to draw a ghost: activeStructureType, else player.action, else the hotbar
+  slot) — so the Mk.3 panel and the strip close exactly when the game puts the filter away
+  (they lingered before, reading player.action / activeStructureType themselves). The game's
+  own filter panel is gated only on `bk(activeStructureType)`; `session.windows.building.
+  filterConfig` is cleared in places but never set true — not a mechanism to rely on; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
   Mk.3, walls) — shakers, growers and critter fences carry a `filter` too but are excluded.
   Clipboard persisted by element id (`brandon.improvedfilters.clip`). UNTESTED in game as
   of 0.2.0 (0.1.0's floating panel was seen in game).

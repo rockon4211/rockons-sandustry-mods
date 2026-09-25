@@ -210,7 +210,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.15.3 running"));
+		safe(() => api.ui.toast("Manufacturing v0.15.4 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -820,11 +820,15 @@ let mk3Repaint = null;
 const mk3Refresh = () => { if (mk3Repaint) mk3Repaint((v) => v + 1); safe(() => api.ui.overlays.update("hotbar")); };
 const asList = (v) => Array.isArray(v) ? v.filter((x) => typeof x === "number") : typeof v === "number" ? [v] : [];
 const tr = (key, params, fb) => { const s = safe(() => api.i18n.t(key, params)); return typeof s === "string" && s && s !== key ? s : fb; };
-// is a Filter Mk.3 the building in hand?
+// is a Filter Mk.3 the building in hand? Asked of the game itself (action.getActive is
+// what it uses to decide what is held and whether to draw a placement ghost), so the
+// panel closes exactly when the game puts the filter away
 function mk3Selected() {
-	const st = safe(() => sandkit.state); if (!st) return false;
-	const a = safe(() => st.store.player.action), b = safe(() => st.session.building.activeStructureType);
-	return !!((a && (a.id === MK3_R || a.id === MK3_L)) || b === MK3_R || b === MK3_L);
+	const act = safe(() => sandkit.engine.api.action.getActive(sandkit.engine.state));
+	if (act !== undefined) return !!(act && (act.id === MK3_R || act.id === MK3_L));
+	const st = safe(() => sandkit.state); if (!st) return false;   // no such call: the game's own order of precedence
+	const b = safe(() => st.session.building.activeStructureType), a = safe(() => st.store.player.action);
+	return !!(b === MK3_R || b === MK3_L || (!b && a && (a.id === MK3_R || a.id === MK3_L)));
 }
 // discovered materials that belong in a filter picker - the game's own list rule
 function mk3Elements() {
