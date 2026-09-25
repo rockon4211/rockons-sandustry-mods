@@ -228,30 +228,179 @@ clicks swallowed so they can't disturb the game.
 Hook: `window.__brandonScreensaver = { build, isActive(), exportLog(), logSize(), stop(), start() }`
 (`start()` returns a short reason string, which the Sandbox Loop button displays).
 
-## Game internals we confirmed (from bundle.js)
+## Game internals — verified reference (keep adding to this)
 
-Worth keeping; these were dug out of the game's own bundle.
+Every fact here was dug out of the game's own code or observed in a save and cost real
+time to learn. **When a session learns something new about the engine, it goes here**, in
+the matching topic, with how it was verified. Minified names (`pk`, `Vt`, `FH`) change per
+game build — search the bundle by string literals, not by those names.
 
-- Mods run in **strict mode** — an undeclared variable throws and kills the tick.
-- Element types are integers **1–255**.
-- `api.elements.replaceAtCell` is applied at the sim's next idle moment with no unchanged
-  guard, so marking a *moving* grain often misses; `replaceAtCellWhenIdle` silently no-ops on
-  moving grains. Emitting the tracer from a Source avoids the race entirely.
-- `api.elements.updateDefinition` only reaches sim/render workers that already exist, so
-  definitions must be re-applied on a timer after load.
-- Contact recipes: `outputA`/`outputB` `null` means the grain is removed; `orientation` is
-  `"any"` or `"stacked"`. Mod contacts are consulted in addition to the hard-coded mixing
-  table `[Water+Sand→WetSand, Water+Seed→WetSeed, Water+Lava→Steam, Water+Flame→Steam]`.
-- Element definitions also support a `mixes` array, an alternative to registerContact.
-- Machine recipe ids: `smelter`, `condenser`, `steamDryer`, `synthesizer`, `snowmaker`,
-  `shaker` (`outputsBelow`/`outputsAbove` instead of `outputs`), `kineticPress`,
-  `planterBox`. Vanilla values: gold → liquid gold 0.5, copper → liquid copper 1,
-  florin → florinol/gold, steam → water 1, petalium → dry petalium 1. The thermofroster is
-  hard-coded and cannot be extended.
-- Belt speed and filter behaviour are hard-coded to the `filterLeftMk2`/`filterRightMk2`
-  (and belt) ids; an unknown structure id gets speed 0.
-- To read the game code: extract `dist/js/bundle.js` from `resources/app.asar` (plain asar
-  header: 4-byte pickle at offset 12, JSON header, then the file blobs).
+### Reading the game (v0.5.6)
+- Install on the desktop: `C:\Program Files (x86)\Steam\steamapps\common\Sandustry` (varies
+  per PC; Steam's `libraryfolders.vdf` lists the libraries). Code is in
+  `resources/app.asar`: plain asar — the 4-byte pickle at offset 4 holds the header size, the
+  JSON header's length is at offset 12 and the header starts at 16, file blobs follow at
+  `8 + headerSize + offset`. Inside `dist/js/`: `bundle.js` (main thread, 4.3 MB),
+  `simulation-worker.js` (sim), `manager-worker.js` (ticks the passes / triggers),
+  `utility-worker.js`, `external-mod-runtime.js` (the main-thread mod API) and
+  `external-mod-worker-runtime.js` (the worker mod API). Sprites are in `dist/mods/*.png`.
+- Mods run in **strict mode**; each entry is wrapped in an async function and `await`ed by
+  the game (top-level `await` works; a throw reaches the game). `sandkit.api` is the mod
+  API, `sandkit.engine.api` is the FULL engine API (`FH` — its functions take the state as
+  first argument, `sandkit.engine.state`), `sandkit.state` is that state, `sandkit.react` is
+  React, `sandkit.enums` holds the enums (StructureType, MatterType, ComponentId, Scene,
+  Tech, ElementType.Empty, ActionState).
+
+### Mod runtime
+- Shared buffers: `api.shared.buffers.create(key, {type, length})` / `require` in workers;
+  keys are namespaced `external:<modId>:<key>`; a buffer created late is still broadcast,
+  and workers receive them before worker entries run.
+- Events (`api.events.on`): `game:ready` (per world load), `frame:render` (every frame),
+  `building:placed` `{structure, x, y, isBatch, isCopied}` — fires BEFORE the structure is
+  written to the sim grid, so setting `structure.filter` / `.data` there takes effect —,
+  `building:removed` `{structureId, x, y}`, `structures:placed/removed/pasted/moved`.
+- `api.i18n.t(key, params)`, `api.i18n.register("en", {...})` — registering one of the
+  game's own keys (e.g. `structures|filterMk2|name`) overrides it live.
+- Interceptors a mod may use: `building:place`, `building:clearShape`, `input:keydown/
+  keyup/escape/scroll`, `element:blocked/duration/update/move`, `cell:process`,
+  `shaker:elementOn`, `fire:element:burn/ignite`, `projectile:hit`,
+  `interactable:suppressHover`. `element:move` and `cell:process` run per cell per tick on
+  a 14.7M-cell map — never use them for per-structure logic.
+- A click on a structure: `api.signals.interactables.register(typeId, (structure) => …)`.
+  The engine dispatches it from `action:intercept` (any click over that structure type,
+  not while demolishing / marquee-selecting / signal-linking) and cancels the action. One
+  handler per type — a second registration replaces the first.
+- Manager-worker triggers: `sandkit.engine.api.workers.triggers.register(state, id,
+  {interval (ms), everyTicks?, sequentialRuns, extra, callback})`. The callback is sent to
+  the manager worker AS TEXT (`toString`), so it must be self-contained; it gets `(e, t)`
+  with `t.runCount` / `t.extra`; inside, `e.sandkit.getApi()` gives
+  `workers.messages.getIdByName("RunConveyorBelts")` and
+  `postToEachThreadColumnSequentiallyAwait(e, [msgId, typeId], reverse)`. The manager keeps
+  one trigger per id, so re-registering is safe.
+
+### Structures
+- `api.structures.register({id, nameKey|name, descriptionKey, categoryKey, order,
+  tooltipHover:{type:"filter"}, buildModes:[{type:"line", directions:[...]}|{type:"single"}],
+  variants:[{id, angles:[...]}], render:{imageName, size, offset, z, ui, spritesheet},
+  defaultData, shape})` — the definition is passed through unchanged (no field whitelist).
+  A variant may be a vanilla id (the Mk.3 uses `filterWallMk2` for vertical placement).
+- Animated mod structures: `render.spritesheet = {frames, frameSize:{width, height},
+  frameBuffer:{key, index}}` (frame = `Atomics.load(buffer, index) % frames`; the buffer must
+  exist BEFORE register) or `{frames, frameSize, intervalMs}`; the sheet has
+  `imageWidth / frameSize.width` columns. The Mk.2 BELT frame counter is
+  `state.shared.mods.conveyorMk2AnimationIndex` (uint8[2]: [0] left, [1] right, stepped by
+  the manager every 166 ms); vanilla filters and Mk.1 belts use
+  `shared.conveyorBeltsAnimationIndex` (332 ms). A mod cannot name the game's buffer in
+  `frameBuffer` (namespacing) — copy it into its own buffer every `frame:render`.
+- `api.structures.forEachOfType(id, cb)` walks EVERY structure (~29k here) — cache results.
+  `getAtCell(x, y)` answers for any cell of a tile; `updateData(s, patch)`;
+  `removeAtCell(x, y)`. Engine: `structures.updateMany(state, list,
+  {propagateToWorkers:true})` (what the game's filter row editor uses to write a row) and
+  `structures.getConfig(id)`.
+- What is "in hand": `sandkit.engine.api.action.getActive(state)` =
+  `session.building.activeStructureType`, else `store.player.action`, else the active
+  hotbar slot's item. The game's own deselect clears all three plus
+  `session.building.placing`; `building.cancelPlacement(state)` resets ONLY the placement;
+  `building.selectStructure(state, id)` puts a building in hand (resolves variants).
+  Build-menu clicks set activeStructureType for every building; hotbar clicks set it only
+  for the game's own filters.
+- Conveyors: `api.structureBehaviors.registerConveyorType(id, {velocity:{x, y},
+  transportOffset (default {x:0, y:-1} = the row above), maxTransportDistance,
+  transportHeight, runWith:"left"|"right", skipQueued})`. With `velocity` set the worker
+  skips its hard-coded speed switch — the earlier note "an unknown id gets speed 0" is true
+  only for a plain structure. `runWith` puts the type in the 332 ms belts pass; without it
+  the worker moves it whenever the manager posts `[RunConveyorBelts, id]`, i.e. from a
+  trigger of your own (see above) — this is how Clearing Frames are driven. Passes
+  (`transport.passes`): belts 332 ms, beltsMk2 166 ms, shakers 3333 ms, clearingFrames
+  1332 ms, each run right-then-left, 1 cell per pass.
+- Filters: the sim marks a tile FILTERED for ANY structure carrying a `filter` object
+  `{mode:"allow"|"block", elementType: number|number[], affectsLiquid, affectsGas, density?,
+  speedExemptElementTypes?}` and sorts by that object, not by the structure id — so a mod
+  filter gets the Mk.2's exact rules by carrying the same object. Shakers, growers and
+  critter fences carry a `filter` too (for their own use). A new Mk.2 filter copies
+  `store.options.defaultFilter` plus `affectsLiquid/Gas: true` at placement; a copy-paste
+  keeps `copiedStructure.filter`. The game's filter panel, labels overlay, hotbar handling
+  and row editor are gated on fixed id lists (Mk.1 = StructureType 17/18,
+  `filterLeft/RightMk2`, the walls) that are not exported — a mod filter needs its own
+  panel. Row editor (engine): `filterGroupEditor.getSelection(state)` →
+  `{structureType, memberCount, draft, isDirty, anchorX, anchorY}`, `setDraft(state, f)`,
+  `apply(state)`, `cancel(state)`, `selectAt(state, x, y)`. A row = same type, same filter
+  key, touching (walls join vertically).
+- Terrain ids by name: `api.terrains.getTypeById("block")` (Block is built-in id 15); mod
+  terrains are numbered by registration order — never hard-code them.
+- Tech: `api.tech.registerNode(id, {nameKey, descriptionKey, cost, currencyType:"gold",
+  branch, requires:[Tech.X or "modNodeId", ...], unlocks:{structures:[id]}}, {parentId,
+  preferredPosition:{row, col}})` (several `requires` are fine); `isResearchedById`,
+  `isLockedById`; `api.player.buildings.unlockById(id)` for saves that researched before
+  the structure existed. Upgrades pane: `api.upgrades.registerCategory({id,
+  requirement:{techId}})`, `register({itemId, categoryId, requirement:{building},
+  upgrade:{id, maxLevel, costs, oneOff}})`, `getLevelById(itemId, upgradeId)`.
+
+### UI
+- `api.ui.inject(id, Component)` mounts globally (position it yourself, `position:fixed`).
+  `api.ui.overlays.register("hotbar", id, render)` mounts in the band above the hotbar —
+  `render()` is called as a plain function and must RETURN an element (`() =>
+  React.createElement(Comp)`); the band lays overlays out side by side, so keep them
+  narrow. `api.ui.overlays.update("hotbar")` repaints it, `api.ui.update(ComponentId.X)`
+  repaints a game component, `api.ui.toast(text)` shows a toast. The game's Tailwind
+  classes are available (arbitrary values like `text-[#ffe700]` only where the game itself
+  uses them). The game's filter panel is `overlays.register("hotbar", "filterConfig", …)`
+  gated on its id list; `session.windows.building.filterConfig` is cleared in places but
+  never set true.
+- World → screen: `M = session.rendering.canvas.getBoundingClientRect();
+  I = (session.view?.zoom ?? 1) * session.scale; sx = M.left + (worldPx - session.camera.x)
+  * I` (same for y); a cell is 4 world px. The game's own overlay labels use exactly this,
+  per frame. Mouse cell: `session.input.mouse.cellPosition`.
+- Input: the canvas listens for POINTER events (PIXI) and mousedown; keys on window. A
+  capture-phase window listener runs first and can swallow them — but `preventDefault()`
+  on `pointerdown` also suppresses the browser's follow-up mousedown/click, so handle a
+  click on pointerdown itself. Esc: the game's handler runs `input:escape` interceptors
+  first.
+- Pickers: discovered materials are `store.discoveries.elements`; definitions via
+  `api.elements.getRegisteredTypes()` + `getDefinitionByType(t)` (`metaColor`,
+  `matterType`, `showInFilterPicker`), names `getNameByType`, ids `getIdByType` /
+  `getTypeFromId`. Registering an element with `showInFilterPicker: false` keeps it out of
+  the game's pickers. Matter tabs: solid = Solid/Powder/Wisp/Slushy, liquid = Liquid,
+  gas = Gas.
+
+### Elements and the world
+- Element numbers are assigned at runtime in registration order (mods by `loadOrder`,
+  then id) and differ per PC / mod set — persist materials by id string, and never reorder
+  Manufacturing's element list (saves store the numbers). Types are 1–255.
+- `api.world.isCellEmptyAtCell(x, y)` is false for material, terrain AND a building
+  (reading the element type gives null for a building cell — that bug counted grains that
+  were never made). `api.world.mutate(w => { w.elements.createAtCell / removeAtCell /
+  replaceAtCell })` runs at the sim's next idle moment; `createAtCellWhenIdle` silently
+  no-ops on a non-empty cell; `removeAtCellWhenIdle` checks only that the slot still holds
+  an element; `replaceAtCell` often misses a moving grain. `getResolvedTypeAtCell` in a
+  tight loop at ~25k cells per 50 ms tick sweeps the 14.7M-cell map in ~30 s without
+  stalling. `api.world.getDimensions()` → `{widthCells, heightCells}`. The world id is
+  `store.meta.worldId` (saved with the world).
+- Contact recipes: `api.reactions.registerContact({inputA, inputB, outputA, outputB,
+  orientation:"any"|"stacked"})`; a `null` output removes the grain; consulted in
+  addition to the hard-coded mixing table. Definitions also accept a `mixes` array.
+  Machine recipe ids: smelter, condenser, steamDryer, synthesizer, snowmaker, shaker
+  (`outputsBelow/Above`), kineticPress, planterBox; the thermofroster is hard-coded.
+  `api.elements.updateDefinition` reaches only workers that already exist — re-apply after
+  `game:ready`.
+
+### Saves, storage, logs
+- A save is one JSON header line (`id, timestamp, playTime, worldId, resources…`) followed
+  by gzip JSON `{store, wall:{tiles, palette}, matrix, shadow, authorization}`. Useful in
+  `store`: `player.tech` (researched ids → true), `player.buildings` (unlocked ids),
+  `player.hotbar`, `upgrades`, `options.defaultFilter` / `showFilterOverlay`, `structures`
+  (each with `.type`, `.x/.y`, `.data`, `.filter`), `discoveries.elements`, `meta.worldId`.
+  The element grid is packed (`wall.tiles` sections) and was not decoded — change the world
+  from inside the game instead.
+- Quickstart's F10 loads the last F5 quicksave: everything after it is undone, while
+  mods' localStorage is NOT rolled back (so mod settings and the world can disagree).
+- The game's localStorage is Chromium LevelDB at `%APPDATA%\sandustry\Local Storage\
+  leveldb` (.ldb tables + .log; snappy-compressed blocks; values are utf16le after a
+  leading type byte; keys are prefixed `_file://` + two bytes). Read a COPY — the
+  scratchpad `readls.js` from 2026-09-24 did.
+- `%APPDATA%\sandustry\logs\main.log` holds only startup/GPU lines, nothing about gameplay.
+- Sim speed is worker message `SetSimulationSpeed = 68`; the cinematic panel's speed is
+  `session.cinematic.speed.multiplier`.
 
 ## The map (world `28lnrdm8fhv`, "Loamcrest")
 
