@@ -19,7 +19,7 @@
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.2.5";
+const BUILD = "0.2.6";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -275,20 +275,24 @@ function Strip() {
 	if (!which) return null;
 	const list = asList(clip && clip.elementType);
 	const target = which === "van-row" || which === "mk3-row" ? "this row" : "new filters";
-	return h("div", { "data-brandon-ifo": "1", className: "bg-black bg-opacity-75 px-4 py-2 flex items-center gap-3 border border-slate-700 rounded ui-box text-white text-xs", style: { flexWrap: "wrap" } },
-		h("span", { className: "font-semibold text-white" }, "Clipboard"),
-		clip
-			? h("div", { className: "flex flex-wrap items-center gap-x-2 gap-y-1" },
-				list.map((t) => h("span", { key: t, className: "w-3 h-3 flex-shrink-0", style: { backgroundColor: colorOf(t), boxShadow: "0 0 6px " + colorOf(t) } })),
-				h("span", { className: "text-white" }, list.length ? list.map(nameOf).join(" / ") : "no material"),
-				h("span", { className: "text-[10px] " + (clip.mode === "block" ? "text-[rgb(255,77,21)]" : "text-[rgb(30,255,0)]") }, clip.mode === "block" ? "✕ block" : "✓ allow"))
-			: h("span", { className: "text-white/70" }, "empty"),
-		btn("Copy", () => { copyFromMenu(which); repaint(); }, { title: "Copy what this menu is showing (" + (target === "this row" ? "the row being edited" : "the setting new filters take") + ")." }),
-		btn("Paste", () => { pasteIntoMenu(which); repaint(); }, { dim: !clip, title: "Put the clipboard into " + target + ". Works from any filter kind onto any other." }),
-		btn(mode === "copy" ? "Pick: click a filter…" : "Pick from map", () => arm(mode === "copy" ? null : "copy"), { on: mode === "copy", title: "Then click any placed filter (Mk.1 / Mk.2 / Mk.3 / wall) to copy its settings." }),
-		btn(mode === "paste" ? "Onto: click a filter…" : "Paste onto map", () => arm(mode === "paste" ? null : "paste"), { on: mode === "paste", dim: !clip, title: "Then click a placed filter: its whole row gets the clipboard." }),
-		clip ? btn("Clear", () => { clip = null; saveClip(); arm(null); msg = "cleared"; repaint(); }) : null,
-		msg ? h("span", { className: "text-[10px] " + (mode ? "text-[#ffe700]" : "text-white/70") }, msg) : null);
+	const names = list.length ? list.map(nameOf).join(" / ") : "no material";
+	// one narrow line (the band sits this next to the filter panel, so it must stay small):
+	// the material list is cut with an ellipsis and shown in full on hover
+	return h("div", { "data-brandon-ifo": "1", className: "bg-black bg-opacity-75 px-3 py-2 flex flex-col gap-1 border border-slate-700 rounded ui-box text-white text-xs", style: { width: "max-content", maxWidth: "460px" } },
+		h("div", { className: "flex items-center gap-2", style: { whiteSpace: "nowrap" } },
+			h("span", { className: "font-semibold text-white" }, "Clipboard"),
+			clip
+				? h("span", { className: "flex items-center gap-1", style: { minWidth: 0, maxWidth: "170px" }, title: names + " · " + (clip.mode === "block" ? "block" : "allow") },
+					list.slice(0, 6).map((t) => h("span", { key: t, className: "w-3 h-3 flex-shrink-0", style: { backgroundColor: colorOf(t), boxShadow: "0 0 6px " + colorOf(t) } })),
+					h("span", { className: "text-white", style: { overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 } }, names),
+					h("span", { className: "text-[10px] flex-shrink-0 " + (clip.mode === "block" ? "text-[rgb(255,77,21)]" : "text-[rgb(30,255,0)]") }, clip.mode === "block" ? "✕" : "✓"))
+				: h("span", { className: "text-white/70" }, "empty"),
+			btn("Copy", () => { copyFromMenu(which); repaint(); }, { title: "Copy what this menu is showing (" + (target === "this row" ? "the row being edited" : "the setting new filters take") + ")." }),
+			btn("Paste", () => { pasteIntoMenu(which); repaint(); }, { dim: !clip, title: "Put the clipboard into " + target + ". Mk.2 and Mk.3 both ways." }),
+			btn(mode === "copy" ? "Pick…" : "Pick", () => arm(mode === "copy" ? null : "copy"), { on: mode === "copy", title: "Pick from map: then click a placed Mk.2 / Mk.3 filter (or its label) to copy its settings." }),
+			btn(mode === "paste" ? "Onto…" : "Onto", () => arm(mode === "paste" ? null : "paste"), { on: mode === "paste", dim: !clip, title: "Paste onto map: then click a placed Mk.2 / Mk.3 filter (or its label) - its whole row gets the clipboard." }),
+			clip ? btn("✕", () => { clip = null; saveClip(); arm(null); msg = "cleared"; repaint(); }, { title: "Clear the clipboard" }) : null),
+		msg ? h("div", { className: "text-[10px] " + (mode ? "text-[#ffe700]" : "text-white/70"), style: { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }, title: msg }, msg) : null);
 }
 // --- while a pick is armed: the game's own labels, for every filter kind ----------------
 // The game's labels overlay draws only while one of ITS filters is in hand, and the hand
