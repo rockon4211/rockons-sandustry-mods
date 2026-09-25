@@ -1,6 +1,6 @@
-# Mod file checksums — main, f581787, 2026-09-25
+# Mod file checksums — main, bc3fd64, 2026-09-25
 
-Versions: sandboxloop 0.4.5, screensaver 0.18.2, manufacturing 0.15.4, lavaboiloff 0.1.1, quickstart 1.0.1, improvedfilters 0.2.4.
+Versions: sandboxloop 0.4.5, screensaver 0.18.2, manufacturing 0.15.4, lavaboiloff 0.1.1, quickstart 1.0.1, improvedfilters 0.2.5.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
 text files out with CRLF, so hash those after converting, or compare with `git hash-object`.
 
@@ -19,8 +19,8 @@ To compare an install, run the same `find … | xargs sha256sum` inside
 `%APPDATA%\sandustry\mods\` (Git Bash: `cd "$APPDATA/sandustry/mods"`).
 
 ```
-c63f0dc44aa9ee8fedc8f84595b91759ba8bdfc32090794bbbc79dcb282afe98  improvedfilters/main.js
-bf37cac49c21593e198a5c6f90e7866b9aa7c8765c0738b48d517fd88f499a04  improvedfilters/modinfo.json
+03281e8d7e49cf19eac2436df5dd0e14b297f115f8ee283e0f3e66d8ff57e81b  improvedfilters/main.js
+3e2e36e0f045b9c9a268f38c89732bb5e954864d6fe7662aac020c60d8c8a3f7  improvedfilters/modinfo.json
 b77d7dbf8f5d674034316ff9af034f1da170dad21f4bcdf12c63540916c1c653  lavaboiloff/main.js
 311973d685f93b75546a1af856febf8a8e293bc8e6d1b98da2c616459b436509  lavaboiloff/modinfo.json
 1e4b15b61a5006819fc8d69eeca740b230348493f97440d081812ed1c29e9fcd  lavaboiloff/worker.js
