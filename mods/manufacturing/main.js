@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.15.7 running"));
+		safe(() => api.ui.toast("Manufacturing v0.15.8 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -1069,25 +1069,31 @@ if (hM) {
 	// component (it uses hooks) is mounted through createElement, not called directly
 	const mounted = safe(() => { api.ui.overlays.register("hotbar", "brandonFilterMk3", () => hM(FilterMk3Panel)); return true; }, false);
 	if (!mounted) safe(() => api.ui.inject("brandon-filter-mk3", () => hM("div", { style: { position: "fixed", left: "50%", bottom: "120px", transform: "translateX(-50%)", zIndex: 40, pointerEvents: "auto" } }, hM(FilterMk3Panel))));
-	// clicking a placed Mk.3 (not while demolishing / marquee-selecting) opens its row for editing
-	safe(() => api.signals.interactables.register(MK3_R, (s) => { if (s && typeof s.x === "number") mk3Select(s.x, s.y); }));
-	safe(() => api.signals.interactables.register(MK3_L, (s) => { if (s && typeof s.x === "number") mk3Select(s.x, s.y); }));
+	// (no click handler on the placed filter itself: the game's Mk.2 has none either - a row is
+	// opened from its label, and only while a Mk.2 / Mk.3 is in hand)
 	safe(() => api.events.on("building:removed", (p) => {
 		if (!p || typeof p.x !== "number") return;
 		if (mk3.sel && mk3.sel.members.some((s) => s.x === p.x && s.y === p.y)) mk3Cancel();
 		if (mk3.lastPlaced && mk3.lastPlaced.x === p.x && mk3.lastPlaced.y === p.y) mk3.lastPlaced = null;
 	}));
-	setInterval(() => {   // show / hide with the building in hand
+	// The game's Mk.2 rules, every frame: picking the filter up opens its panel expanded (the
+	// game sets filterForceExpand on every pick-up); a row being edited is dropped as soon as
+	// no Mk.2 / Mk.3 is in hand (the game's editor does this in its afterRender) - except
+	// while the clipboard is picking, which puts the building down on purpose; and while a
+	// row is being edited nothing is placed ("finish editing first").
+	let mk3ToastAt = 0;
+	safe(() => api.events.on("frame:render", () => {
 		if (!mk3Ready) return;
 		const now = mk3Selected();
-		if (now !== mk3.wasSel) { mk3.wasSel = now; if (!now && !mk3.sel) mk3.open = false; mk3Refresh(); }
-		// the game's row editor drops its row when its filter leaves the hand; do the same
-		// for a row opened from a label while a Mk.2 / Mk.3 was held - except while the
-		// clipboard is picking (it puts the building down itself and hands it back)
-		const fam = now || gameFilterInHand();
-		if (mk3.wasFam && !fam && mk3.sel && !safe(() => window.__brandonFilterClipboard.picking(), false)) mk3Cancel();
-		mk3.wasFam = fam;
-	}, 250);
+		if (now !== mk3.wasSel) { mk3.wasSel = now; mk3.open = now; mk3Refresh(); }
+		if (!mk3.sel) return;
+		if (!(now || gameFilterInHand())) { if (!safe(() => window.__brandonFilterClipboard.picking())) mk3Cancel(); return; }
+		if (safe(() => sandkit.state.session.building.placing)) {
+			safe(() => sandkit.engine.api.building.cancelPlacement(sandkit.engine.state));
+			safe(() => sandkit.engine.api.input.resetMouseState(sandkit.engine.state));
+			if (Date.now() - mk3ToastAt > 1000) { mk3ToastAt = Date.now(); safe(() => api.ui.toast(tr("ui|filter|finishEditingBeforePlacing", null, "Finish editing the filter row first"))); }
+		}
+	}));
 	// what the panel is doing, for other mods (Improved Filter Options' clipboard reads and
 	// writes the row being edited through this)
 	safe(() => { window.__brandonFilterMk3 = {

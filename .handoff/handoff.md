@@ -75,7 +75,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   is left alone and only real deletes are counted in the `map-sweep` log event; ~100
   consecutive failed slices abort the sweep instead of looping; `isSweeping()` is exposed
   so the Sandbox Loop's census can yield to it.
-- **Manufacturing** `brandon.manufacturing` v0.15.7 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.15.8 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.2 (F10 quick reload).
@@ -161,9 +161,11 @@ game's filter panel is gated on a fixed id list (`pk`/`hk`/`Uk` in the bundle, n
 exported), so `FilterMk3Panel` in main.real.js is a clone of it (same Tailwind classes),
 mounted with `api.ui.overlays.register("hotbar", …, () => hM(Panel))` (render() must
 RETURN an element). It edits `store.options.defaultFilter` like the Mk.2 panel; clicking a
-placed Mk.3 (`api.signals.interactables.register`, fires on `action:intercept` over the
-structure) selects the contiguous same-setting row (the game's row rule) and Apply writes
+row's label selects the contiguous same-setting row (the game's row rule) and Apply writes
 it via `engine.api.structures.updateMany(state, members, {propagateToWorkers:true})`.
+(Until 0.15.8 clicking the placed Mk.3 itself also opened it, through
+`api.signals.interactables.register` - removed: the game's Mk.2 has no such click, and a row
+opened with an empty hand never closed.)
 The panel has the Mk.2's "labels overlay" switch (same setting, `store.options.showFilterOverlay`)
 and, since 0.15.3, its own overlay: the game draws labels only for its own filter ids, so
 `FilterMk3Overlay` (injected, fixed full-screen, pointer-events none) draws a box + label per
@@ -180,6 +182,9 @@ stayed open after the filter was put away (right-click / tool switch), which kep
 panel, its labels and the clipboard strip up. Now, like the game's editor, the row is dropped
 when the family filter leaves the hand - except while the clipboard is picking (it puts the
 building down on purpose; it says so through `window.__brandonFilterClipboard.picking()`).
+0.15.8: the Mk.3 follows the game's Mk.2 rules exactly (see Game internals → filter row
+editor): no click on the placed belt, the panel opens expanded on pick-up, the row is dropped
+every frame the hand isn't a Mk.2 / Mk.3, and placing is blocked while a row is open.
 
 0.15.x in game: the panel and the labels overlay were confirmed on 2026-09-25 (with Improved
 Filters 0.2.6); the belt animation and the Mk.3's actual belt speed are still unconfirmed.
@@ -396,7 +401,13 @@ game build — search the bundle by string literals, not by those names.
   `input.resetMouseState` and sets `session.building.filterForceExpand = true` (the game's
   panel opens expanded the next time it mounts, then clears it); `apply` writes via
   `updateMany`, bumps the revision and drops the selection. Driving select→apply from a mod,
-  put `filterForceExpand` back afterwards. Hotbar select sets activeStructureType only for
+  put `filterForceExpand` back afterwards. The game's Mk.2 rules (0.15.8 copies them for the
+  Mk.3, per frame on `frame:render`): no click handler on a placed filter - rows open only
+  from a label, only with a filter in hand; picking the filter up (hotbar or build menu)
+  sets `filterForceExpand`, so the panel opens EXPANDED; the editor's `afterRender` drops
+  the row the moment the hand isn't one of its filters and, while a row is open, cancels any
+  placement with the toast `ui|filter|finishEditingBeforePlacing`; Esc (an `input:escape`
+  interceptor) cancels the row first. Hotbar select sets activeStructureType only for
   the game's own filters and nulls it for anything else.
 - Terrain ids by name: `api.terrains.getTypeById("block")` (Block is built-in id 15); mod
   terrains are numbered by registration order — never hard-code them.

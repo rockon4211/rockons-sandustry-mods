@@ -4,8 +4,11 @@
 //   (a) building:placed on a Mk.3 copies store.options.defaultFilter with affectsLiquid /
 //       affectsGas true and its own copy of the element array; other buildings and a Mk.3
 //       that already carries a filter (copy-paste) are left alone;
-//   (b) the filterRightMk3 interactable selects the contiguous same-setting row, and Apply
-//       writes it through engine structures.updateMany with a filter object per member;
+//   (b) a label click (mk3Select) selects the contiguous same-setting row, and Apply writes it
+//       through engine structures.updateMany with a filter object per member; the game's Mk.2
+//       rules per frame: no click handler on the placed belt, the panel opens expanded on
+//       pick-up, placing is blocked while a row is open, and the row is dropped when the
+//       filter leaves the hand (not while the clipboard is picking);
 //   (c) the manager-worker trigger `brandonFilterMk3Belts` is registered at 166 ms and both
 //       ids are conveyor types;
 //   (d) the frame:render handler copies conveyorMk2AnimationIndex [0],[1] into `mk3anim`.
@@ -102,9 +105,12 @@ global.requestAnimationFrame = () => 0; global.cancelAnimationFrame = () => {};
 		{ type: R, x: 120, y: 50, filter: F() },                                          // same setting, a gap
 		{ type: L, x: 96, y: 50, filter: F() },                                           // touching, other direction
 		{ type: R, x: 100, y: 54, filter: F() });                                         // the row below
-	check(typeof interactables[R] === "function" && typeof interactables[L] === "function", "interactables registered for both Mk.3 ids");
-	engineActive = { type: "structure", id: R };
-	interactables[R](getAtCell(105, 50));   // a click on the middle member
+	check(!interactables[R] && !interactables[L], "no click handler on the placed Mk.3 (the game's Mk.2 has none)");
+	const frame = () => (handlers["frame:render"] || []).forEach((f) => f());
+	engineActive = { type: "structure", id: R }; M.mk3.open = false;
+	frame();
+	check(M.mk3.open === true, "picking the Mk.3 up opens its panel expanded (as the game does for the Mk.2)");
+	M.mk3Select(105, 50);   // a click on the middle member's label
 	const sel = M.mk3.sel;
 	check(!!sel && sel.members.length === 3 && sel.members.map((m) => m.x).join(",") === "100,104,108", "the click selected the contiguous same-setting row: " + (sel ? sel.members.map((m) => m.x).join(",") : "none"));
 	const hook = global.window.__brandonFilterMk3;
@@ -113,6 +119,12 @@ global.requestAnimationFrame = () => 0; global.cancelAnimationFrame = () => {};
 	const draft = { mode: "block", elementType: [36, 3] };
 	check(hook.setDraft(draft) === true && M.mk3.draft !== draft && JSON.stringify(M.mk3.draft) === JSON.stringify(draft), "setDraft() copies the draft in");
 	check(updateManyCalls.length === 0, "nothing is written before Apply");
+	state.session.building.placing = true; const nToast = toasts.length; frame();
+	check(toasts.length === nToast + 1 && M.mk3.sel, "placing while a row is open is refused with a toast; the row stays");
+	state.session.building.placing = false;
+	engineActive = null; global.window.__brandonFilterClipboard = { picking: () => true }; frame();
+	check(!!M.mk3.sel, "the row survives the clipboard putting the building down to pick");
+	delete global.window.__brandonFilterClipboard; engineActive = { type: "structure", id: R }; frame();
 	check(hook.apply() === true, "apply() accepted while a row is selected");
 	check(updateManyCalls.length === 1 && updateManyCalls[0].st === state && updateManyCalls[0].opts && updateManyCalls[0].opts.propagateToWorkers === true, "one engine structures.updateMany(state, members, {propagateToWorkers:true}) call");
 	const written = updateManyCalls[0] ? updateManyCalls[0].list : [];
@@ -122,6 +134,9 @@ global.requestAnimationFrame = () => 0; global.cancelAnimationFrame = () => {};
 	check(new Set(written.map((m) => m.filter)).size === 3 && written.every((m) => m.filter !== draft), "a filter object per member, none of them the draft itself");
 	check(getAtCell(112, 50).filter.mode === "allow" && getAtCell(120, 50).filter.mode === "allow" && getAtCell(96, 50).filter.mode === "allow", "the neighbours outside the row are untouched");
 	check(M.mk3.sel === null && hook.selection() === null && hook.apply() === false, "the selection is closed after Apply; apply() refuses with no row");
+	M.mk3Select(105, 50); engineActive = null; frame();
+	check(M.mk3.sel === null && hook.selection() === null, "putting the filter away drops the open row (the game's editor does the same)");
+	engineActive = { type: "structure", id: R }; frame();
 	// the panel: shown while a Mk.3 is in hand (the game's own answer), gone when it isn't
 	check(M.FilterMk3Panel() !== null, "FilterMk3Panel renders while engine action.getActive says a Mk.3 is in hand");
 	engineActive = { type: "structure", id: "filterRightMk2" };

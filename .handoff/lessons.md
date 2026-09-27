@@ -69,7 +69,10 @@ reading. Updated 2026-09-25.
   material chips with a colour swatch and a checkbox.
 - Keep the main panel the game's size (640 wide) and anything beside it to one narrow line.
 - Use the game's own text where it has some (allow, block, editing, minimize, the tab names).
-- Esc closes it. Clicking a placed row opens that whole row for editing with Apply / Cancel.
+- Copy the game's behaviour too, not just its look: the Mk.2 menu opens expanded when you
+  pick the filter up, rows open from their labels only while a filter is in hand, putting
+  the filter away closes everything, and Esc cancels an edit first. (The Mk.3 once let you
+  click the placed belt with an empty hand, and that edit never closed.)
 - A labels overlay draws a box and a caption over each row, positioned with the same
   camera maths the game uses, so it tracks panning and zooming.
 - Anything that picks from the map puts the held tool down first and hands it back after.
