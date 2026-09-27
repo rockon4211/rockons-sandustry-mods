@@ -1,10 +1,8 @@
-# Mod file checksums — audit-fixes, 5b84490, 2026-09-27
+# Mod file checksums — main, 5b84490, 2026-09-27
 
 Versions: sandboxloop 0.4.6, screensaver 0.18.3, manufacturing 0.16.0, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.3.0.
-(The hash block below is from commit `11bc5ec` on the local `audit-fixes` branch — not `main`,
-which is still at `1ca265d`. It is STALE against the working tree as of 2026-09-27: sandboxloop
-0.4.6, screensaver 0.18.3, manufacturing 0.15.5 are committed since, improvedfilters 0.2.7 and
-quickstart 1.0.2 are in progress. Regenerate after the next commit.)
+All 25 installed files; every hash is of the file at the commit named in the title, which is
+the mod content now on `main` (later commits only touch docs). Regenerate after changing a mod.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
 text files out with CRLF, so hash those after converting, or compare with `git hash-object`.
 `mods/README.md` is left out on purpose (it is documentation, not an installed file), so a

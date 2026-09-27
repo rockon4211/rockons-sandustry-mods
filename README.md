@@ -16,8 +16,7 @@ its Mods menu.
 | **lavaboiloff** | 0.1.1 | Lava has a 1-in-N chance to burn itself out each time it boils water into steam. |
 | **quickstart** | 1.0.2 | **F10** quick reload: reboots the game straight back into the current save (prefers the F5 quicksave). |
 
-Versions as of 2026-09-27. This work is on the local branch `audit-fixes` until Brandon
-pushes it; GitHub `main` is still at the 2026-09-23 state (`1ca265d`).
+Versions as of 2026-09-27, on `main` (pushed 2026-09-27).
 
 ### Sandbox Loop
 
@@ -91,7 +90,7 @@ non-zero on a failed check. Current set: `sim-clone`, `sim-copies`, `sim-output`
 `main` is the live line of work. `snapshot/loamcrest-2026-09-20` (tag
 `loamcrest-2026-09-20`) is a frozen copy of the map and the mods as they were that day.
 Everything since 2026-09-23 (the audit round, Filter Mk.3, Improved Filter Options, the
-map sweep) is on the local branch `audit-fixes` until it is pushed.
+map sweep) was merged into `main` on 2026-09-27 (fast-forward from `audit-fixes`).
 
 The repo is `rockon4211/rockons-sandustry-mods` on GitHub. On the desktop PC the clone is
 `C:\Users\Brand\dev\rockons-sandustry-mods` and git is already authenticated (Git

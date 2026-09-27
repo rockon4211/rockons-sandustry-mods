@@ -27,9 +27,8 @@ Notes and test harnesses for whoever picks this up next — a person or a new ch
     row is open).
 - `chunks/` + `repo-history-README.md` — the code history as a git bundle split into ten
   base64 text parts, for the claude.ai project mirror (binaries stripped, so commit hashes
-  differ from GitHub). Regenerated 2026-09-23 from `main` `1ca265d` — now ~50 commits behind
-  the `audit-fixes` branch (Filter Mk.3, Improved Filter Options, the map sweep and the
-  audit round are NOT in it); regenerate after the push. The README has the rebuild and
+  differ from GitHub). Regenerated 2026-09-27 from `main` (see that README for the head commit);
+  regenerate after each push that matters. The README has the rebuild and
   regenerate commands.
 - `binaries.md`, `binaries-b64.txt`, `repo-binaries.md`, `bin/` — the repo's PNGs and the
   Workshop map as base64. **Stale** (written before 2026-09-23; no documented regenerate

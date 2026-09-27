@@ -1,6 +1,6 @@
 # Sandustry mods — handoff
 
-Everything a new chat needs to pick this work up. Last updated 2026-09-27.
+Everything a new chat needs to pick this work up. Last updated 2026-09-27 (pushed to `main`).
 
 ## Start here
 
@@ -32,14 +32,16 @@ the desktop, or ask him to start a task with the repo attached.
 
 **If GitHub is not reachable**, `.handoff/chunks/` holds the code history as a git bundle
 in ten base64 parts; `repo-history-README.md` has the rebuild commands. It has no binaries
-and its commit hashes differ from GitHub (see that README). The chunks are from `main`
-`1ca265d` (2026-09-23) — about 50 commits behind the `audit-fixes` branch; regenerate them
-after the push. The mirror `claude/repo-history/` and the laptop notes
+and its commit hashes differ from GitHub (see that README). The chunks were regenerated
+2026-09-27 from `main` (head commit in `repo-history-README.md`); regenerate them after
+later pushes. The mirror `claude/repo-history/` and the laptop notes
 `claude/laptop-install.md` live in the claude.ai project, not in this repo.
 
-**Where the work is right now (2026-09-27):** everything since 2026-09-23 is on the local
-branch `audit-fixes` in the desktop clone; GitHub `main` has not been pushed to since
-`1ca265d`. Brandon pushes — ask first.
+**Where the work is right now (2026-09-27):** everything is on GitHub `main` (the
+`audit-fixes` branch was fast-forwarded into it and pushed on 2026-09-27). Work on `main`
+or a new branch. Brandon decides when to push — ask first. Stale branches: local
+`filter-mk3` (the rejected 0.11 upgrade approach) and GitHub `restore-real-pngs` (the
+mistaken PNG "restore", big mistake 1) — both deletable, but only with Brandon's OK.
 
 ## Where things live
 
@@ -57,7 +59,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   `binaries-b64.txt` / `repo-binaries.md` are stale base64 copies of the PNGs (no regenerate
   script) — prefer the PNGs in git.
 
-## Mods and versions (as of 2026-09-27, branch `audit-fixes`)
+## Mods and versions (as of 2026-09-27, branch `main`)
 
 - **Sandbox Loop** `brandon.sandboxloop` v0.4.6 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
@@ -601,7 +603,14 @@ There is no device bridge any more; everything happens directly on the desktop.
    armed" count above zero, a grain following soil → wet soil → residue → burnt residue →
    seed without hand-backs, nothing refused (the log says why if so). 0.18.3's sweep
    changes are covered by `sim-mapsweep.js` only. Also unconfirmed in game: Manufacturing's
-   Mk.3 belt animation and speed, Improved Filters 0.2.7, Sandbox Loop 0.4.6, Quickstart 1.0.2.
+   Mk.3 belt animation and speed, Sandbox Loop 0.4.6, Quickstart 1.0.2.
+1b. **Filter Mk.3 on the game's own menu (Manufacturing 0.16.0 + Improved Filters 0.3.0) is
+   untested in game.** Check: a Mk.3 in hand opens the game's panel expanded; picking a
+   material keeps a Mk.3 in hand (not a Mk.2); Mk.3 rows get the game's labels; clicking one
+   edits it, Apply writes it; putting the filter away closes everything; clipboard Copy /
+   Paste / Pick / Onto on Mk.2 and Mk.3 rows. Known: the panel titles a Mk.3 "Filter Mk.2".
+   If the game says "the Filter Mk.3 menu isn't working", the self-check failed (see the
+   Manufacturing section).
 2. **Hard-wired steps still hand back** (a planter growing a flower, steam → cloud, the
    thermofroster). These are game code, not tables; hand-back is the permanent answer
    unless the game exposes them.
@@ -611,9 +620,8 @@ There is no device bridge any more; everything happens directly on the desktop.
    desktop may need their material set once (Sandbox Loop 0.4.0 migration).
 4. The desktop's newest saves (2026-09-21) were never committed; the snapshot branch map is
    from 2026-09-20.
-5. **Push.** Everything since 2026-09-23 is on the local `audit-fixes` branch; after Brandon
-   pushes, regenerate `.handoff/chunks/` (see `repo-history-README.md`) and
-   `mods-checksums.md`, and fix the `1ca265d` notes in `.handoff/README.md`.
+5. **Branch clean-up (ask first):** delete GitHub `restore-real-pngs` and local `filter-mk3`.
+   Pushed 2026-09-27; `.handoff/chunks/` and `mods-checksums.md` regenerated then.
 
 Done, for the record: the 0.17.2 in-game check and the fire-reaction / machine gaps (#1, #2
 in older copies of this file) were superseded by 0.18, which copies burning and teaches
