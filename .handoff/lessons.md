@@ -59,8 +59,15 @@ reading. Updated 2026-09-25.
 13. **Putting the tool down closed the row.** The game stops editing a row the moment the
     held tool changes, so the clipboard's "put the tool down, then pick" closed the row being
     edited. *Rule: while the game is editing a row, leave the tool alone.*
+14. **Copied the game's filter menu instead of joining it.** The game only shows its filter
+    menu for filters on a short list inside its code, so the Mk.3 got a hand-made copy of the
+    menu, the labels and the row editor. Every copy behaved a little differently (rows that
+    never closed, a menu that started small). The list turned out to be joinable, and the
+    Mk.3 now uses the game's real menu. *Rule: when the game already does something for a
+    sibling, find how it decides who gets it, and join that before building a copy.*
 
 ## Making a menu that fits the game (in words)
+- First ask whether the game's own menu can serve it (see lesson 14). Only build one when it can't.
 - Put it where the game puts its own: in the band above the hotbar, appearing only while
   the matching thing is in hand — decided by asking the game what's in hand, not by
   guessing from one field.

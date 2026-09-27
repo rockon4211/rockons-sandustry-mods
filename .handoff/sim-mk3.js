@@ -1,14 +1,13 @@
-// sim-mk3.js — Manufacturing 0.15.x: the Filter Mk.3 block of mods/manufacturing/main.real.js
+// sim-mk3.js — Manufacturing 0.16.x: the Filter Mk.3 block of mods/manufacturing/main.real.js
 // (the source of truth, not the hot-load stub), run the way the game runs it (strict mode,
 // inside an async wrapper, top-level await) against a mocked sandkit. Checks:
 //   (a) building:placed on a Mk.3 copies store.options.defaultFilter with affectsLiquid /
 //       affectsGas true and its own copy of the element array; other buildings and a Mk.3
 //       that already carries a filter (copy-paste) are left alone;
-//   (b) a label click (mk3Select) selects the contiguous same-setting row, and Apply writes it
-//       through engine structures.updateMany with a filter object per member; the game's Mk.2
-//       rules per frame: no click handler on the placed belt, the panel opens expanded on
-//       pick-up, placing is blocked while a row is open, and the row is dropped when the
-//       filter leaves the hand (not while the clipboard is picking);
+//   (b) Manufacturing 0.16.0: the Mk.3 joins the game's own filter lists through
+//       Array.prototype.includes (in every list its Mk.2 twin is in; every other answer
+//       unchanged), the panel's material pick can't swap a held Mk.3 for a Mk.2, a Mk.3 taken
+//       up opens the panel expanded, and the self-check asks the game's editor to select one;
 //   (c) the manager-worker trigger `brandonFilterMk3Belts` is registered at 166 ms and both
 //       ids are conveyor types;
 //   (d) the frame:render handler copies conveyorMk2AnimationIndex [0],[1] into `mk3anim`.
@@ -25,7 +24,7 @@ let nextType = 60; const registered = [];
 const buffers = {}, handlers = {}, intervals = [], timeouts = [], toasts = [], triggers = [], conveyors = [], interactables = {}, structDefs = {}, techNodes = {}, updateManyCalls = [];
 const structs = [];   // on the map; a tile is 4 cells wide
 const getAtCell = (x, y) => structs.find((s) => s.y === y && x >= s.x && x < s.x + 4) || null;
-let engineActive = null;   // what engine.api.action.getActive answers: {type, id} or null
+let engineActive = null, edAccepts = true, edBusy = false; const editorOps = [];   // what engine.api.action.getActive answers: {type, id} or null
 const state = { session: { building: { activeStructureType: null, placing: false }, action: { customData: {} }, rendering: { canvas: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 1920, height: 1080 }) } }, camera: { x: 0, y: 0 }, view: { zoom: 1 }, scale: 1 },
 	store: { options: { defaultFilter: { mode: "allow", elementType: 1 }, showFilterOverlay: true }, discoveries: { elements: [1, 3, 4, 36] }, player: { inventory: [], buildings: ["filterRightMk2"], action: null, hotbar: { activeSlotIndex: 0 }, tech: {} } },
 	shared: { mods: { conveyorMk2AnimationIndex: Uint8Array.from([0, 0]) } }, sandkit: { graphics: {} } };
@@ -57,6 +56,7 @@ const api = {
 const engine = { state, api: { action: { getActive: (st) => (st === state ? engineActive : undefined) },
 	structures: { updateMany: (st, list, opts) => updateManyCalls.push({ st, list, opts }) },
 	building: { cancelPlacement() {}, selectStructure() {} },
+	filterGroupEditor: { getSelection: () => { editorOps.push("getSelection"); return edBusy ? { structureType: "filterRightMk2" } : null; }, selectAt: () => { editorOps.push("selectAt"); return edAccepts; }, cancel: () => { editorOps.push("cancel"); } },
 	workers: { triggers: { register: (st, id, def) => triggers.push({ st, id, def }) } } } };
 const React = { createElement: (type, props, ...children) => ({ type, props: props || {}, children }), useState: (v) => [v, () => {}], useEffect() {}, useRef: () => ({ current: null }), Fragment: "Fragment" };
 const sandkit = { api, engine, state, react: React,
@@ -70,7 +70,7 @@ global.requestAnimationFrame = () => 0; global.cancelAnimationFrame = () => {};
 
 (async () => {
 	const log = console.log, err = console.error; console.log = () => {}; console.error = () => {};
-	const wrapped = new AsyncFunction("sandkit", '"use strict";\n' + src + "\nreturn { get mk3(){return mk3}, mk3Row, mk3Select, mk3Apply, mk3Cfg, FilterMk3Panel, get mk3Ready(){return mk3Ready}, MK3_R, MK3_L };");
+	const wrapped = new AsyncFunction("sandkit", '"use strict";\n' + src + "\nreturn { get mk3Ready(){return mk3Ready}, get filterListsOk(){return filterListsOk}, checkFilterLists, resetChecked(){ mk3Checked = false; }, MK3_R, MK3_L };");
 	const M = await wrapped(sandkit);
 	console.log = log; console.error = err;
 	const R = M.MK3_R, L = M.MK3_L;
@@ -96,52 +96,49 @@ global.requestAnimationFrame = () => 0; global.cancelAnimationFrame = () => {};
 	const kept = { mode: "allow", elementType: 1 }, s3 = { type: L, x: 208, y: 20, filter: kept };
 	fire("building:placed", { structure: s3, isCopied: true });
 	check(s3.filter === kept, "a copy-pasted Mk.3 keeps its own filter");
-	check(M.mk3.lastPlaced && M.mk3.lastPlaced.x === 208 && M.mk3.lastPlaced.y === 20, "lastPlaced follows the newest Mk.3 (for 'Edit last placed')");
 
-	// --- (b) the interactable selects the row; Apply writes it via updateMany -------------
-	const F = () => ({ mode: "allow", elementType: [3], affectsLiquid: true, affectsGas: true });
-	structs.push({ type: R, x: 100, y: 50, filter: F() }, { type: R, x: 104, y: 50, filter: F() }, { type: R, x: 108, y: 50, filter: F() },
-		{ type: R, x: 112, y: 50, filter: Object.assign(F(), { elementType: [36] }) },   // touching, but a different setting
-		{ type: R, x: 120, y: 50, filter: F() },                                          // same setting, a gap
-		{ type: L, x: 96, y: 50, filter: F() },                                           // touching, other direction
-		{ type: R, x: 100, y: 54, filter: F() });                                         // the row below
-	check(!interactables[R] && !interactables[L], "no click handler on the placed Mk.3 (the game's Mk.2 has none)");
+	// --- (b) the Mk.3 joins the game's filter lists (Array.prototype.includes) ---------------
+	// the game's own lists, as its bundle writes them (Mk.1 ids are numbers)
+	const hk = [17, 18, "filterLeftMk2", "filterRightMk2"], mk = ["filterWall", "filterWallMk2"], pk = [...hk, ...mk], gk = [17, "filterLeftMk2"], Uk = ["filterLeftMk2", "filterRightMk2", "filterWallMk2"], hotbarM = [18, 17, "filterRightMk2", "filterLeftMk2"];
+	check(Array.prototype.includes.__brandonMk3 === true, "Array.prototype.includes is the Mk.3-aware one");
+	check(pk.includes(R) && pk.includes(L) && hk.includes(R) && Uk.includes(L) && hotbarM.includes(R) && hotbarM.includes(L), "both Mk.3s are in the filter list, the Mk.2 list and the hotbar list");
+	check(gk.includes(L) && !gk.includes(R), "the left-facing list takes the left Mk.3 only");
+	check(!mk.includes(R) && !mk.includes(L), "the walls list does not take a Mk.3");
+	check(["filterRightMk2", "filterLeftMk2"].includes(R), "the placement / paste checks (a literal [Mk.2 right, left]) take it too");
+	check(![1, 2].includes(3) && [1, 2].includes(2) && [NaN].includes(NaN) && ![1, 2, 3].includes(1, 1) && !["a"].includes(R), "every other includes answers exactly as before (NaN, fromIndex, unrelated lists)");
+	check(Object.keys(Array.prototype).indexOf("includes") === -1, "…and it is not enumerable (for..in over arrays is unchanged)");
+	check(M.filterListsOk === true, "the mod's own self-check passed");
+	check(global.window.__brandonFilterMk3 === undefined, "no cloned Mk.3 panel hook any more (the game's panel serves it)");
+
+	// --- the two spots that name the Mk.2 outright ------------------------------------------
 	const frame = () => (handlers["frame:render"] || []).forEach((f) => f());
-	engineActive = { type: "structure", id: R }; M.mk3.open = false;
-	frame();
-	check(M.mk3.open === true, "picking the Mk.3 up opens its panel expanded (as the game does for the Mk.2)");
-	M.mk3Select(105, 50);   // a click on the middle member's label
-	const sel = M.mk3.sel;
-	check(!!sel && sel.members.length === 3 && sel.members.map((m) => m.x).join(",") === "100,104,108", "the click selected the contiguous same-setting row: " + (sel ? sel.members.map((m) => m.x).join(",") : "none"));
-	const hook = global.window.__brandonFilterMk3;
-	check(!!hook && hook.selection() && hook.selection().count === 3 && hook.selection().type === R, "window.__brandonFilterMk3.selection() reports the row (count 3)");
-	check(hook && JSON.stringify(hook.draft()) === JSON.stringify({ mode: "allow", elementType: [3], affectsLiquid: true, affectsGas: true }), "draft() starts as the row's own filter: " + JSON.stringify(hook.draft()));
-	const draft = { mode: "block", elementType: [36, 3] };
-	check(hook.setDraft(draft) === true && M.mk3.draft !== draft && JSON.stringify(M.mk3.draft) === JSON.stringify(draft), "setDraft() copies the draft in");
-	check(updateManyCalls.length === 0, "nothing is written before Apply");
-	state.session.building.placing = true; const nToast = toasts.length; frame();
-	check(toasts.length === nToast + 1 && M.mk3.sel, "placing while a row is open is refused with a toast; the row stays");
-	state.session.building.placing = false;
-	engineActive = null; global.window.__brandonFilterClipboard = { picking: () => true }; frame();
-	check(!!M.mk3.sel, "the row survives the clipboard putting the building down to pick");
-	delete global.window.__brandonFilterClipboard; engineActive = { type: "structure", id: R }; frame();
-	check(hook.apply() === true, "apply() accepted while a row is selected");
-	check(updateManyCalls.length === 1 && updateManyCalls[0].st === state && updateManyCalls[0].opts && updateManyCalls[0].opts.propagateToWorkers === true, "one engine structures.updateMany(state, members, {propagateToWorkers:true}) call");
-	const written = updateManyCalls[0] ? updateManyCalls[0].list : [];
-	check(written.length === 3 && written.map((m) => m.x).join(",") === "100,104,108", "…for exactly the 3 row members");
-	check(written.every((m) => m.filter.mode === "block" && JSON.stringify(m.filter.elementType) === "[36,3]"), "each member now blocks copper + water");
-	check(written.every((m) => m.filter.affectsLiquid === true && m.filter.affectsGas === true), "each member kept its affectsLiquid / affectsGas true (Apply writes mode + elementType only)");
-	check(new Set(written.map((m) => m.filter)).size === 3 && written.every((m) => m.filter !== draft), "a filter object per member, none of them the draft itself");
-	check(getAtCell(112, 50).filter.mode === "allow" && getAtCell(120, 50).filter.mode === "allow" && getAtCell(96, 50).filter.mode === "allow", "the neighbours outside the row are untouched");
-	check(M.mk3.sel === null && hook.selection() === null && hook.apply() === false, "the selection is closed after Apply; apply() refuses with no row");
-	M.mk3Select(105, 50); engineActive = null; frame();
-	check(M.mk3.sel === null && hook.selection() === null, "putting the filter away drops the open row (the game's editor does the same)");
-	engineActive = { type: "structure", id: R }; frame();
-	// the panel: shown while a Mk.3 is in hand (the game's own answer), gone when it isn't
-	check(M.FilterMk3Panel() !== null, "FilterMk3Panel renders while engine action.getActive says a Mk.3 is in hand");
-	engineActive = { type: "structure", id: "filterRightMk2" };
-	check(M.FilterMk3Panel() === null, "…and renders nothing when a Mk.2 is in hand");
-	engineActive = null;
+	const B = state.session.building;
+	B.activeStructureType = null; B.filterForceExpand = false; frame();
+	B.activeStructureType = R; state.store.player.action = { type: "building", id: R }; frame();
+	check(B.filterForceExpand === true, "taking a Mk.3 up opens the game's panel expanded (filterForceExpand), as the build menu does for a Mk.2");
+	B.activeStructureType = "filterRightMk2"; frame();   // the panel's material pick
+	check(B.activeStructureType === R, "the panel's material pick swapped the hand to a Mk.2 right - put back to the Mk.3");
+	B.activeStructureType = L; state.store.player.action = { type: "building", id: L }; frame();
+	B.activeStructureType = "filterRightMk2"; frame();
+	check(B.activeStructureType === L, "…a left Mk.3 stays a left Mk.3");
+	state.store.player.action = null; state.store.player.hotbar = { bars: [[null, { type: "building", id: R }]], hotbarIndex: 0, activeSlotIndex: 1 };
+	B.activeStructureType = R; frame(); B.activeStructureType = "filterRightMk2"; frame();
+	check(B.activeStructureType === R, "…also when the Mk.3 came from the hotbar");
+	state.store.player.hotbar = { activeSlotIndex: null }; state.store.player.action = { type: "building", id: "filterRightMk2" };
+	B.activeStructureType = R; frame(); B.activeStructureType = "filterRightMk2"; frame();
+	check(B.activeStructureType === "filterRightMk2", "a real switch to a Mk.2 is left alone");
+	B.activeStructureType = null; state.store.player.action = null; state.store.player.hotbar = { activeSlotIndex: 0 }; frame();
+
+	// --- the check against the game's own editor ---------------------------------------------
+	structs.push({ type: R, x: 100, y: 50, filter: { mode: "allow", elementType: [3] } });
+	const nToast = toasts.length;
+	edAccepts = true; M.checkFilterLists();
+	check(editorOps.join(",") === "getSelection,selectAt,cancel" && toasts.length === nToast, "with a Mk.3 placed, the game's editor is asked to select it (then cancelled); it accepts → no warning");
+	M.resetChecked(); edAccepts = false; editorOps.length = 0; M.checkFilterLists();
+	check(toasts.length === nToast + 1 && /Filter Mk\.3 menu/.test(toasts[toasts.length - 1]), "if the editor refuses a Mk.3, a toast says so");
+	M.resetChecked(); edBusy = true; editorOps.length = 0; M.checkFilterLists();
+	check(editorOps.join(",") === "getSelection", "…and a row already open in the editor is never disturbed");
+	edBusy = false;
 
 	// --- (c) the belt trigger and the conveyor types ---------------------------------------
 	const trig = triggers.filter((t) => t.id === "brandonFilterMk3Belts");

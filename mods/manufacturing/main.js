@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.15.8 running"));
+		safe(() => api.ui.toast("Manufacturing v0.16.0 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -806,305 +806,82 @@ safe(() => api.events.on("building:placed", (p) => {
 	s.filter = Object.assign({}, df, { affectsLiquid: true, affectsGas: true });
 	if (Array.isArray(s.filter.elementType)) s.filter.elementType = s.filter.elementType.slice();
 }));
-safe(() => api.events.on("building:placed", (p) => {
-	const s = p && p.structure;
-	if (s && (s.type === MK3_R || s.type === MK3_L)) mk3.lastPlaced = { x: s.x, y: s.y };
+// --- the Mk.3 is one of the game's own filters -------------------------------------------
+// The game decides "is this a filter?" with short id lists inside its bundle (Mk.1, Mk.2,
+// the walls, plus one in the hotbar code) that no api exposes; its filter panel, labels
+// overlay, row editor ("Edit last placed" included), hotbar handling and copy-paste all ask
+// them - and they ask with Array.prototype.includes. So that one call is taught one fact:
+// a Mk.3 is in every list its Mk.2 twin is in (filterRightMk3 wherever filterRightMk2 is,
+// filterLeftMk3 wherever filterLeftMk2 is). Any other question goes straight through (two
+// string compares, then the original). The Copier's left/right pair list is read through
+// a Map, not includes, so a Mk.3 is never flipped into a Mk.2.
+const MK3_TWIN = { [MK3_R]: "filterRightMk2", [MK3_L]: "filterLeftMk2" };
+let filterListsOk = false;
+try {
+	if (!Array.prototype.includes.__brandonMk3) {   // once per page, even if the mod is reloaded
+		const orig = Array.prototype.includes;
+		const includes = function includes(v, from) {
+			if ((v === MK3_R || v === MK3_L) && orig.call(this, MK3_TWIN[v])) return true;
+			return orig.call(this, v, from);
+		};
+		Object.defineProperty(includes, "__brandonMk3", { value: true });
+		Object.defineProperty(Array.prototype, "includes", { value: includes, writable: true, configurable: true, enumerable: false });
+	}
+	filterListsOk = ["filterRightMk2"].includes(MK3_R) && !["filterRightMk2"].includes(MK3_L) && [1, 2].includes(2) && [NaN].includes(NaN);
+} catch (e) { console.error(`[${MOD_ID}] Filter Mk.3: could not join the game's filter lists:`, e); }
+// Checked against the game itself once a world is up: its row editor must accept a Mk.3 row.
+// If a game update stops using those lists the Mk.3 still sorts and moves (the sim reads the
+// filter object), but it would have no menu - say so rather than fail quietly.
+let mk3Checked = false;
+function checkFilterLists() {
+	if (mk3Checked || !mk3Ready || !inGame()) return;
+	let s = null; safe(() => api.structures.forEachOfType(MK3_R, (x) => { if (!s && typeof x.x === "number") s = x; }));
+	if (!s) safe(() => api.structures.forEachOfType(MK3_L, (x) => { if (!s && typeof x.x === "number") s = x; }));
+	if (!s) return;   // nothing placed yet to test with
+	if (safe(() => sandkit.state.session.building.placing)) return;   // selectAt cancels a placement: wait until none is under way
+	mk3Checked = true;
+	const ed = safe(() => sandkit.engine.api.filterGroupEditor), st = safe(() => sandkit.engine.state);
+	if (!ed || safe(() => ed.getSelection(st))) return;   // no editor, or it is busy with a row: don't disturb it
+	const fx = safe(() => st.session.building.filterForceExpand);
+	const ok = !!safe(() => ed.selectAt(st, s.x, s.y, { toggle: false }));
+	safe(() => ed.cancel(st)); safe(() => { st.session.building.filterForceExpand = fx; });
+	if (!filterListsOk || !ok) {
+		console.error(`[${MOD_ID}] Filter Mk.3: the game's filter editor does not accept a Mk.3 (lists ok: ${filterListsOk}) - a game update may have changed how it recognises filters`);
+		safe(() => api.ui.toast("Manufacturing: the Filter Mk.3 menu isn't working with this game version - it still sorts, but tell Brandon"));
+	}
+}
+setInterval(checkFilterLists, 3000);
+safe(() => api.events.on("game:ready", () => { mk3Checked = false; }));
+// Two spots name the Mk.2 outright instead of asking a list:
+// - picking a material in the game's filter panel (not while editing a row) sets the held
+//   building to "filterRightMk2" - that would swap a held Mk.3 for a Mk.2, so it is put back
+//   (the Mk.3 is still what the build menu / hotbar says is held);
+// - taking a Mk.2 from the build menu sets filterForceExpand (the panel opens expanded) -
+//   done here for the Mk.3 too. (The hotbar already does it: its check is a list.)
+let heldMk3 = null;
+function mk3InHandBySource() {
+	const pl = safe(() => sandkit.state.store.player); if (!pl) return false;
+	const a = pl.action;
+	if (a && (a.id === MK3_R || a.id === MK3_L)) return true;
+	const hb = pl.hotbar, it = safe(() => hb.bars[hb.hotbarIndex][hb.activeSlotIndex]);
+	return !!(it && (it.id === MK3_R || it.id === MK3_L));
+}
+safe(() => api.events.on("frame:render", () => {
+	const b = safe(() => sandkit.state.session.building); if (!b) return;
+	const a = b.activeStructureType;
+	if (a === MK3_R || a === MK3_L) {
+		if (!heldMk3) { b.filterForceExpand = true; safe(() => api.ui.overlays.update("hotbar")); }
+		heldMk3 = a; return;
+	}
+	if (heldMk3 && a === "filterRightMk2" && mk3InHandBySource()) {
+		b.activeStructureType = heldMk3;
+		const CID = safe(() => sandkit.enums.ComponentId) || {};
+		if (CID.Hotbar !== undefined) safe(() => api.ui.update(CID.Hotbar));
+		safe(() => api.ui.overlays.update("hotbar"));
+		return;
+	}
+	heldMk3 = null;
 }));
-
-// --- the Filter Mk.3 panel: a copy of the game's Mk.2 Filter panel ------------------
-// Same collapsed bar above the hotbar, same expanded picker (allow / block, solid /
-// liquid / gas tabs, search, a checkbox per material so several can be picked). It edits
-// the very setting the Mk.2 panel edits (store.options.defaultFilter) - what a new Mk.3
-// takes when placed. Clicking a placed Mk.3 edits that whole row instead (apply /
-// cancel), written through the game's own updateMany, as the Mk.2's row editor does.
-const mk3 = { open: false, tab: "solid", search: "", sel: null, draft: null, lastPlaced: null, wasSel: false };
-let mk3Repaint = null;
-const mk3Refresh = () => { if (mk3Repaint) mk3Repaint((v) => v + 1); safe(() => api.ui.overlays.update("hotbar")); };
-const asList = (v) => Array.isArray(v) ? v.filter((x) => typeof x === "number") : typeof v === "number" ? [v] : [];
-const tr = (key, params, fb) => { const s = safe(() => api.i18n.t(key, params)); return typeof s === "string" && s && s !== key ? s : fb; };
-// is a Filter Mk.3 the building in hand? Asked of the game itself (action.getActive is
-// what it uses to decide what is held and whether to draw a placement ghost), so the
-// panel closes exactly when the game puts the filter away
-function mk3Selected() {
-	const act = safe(() => sandkit.engine.api.action.getActive(sandkit.engine.state));
-	if (act !== undefined) return !!(act && (act.id === MK3_R || act.id === MK3_L));
-	const st = safe(() => sandkit.state); if (!st) return false;   // no such call: the game's own order of precedence
-	const b = safe(() => st.session.building.activeStructureType), a = safe(() => st.store.player.action);
-	return !!(b === MK3_R || b === MK3_L || (!b && a && (a.id === MK3_R || a.id === MK3_L)));
-}
-// discovered materials that belong in a filter picker - the game's own list rule
-function mk3Elements() {
-	const disc = new Set(safe(() => sandkit.state.store.discoveries.elements) || []);
-	const out = [];
-	for (const type of safe(() => api.elements.getRegisteredTypes(), []) || []) {
-		if (!disc.has(type)) continue;
-		const def = safe(() => api.elements.getDefinitionByType(type)) || {};
-		if (def.showInFilterPicker === false) continue;
-		const mc = typeof def.metaColor === "number" ? def.metaColor : undefined;
-		out.push({ id: type, name: safe(() => api.elements.getNameByType(type), null) || ("type " + type), matterType: def.matterType,
-			color: mc === undefined ? "#888888" : `rgb(${mc >> 16 & 255}, ${mc >> 8 & 255}, ${mc & 255})` });
-	}
-	return out;
-}
-function mk3Tabs() { const MT = safe(() => sandkit.enums.MatterType) || {}; return { solid: [MT.Solid, MT.Powder, MT.Wisp, MT.Slushy], liquid: [MT.Liquid], gas: [MT.Gas] }; }
-// every Mk.3 joined to the one at x,y (same type, same setting) - the game's row rule
-const mk3Key = (s) => { const f = s.filter || {}; return [s.type, f.mode, asList(f.elementType).slice().sort((a, b) => a - b).join(","), f.affectsLiquid ? 1 : 0, f.affectsGas ? 1 : 0].join("_"); };
-// The Mk.2 filter is the same filter at the slower speed, so the panel and its labels treat
-// both kinds as one family: a Mk.2 row can be opened and edited here too
-const MK2_IDS = new Set(["filterRightMk2", "filterLeftMk2"]);
-const isMk3Type = (t) => t === MK3_R || t === MK3_L;
-const isFamilyType = (t) => isMk3Type(t) || MK2_IDS.has(t);
-const kindOf = (t) => isMk3Type(t) ? "Mk.3" : "Mk.2";
-// is one of the game's own filters the active structure? (then the game draws its labels)
-const gameFilterInHand = () => MK2_IDS.has(safe(() => sandkit.state.session.building.activeStructureType));
-function mk3Row(x, y) {
-	const at = (cx, cy) => safe(() => api.structures.getAtCell(cx, cy));
-	const s0 = at(x, y); if (!s0 || !isFamilyType(s0.type)) return null;
-	const k = mk3Key(s0), N = 4, same = (s) => !!s && s.type === s0.type && s.y === s0.y && mk3Key(s) === k;
-	let x0 = s0.x; while (x0 - N >= 0 && same(at(x0 - N, s0.y))) x0 -= N;
-	const members = []; for (let cx = x0; members.length < 4096; cx += N) { const s = at(cx, s0.y); if (!same(s)) break; members.push(s); }
-	return { members, type: s0.type, x: s0.x, y: s0.y };
-}
-function mk3Select(x, y) {
-	const row = mk3Row(x, y); if (!row) return false;
-	safe(() => sandkit.engine.api.building.cancelPlacement(sandkit.engine.state));
-	const f = row.members[0].filter || { mode: "allow" };
-	mk3.sel = row; mk3.draft = Object.assign({}, f, { elementType: asList(f.elementType) }); mk3.open = true; mk3.search = "";
-	mk3Refresh(); return true;
-}
-function mk3Cancel() { mk3.sel = null; mk3.draft = null; mk3.open = false; mk3Refresh(); }
-function mk3Apply() {
-	const row = mk3.sel, d = mk3.draft; if (!row || !d) return mk3Cancel();
-	const mode = d.mode || "allow", types = asList(d.elementType);
-	// a Mk.2 row goes through the game's own editor (select → draft → apply): only its apply
-	// bumps the revision the game's labels overlay redraws on
-	let done = false;
-	if (MK2_IDS.has(row.type)) {
-		const ed = safe(() => sandkit.engine.api.filterGroupEditor), st = safe(() => sandkit.engine.state);
-		const fx = safe(() => st.session.building.filterForceExpand);   // selectAt sets it (pops the game's panel open next time)
-		done = !!(ed && safe(() => ed.selectAt(st, row.x, row.y, { toggle: false }), false) && safe(() => ed.setDraft(st, { mode, elementType: types }), false) && safe(() => ed.apply(st), false));
-		safe(() => { st.session.building.filterForceExpand = fx; });
-	}
-	if (!done) {
-		for (const s of row.members) s.filter = Object.assign({}, s.filter || { mode: "allow" }, { mode, elementType: types.slice() });
-		safe(() => sandkit.engine.api.structures.updateMany(sandkit.engine.state, row.members, { propagateToWorkers: true }));
-	}
-	mk3Cancel();
-}
-// what a new Mk.3 would get: the row draft while editing, else the shared default. A Mk.3
-// picked up with the Copier is placed with customData.copiedStructure.filter instead, and
-// the game mirrors that into defaultFilter only for its own filter ids (the Copier keeps no
-// type on copiedStructure - the held type is what action.getActive says), so it is mirrored
-// here the same way; changing anything in the panel drops the copied filter (mk3Set).
-const mk3Mirror = (cf) => Object.assign({ elementType: Array.isArray(cf.elementType) ? cf.elementType.slice() : cf.elementType, mode: cf.mode || "allow" }, cf.affectsLiquid && { affectsLiquid: true }, cf.affectsGas && { affectsGas: true });
-const mk3Cfg = () => mk3.sel ? mk3.draft : (safe(() => {
-	const st = sandkit.state, cd = st.session.action.customData, cf = cd && cd.copiedStructure && cd.copiedStructure.filter;
-	if (cf && mk3Selected()) { const m = mk3Mirror(cf); if (JSON.stringify(m) !== JSON.stringify(st.store.options.defaultFilter)) st.store.options.defaultFilter = m; }
-	return st.store.options.defaultFilter;
-}) || { mode: "allow" });
-function mk3Set(next) {
-	if (mk3.sel) mk3.draft = next;
-	else safe(() => {   // as the game's panel does: the shared default, and a copied filter no longer applies
-		const st = sandkit.state; st.store.options.defaultFilter = next;
-		const cd = st.session.action.customData; if (cd && cd.copiedStructure && cd.copiedStructure.filter) cd.copiedStructure.filter = undefined;
-	});
-	mk3Refresh();
-}
-// the game's own classes, so it looks the same
-const MK3_BTN = "text-xs px-2 py-0.5 text-white bg-black border rounded-tr-lg rounded-bl-lg item-button-transition border-slate-200 border-opacity-25 hover:text-[#ffe700] hover:border-opacity-0";
-const MK3_ON_ALLOW = "text-[rgb(30,255,0)] border-[rgb(30,255,0)]", MK3_ON_BLOCK = "text-[rgb(255,77,21)] border-[rgb(255,77,21)]", MK3_OFF = "text-white border-slate-200 border-opacity-25 hover:text-[#ffe700] hover:border-opacity-0";
-const noDown = (e) => e.preventDefault();
-function FilterMk3Panel() {
-	const [, rp] = ReactM.useState(0); mk3Repaint = rp;
-	ReactM.useEffect(() => {   // Esc cancels an edit / collapses, like the game's panel
-		const onKey = (e) => {
-			if (e.code !== "Escape") return;
-			if (mk3.sel) { e.preventDefault(); e.stopPropagation(); mk3Cancel(); }
-			else if (mk3.open) { e.stopPropagation(); mk3.open = false; mk3Refresh(); }
-		};
-		window.addEventListener("keydown", onKey, { capture: true });
-		return () => window.removeEventListener("keydown", onKey, { capture: true });
-	}, []);
-	if (!mk3Ready || !isEnabled() || !inGame()) return null;
-	const editing = !!mk3.sel;
-	if (!editing && !mk3Selected()) return null;
-	const cfg = mk3Cfg() || { mode: "allow" }, mode = cfg.mode || "allow";
-	const all = mk3Elements(), byId = new Map(all.map((e) => [e.id, e]));
-	const chosen = asList(cfg.elementType).map((id) => byId.get(id)).filter(Boolean), chosenIds = new Set(chosen.map((e) => e.id));
-	const src = safe(() => sandkit.state.sandkit.graphics["brandon_filter_right_mk3"].imageAsset.image.src);
-	const name = tr("structures|brandonFilterMk3|name", null, "Filter Mk.3");
-	const icon = hM("span", { className: "flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-tr-lg rounded-bl-lg", style: { background: "radial-gradient(circle, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 100%)" } },
-		src ? hM("span", { style: { width: "20px", height: "20px", backgroundImage: `url(${src})`, backgroundSize: "80px 20px", backgroundPosition: "0 0", imageRendering: "pixelated" } }) : null);
-	const title = hM("div", { className: "flex items-center gap-2" }, icon,
-		hM("span", { className: "text-white text-xs font-semibold" }, name),
-		editing ? hM("span", { className: "text-[10px] text-[#ffe700]" }, tr("ui|filter|editing", null, "editing") + " · Filter " + kindOf(mk3.sel.type) + " ×" + mk3.sel.members.length) : null);
-	const list = hM("div", { className: "flex flex-wrap items-center gap-x-2 gap-y-1" }, chosen.length ? chosen.map((e, i) => hM("div", { key: e.id, className: "flex items-center gap-2" },
-		i > 0 ? hM("span", { className: "text-slate-500" }, tr("ui|tooltip|filterSeparator", null, "/")) : null,
-		hM("span", { className: "w-3 h-3 flex-shrink-0", style: { backgroundColor: e.color, boxShadow: `0 0 6px ${e.color}80` } }),
-		hM("span", { className: "text-white" }, e.name))) : hM("span", { className: "text-white/70" }, "nothing picked"));
-	const setMode = (m) => mk3Set(Object.assign({}, cfg, { mode: m }));
-	const modeBtns = (full) => hM("div", { className: "flex gap-1" },
-		hM("button", { className: "text-xs px-2 py-0.5 bg-black border rounded-tr-lg rounded-bl-lg item-button-transition " + (mode === "allow" ? MK3_ON_ALLOW : MK3_OFF), onClick: (e) => { e.stopPropagation(); setMode("allow"); }, onMouseDown: noDown, tabIndex: -1 }, full ? tr("ui|filter|allow", { check: "✓" }, "✓ allow") : "✓"),
-		hM("button", { className: "text-xs px-2 py-0.5 bg-black border rounded-tr-lg rounded-bl-lg item-button-transition " + (mode === "block" ? MK3_ON_BLOCK : MK3_OFF), onClick: (e) => { e.stopPropagation(); setMode("block"); }, onMouseDown: noDown, tabIndex: -1 }, full ? tr("ui|filter|block", { cross: "✕" }, "✕ block") : "✕"));
-	const canEditLast = !editing && !!mk3.lastPlaced && !!mk3Row(mk3.lastPlaced.x, mk3.lastPlaced.y);
-	const editLast = canEditLast ? hM("button", { className: MK3_BTN, onClick: (e) => { e.stopPropagation(); mk3Select(mk3.lastPlaced.x, mk3.lastPlaced.y); }, onMouseDown: noDown, tabIndex: -1 }, tr("ui|filter|editLastPlaced", null, "Edit last placed")) : null;
-	if (!mk3.open) {   // the collapsed bar
-		return hM("div", { className: "bg-black bg-opacity-75 px-4 py-2 flex items-center gap-4 cursor-pointer border border-slate-700 rounded ui-box text-white text-xs", onClick: () => { mk3.open = true; mk3Refresh(); } },
-			title, list, modeBtns(false), editLast,
-			hM("span", { className: "text-white/70 text-[10px]" }, tr("ui|filter|clickToExpand", null, "click to expand")));
-	}
-	// the expanded picker
-	const tabs = mk3Tabs(), searching = mk3.search.trim().length > 0, q = mk3.search.trim().toLowerCase();
-	const shown = all.filter((e) => (searching || (tabs[mk3.tab] || []).includes(e.matterType)) && (!q || e.name.toLowerCase().includes(q))).sort((a, b) => a.name.localeCompare(b.name));
-	const pick = (id) => { mk3Set(Object.assign({}, cfg, { elementType: id })); if (!editing) { mk3.open = false; mk3Refresh(); } };
-	const toggle = (id) => { const l = asList(cfg.elementType); const i = l.indexOf(id); if (i >= 0) { if (l.length > 1) l.splice(i, 1); } else l.push(id); mk3Set(Object.assign({}, cfg, { elementType: l.length === 1 ? l[0] : l })); };
-	const chip = (e) => { const on = chosenIds.has(e.id); return hM("div", { key: e.id, className: "group flex items-center rounded border transition-all duration-200 " + (on ? "border-[#ffe700] bg-[#ffe700]/10" : "border-slate-700 hover:border-slate-500 bg-black/40 hover:bg-black/60") },
-		hM("button", { className: "ml-2 flex h-3 w-3 flex-shrink-0 items-center justify-center border text-[9px] " + (chosen.length > 1 && on ? "border-[#ffe700] text-[#ffe700]" : "border-slate-600 text-transparent hover:border-slate-400"), onClick: (ev) => { ev.stopPropagation(); toggle(e.id); }, onMouseDown: noDown, tabIndex: -1, title: "pick several" }, "✓"),
-		hM("button", { className: "flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left", onClick: () => pick(e.id) },
-			hM("div", { className: "w-3 h-3 flex-shrink-0", style: { backgroundColor: e.color, boxShadow: `0 0 6px ${e.color}80` } }),
-			hM("span", { className: "text-xs truncate transition-colors " + (on ? "text-[#ffe700]" : "text-slate-200") }, e.name))); };
-	const right = editing
-		? hM("div", { className: "flex items-center gap-2" },
-			hM("button", { className: MK3_BTN, onClick: (e) => { e.stopPropagation(); mk3Apply(); }, onMouseDown: noDown, tabIndex: -1 }, tr("ui|filter|apply", null, "Apply")),
-			hM("button", { className: MK3_BTN, onClick: (e) => { e.stopPropagation(); mk3Cancel(); }, onMouseDown: noDown, tabIndex: -1 }, tr("ui|filter|cancel", null, "Cancel")))
-		: hM("div", { className: "flex items-center gap-3" }, editLast,
-			// the same "labels overlay" switch as the Mk.2 panel, on the same game setting
-			hM("div", { className: "flex items-center gap-2" },
-				hM("span", { className: "text-xs text-white" }, tr("ui|filter|labelsOverlay", null, "Labels overlay")),
-				hM("button", { className: overlayOn() ? "text-xs px-2 py-0.5 bg-black border rounded-tr-lg rounded-bl-lg item-button-transition " + MK3_ON_ALLOW : MK3_BTN,
-					onClick: (e) => { e.stopPropagation(); safe(() => { sandkit.state.store.options.showFilterOverlay = !overlayOn(); }); mk3Refresh(); }, onMouseDown: noDown, tabIndex: -1 }, overlayOn() ? "on" : "off")),
-			hM("button", { className: MK3_BTN, onClick: () => { mk3.open = false; mk3Refresh(); }, onMouseDown: noDown, tabIndex: -1 }, tr("ui|elementPicker|minimize", null, "Minimize") + " ▾"));
-	return hM("div", { className: "bg-black bg-opacity-75 flex flex-col overflow-hidden border border-slate-700 rounded ui-box", style: { width: "640px", maxHeight: "600px" } },
-		hM("div", { className: "px-4 py-2 border-b border-slate-800 flex items-center justify-between" }, title, right),
-		hM("div", { className: "px-4 py-3 border-b border-slate-800 flex gap-4 items-center" },
-			modeBtns(true),
-			hM("div", { className: "flex gap-1" }, [["solid", "Solids"], ["liquid", "Liquids"], ["gas", "Gases"]].map(([key, fb]) =>
-				hM("button", { key, className: "text-xs px-3 py-1 border rounded-tr-lg rounded-bl-lg item-button-transition " + (searching || mk3.tab !== key ? MK3_OFF + " bg-black" : "text-[#ffe700] border-[#ffe700] bg-black"), onClick: () => { mk3.tab = key; mk3.search = ""; mk3Refresh(); }, onMouseDown: noDown, tabIndex: -1 }, tr("ui|filter|tab|" + key, null, fb)))),
-			hM("div", { className: "flex-1" }, hM("div", { className: "relative" },
-				hM("input", { type: "text", placeholder: tr("ui|elementPicker|searchPlaceholder", null, "Search..."), value: mk3.search, maxLength: 64, onChange: (e) => { mk3.search = e.target.value.slice(0, 64); mk3Refresh(); },
-					onKeyDown: (e) => e.stopPropagation(), onKeyUp: (e) => e.stopPropagation(),
-					className: "w-full bg-black/60 border border-slate-700 px-3 py-1.5 rounded text-xs text-white placeholder:text-white/70 focus:outline-none focus:border-slate-500 transition-colors" }),
-				mk3.search ? hM("button", { className: "absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs transition-colors", onClick: () => { mk3.search = ""; mk3Refresh(); } }, "✕") : null))),
-		hM("div", { className: "px-3 py-2 border-b border-slate-800" }, list),
-		hM("div", { className: "p-3 overflow-y-auto", style: { maxHeight: "400px" } },
-			shown.length ? hM("div", { className: "grid gap-1", style: { gridTemplateColumns: "repeat(4, minmax(0, 1fr))" } }, shown.map(chip))
-				: hM("div", { className: "text-xs text-white/70" }, "no discovered material matches")));
-}
-const overlayOn = () => safe(() => sandkit.state.store.options.showFilterOverlay) !== false;
-// --- the labels overlay for Mk.3 rows: the game's draws only its own filter ids ------
-// Shown, like the game's, while a Filter Mk.3 is in hand (or a row is being edited) and
-// the "labels overlay" switch is on. A label per row (materials, allow/block), placed the
-// way the game places its own: screen = canvas origin + (world px - camera) * zoom *
-// scale, refreshed every frame; the rows themselves are re-read twice a second.
-// Clicking a label opens that row in the panel.
-function mk3Rows() {
-	const all = [];
-	// Mk.2 rows too - but not while one of the game's filters is in hand, when the game draws them itself
-	const ids = gameFilterInHand() ? [MK3_R, MK3_L] : [MK3_R, MK3_L, "filterRightMk2", "filterLeftMk2"];
-	for (const id of ids) safe(() => api.structures.forEachOfType(id, (s) => { if (typeof s.x === "number") all.push(s); }));
-	const groups = new Map();
-	for (const s of all) { const k = s.y + "_" + mk3Key(s); let g = groups.get(k); if (!g) { g = []; groups.set(k, g); } g.push(s); }
-	const rows = [];
-	for (const g of groups.values()) {
-		g.sort((a, b) => a.x - b.x);
-		let run = [];
-		const flush = () => { if (!run.length) return; const f = run[0].filter || {};
-			rows.push({ key: run[0].type + "_" + run[0].x + "_" + run[0].y, type: run[0].type, x: run[0].x, y: run[0].y, x1: run[run.length - 1].x + 4, count: run.length, mode: f.mode === "block" ? "block" : "allow", types: asList(f.elementType) }); run = []; };
-		for (const s of g) { if (run.length && s.x !== run[run.length - 1].x + 4) flush(); run.push(s); }
-		flush();
-	}
-	return rows;
-}
-function colorOfType(t) { const mc = safe(() => api.elements.getDefinitionByType(t).metaColor); return typeof mc === "number" ? `rgb(${mc >> 16 & 255}, ${mc >> 8 & 255}, ${mc & 255})` : "#888888"; }
-function FilterMk3Overlay() {
-	const [rows, setRows] = ReactM.useState([]);
-	const box = ReactM.useRef(null), nodes = ReactM.useRef(new Map());
-	ReactM.useEffect(() => {
-		let raf = 0, lastRows = 0, shown = false, lastSig = null;
-		const frame = () => {
-			raf = requestAnimationFrame(frame);
-			// shown with a Mk.3 OR a Mk.2 in hand (the Mk.3 rows beside the game's own Mk.2 labels), or while editing
-			const on = mk3Ready && isEnabled() && inGame() && overlayOn() && (mk3.sel || mk3Selected() || gameFilterInHand());
-			const el = box.current; if (!el) return;
-			if (!on) { if (shown) { el.style.display = "none"; shown = false; } return; }
-			if (!shown) { el.style.display = ""; shown = true; }
-			const now = Date.now();
-			if (now - lastRows > 500) {   // re-read the rows; only re-render when they differ
-				lastRows = now;
-				const next = mk3Rows(), sig = next.map((r) => r.key + ":" + r.count + ":" + r.mode + ":" + r.types.join("|")).join(";");
-				if (sig !== lastSig) { lastSig = sig; setRows(next); }
-			}
-			const ses = safe(() => sandkit.state.session); if (!ses) return;
-			const M = safe(() => ses.rendering.canvas.getBoundingClientRect()); if (!M) return;
-			const I = ((ses.view && ses.view.zoom) || 1) * (ses.scale || 1), kx = ses.camera.x, ky = ses.camera.y;
-			for (const n of nodes.current.values()) {
-				const r = n.row; if (!r) continue;
-				const sx = M.left + (r.x * 4 - kx) * I, sy = M.top + (r.y * 4 - ky) * I, w = (r.x1 - r.x) * 4 * I;
-				const sel = !!(mk3.sel && mk3.sel.y === r.y && mk3.sel.members.some((m) => m.x === r.x));
-				if (n.box) { n.box.style.transform = `translate(${sx}px, ${sy}px)`; n.box.style.width = w + "px"; n.box.style.height = 16 * I + "px";
-					n.box.style.borderColor = sel ? "#ffe700" : r.mode === "allow" ? "rgba(0,255,71,0.8)" : "rgba(239,68,68,0.8)"; n.box.style.borderStyle = sel ? "solid" : "dashed"; }
-				if (n.label) { n.label.style.transform = `translate(${sx + w / 2}px, ${sy - 4}px) translate(-50%, -100%)`; n.label.style.borderColor = sel ? "#ffe700" : r.mode === "allow" ? "rgb(0,255,71)" : "#ef4444"; }
-			}
-		};
-		raf = requestAnimationFrame(frame);
-		return () => cancelAnimationFrame(raf);
-	}, []);
-	const ref = (key, row, part) => (el) => { let n = nodes.current.get(key); if (!el) { if (n) { n[part] = null; if (!n.box && !n.label) nodes.current.delete(key); } return; } if (!n) { n = {}; nodes.current.set(key, n); } n.row = row; n[part] = el; };
-	return hM("div", { ref: box, style: { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "hidden", fontFamily: "monospace", fontSize: "10px", color: "#fff", zIndex: 30, display: "none" } },
-		rows.map((r) => hM(ReactM.Fragment, { key: r.key },
-			hM("div", { ref: ref(r.key, r, "box"), style: { position: "absolute", left: 0, top: 0, border: "2px dashed rgba(0,255,71,0.8)", boxSizing: "border-box", transformOrigin: "0 0" } }),
-			hM("div", { ref: ref(r.key, r, "label"), role: "button", tabIndex: -1,
-				onMouseDown: (e) => { e.preventDefault(); e.stopPropagation(); },
-				onClick: (e) => { e.preventDefault(); e.stopPropagation(); mk3Select(r.x, r.y); },
-				style: { position: "absolute", left: 0, top: 0, transformOrigin: "0 0", zIndex: 1, pointerEvents: "auto", cursor: "pointer", background: "#000", border: "1px solid rgb(0,255,71)", borderRadius: "3px", padding: "2px 6px", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "5px" } },
-				r.types.map((t) => { const c = colorOfType(t); return hM("span", { key: t, style: { width: "8px", height: "8px", background: c, boxShadow: "0 0 4px " + c, flexShrink: 0 } }); }),
-				hM("span", null, r.types.length ? r.types.map((t) => safe(() => api.elements.getNameByType(t), null) || ("type " + t)).join(" / ") : tr("ui|filterOverlay|none", null, "none")),
-				hM("span", { style: { color: r.mode === "allow" ? "rgb(30,255,0)" : "rgb(255,77,21)", fontWeight: 700 } }, r.mode === "allow" ? "✓" : "✕"),
-				hM("span", { style: { color: "#94a3b8" } }, kindOf(r.type) + (r.count > 1 ? " ×" + r.count : ""))))));
-}
-if (hM) {
-	safe(() => api.ui.inject("brandon-filter-mk3-overlay", () => hM(FilterMk3Overlay)));
-	// the same band above the hotbar the game's filter panel lives in; a fixed box if that can't be used
-	// the region calls render() as a plain function and shows what it returns, so the
-	// component (it uses hooks) is mounted through createElement, not called directly
-	const mounted = safe(() => { api.ui.overlays.register("hotbar", "brandonFilterMk3", () => hM(FilterMk3Panel)); return true; }, false);
-	if (!mounted) safe(() => api.ui.inject("brandon-filter-mk3", () => hM("div", { style: { position: "fixed", left: "50%", bottom: "120px", transform: "translateX(-50%)", zIndex: 40, pointerEvents: "auto" } }, hM(FilterMk3Panel))));
-	// (no click handler on the placed filter itself: the game's Mk.2 has none either - a row is
-	// opened from its label, and only while a Mk.2 / Mk.3 is in hand)
-	safe(() => api.events.on("building:removed", (p) => {
-		if (!p || typeof p.x !== "number") return;
-		if (mk3.sel && mk3.sel.members.some((s) => s.x === p.x && s.y === p.y)) mk3Cancel();
-		if (mk3.lastPlaced && mk3.lastPlaced.x === p.x && mk3.lastPlaced.y === p.y) mk3.lastPlaced = null;
-	}));
-	// The game's Mk.2 rules, every frame: picking the filter up opens its panel expanded (the
-	// game sets filterForceExpand on every pick-up); a row being edited is dropped as soon as
-	// no Mk.2 / Mk.3 is in hand (the game's editor does this in its afterRender) - except
-	// while the clipboard is picking, which puts the building down on purpose; and while a
-	// row is being edited nothing is placed ("finish editing first").
-	let mk3ToastAt = 0;
-	safe(() => api.events.on("frame:render", () => {
-		if (!mk3Ready) return;
-		const now = mk3Selected();
-		if (now !== mk3.wasSel) { mk3.wasSel = now; mk3.open = now; mk3Refresh(); }
-		if (!mk3.sel) return;
-		if (!(now || gameFilterInHand())) { if (!safe(() => window.__brandonFilterClipboard.picking())) mk3Cancel(); return; }
-		if (safe(() => sandkit.state.session.building.placing)) {
-			safe(() => sandkit.engine.api.building.cancelPlacement(sandkit.engine.state));
-			safe(() => sandkit.engine.api.input.resetMouseState(sandkit.engine.state));
-			if (Date.now() - mk3ToastAt > 1000) { mk3ToastAt = Date.now(); safe(() => api.ui.toast(tr("ui|filter|finishEditingBeforePlacing", null, "Finish editing the filter row first"))); }
-		}
-	}));
-	// what the panel is doing, for other mods (Improved Filter Options' clipboard reads and
-	// writes the row being edited through this)
-	safe(() => { window.__brandonFilterMk3 = {
-		inHand: () => mk3Selected(),
-		selection: () => mk3.sel ? { x: mk3.sel.x, y: mk3.sel.y, count: mk3.sel.members.length, type: mk3.sel.type } : null,
-		draft: () => mk3Cfg(),
-		setDraft: (f) => { if (!f || typeof f !== "object") return false; mk3Set(Object.assign({}, f)); return true; },
-		apply: () => { if (!mk3.sel) return false; mk3Apply(); return true; },
-		refresh: () => mk3Refresh(),
-	}; });
-}
 // saves that researched the node before the building existed: unlock it now
 setInterval(() => {
 	if (!mk3Ready || !isEnabled() || !inGame()) return;

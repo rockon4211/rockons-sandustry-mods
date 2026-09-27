@@ -97,10 +97,19 @@ replaces the block in `.handoff/mods-checksums.md` (header gets `$H` and the dat
     selection whenever the active structure isn't one of its filters — so "put the tool
     down, then pick" closed the row the user was editing. Rule: while the game's editor has
     a selection, leave the hand alone.
+17. **Cloned the game's filter panel, labels and row editor for the Mk.3** (0.15.0–0.15.8) because the
+    gating id lists aren't exported. Each clone drifted from the real thing (rows never closing,
+    starting collapsed, placing while editing). The lists are all asked through
+    `Array.prototype.includes`, so 0.16.0 teaches that one call that a Mk.3 is in every list its
+    Mk.2 twin is in, and deleted ~300 lines. Rule: when the game already serves a sibling kind,
+    find its gate (grep the bundle) and join it before cloning; patch per frame only the spots
+    that name an id outright.
 
 ## Uniform menu playbook — panels that look and behave like the game's
-Verified on the Mk.3 filter panel (`mods/manufacturing/main.real.js`, `FilterMk3Panel`)
-and the clipboard strip (`mods/improvedfilters/main.js`, `Strip`). Copy from them.
+First check whether the game's own panel can serve the thing (big mistake 17) — for filters it
+does. Verified on the clipboard strip (`mods/improvedfilters/main.js`, `Strip`) and the
+former Mk.3 filter panel (`FilterMk3Panel`, in Manufacturing before 0.16.0 — git history).
+Copy from them.
 
 **Where it lives.** Panels that belong to the thing in hand go in the hotbar band:
 `api.ui.overlays.register("hotbar", "<id>", () => React.createElement(Panel))` — the third

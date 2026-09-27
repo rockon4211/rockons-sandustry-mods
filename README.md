@@ -11,8 +11,8 @@ its Mods menu.
 | --- | --- | --- |
 | **sandboxloop** | 0.4.6 | Sources and Removers for an endless, self-balancing factory, plus a whole-map balance tracker with history export and a ✎ Placed list to edit what is already on the map. |
 | **screensaver** | 0.18.3 | After a few idle minutes the HUD hides and the camera follows one real grain through the factory, material by material. Press **E** to exit. Sweeps stray tracer grains off the map on every world load. |
-| **improvedfilters** | 0.2.9 | Filter clipboard built into the Mk.2 / Mk.3 filter menus: copy what a filter menu shows, paste it into the other (rows or new filters). |
-| **manufacturing** | 0.15.8 | Renames vanilla sand to "soil" and adds a golden Sand (→ Glass on the Smelter); Mod Tools (Matter Gun, vacuum tank delete buttons, Omni Vacuum, red-block fix, cell probe, Grab Heavy Stone toggle); **Filter Mk.3** — its own building (research under Manufacturing, 25,000 gold): sorts like the Mk.2 Filter at Mk.2 belt speed, with its own copy of the filter panel and labels overlay. |
+| **improvedfilters** | 0.3.0 | Filter clipboard built into the Mk.2 / Mk.3 filter menus: copy what a filter menu shows, paste it into the other (rows or new filters). |
+| **manufacturing** | 0.16.0 | Renames vanilla sand to "soil" and adds a golden Sand (→ Glass on the Smelter); Mod Tools (Matter Gun, vacuum tank delete buttons, Omni Vacuum, red-block fix, cell probe, Grab Heavy Stone toggle); **Filter Mk.3** — its own building (research under Manufacturing, 25,000 gold): sorts like the Mk.2 Filter at Mk.2 belt speed, with its own copy of the filter panel and labels overlay. |
 | **lavaboiloff** | 0.1.1 | Lava has a 1-in-N chance to burn itself out each time it boils water into steam. |
 | **quickstart** | 1.0.2 | **F10** quick reload: reboots the game straight back into the current save (prefers the F5 quicksave). |
 
@@ -57,8 +57,8 @@ the `.real` files plus the regenerated stubs). Do **not** regenerate the mod wit
   machines between them. Still useful for browsing the game's recipe graph.
 - `compiler.js`, `compiler-cfg.json`, `tools-bolton.js`, `tech-glass-bolton.js` — the
   studio's mod compiler. **RETIRED — DANGER.** Manufacturing has grown hand-written code
-  since the last compile (HeavyStone; the Filter Mk.3 research node, building, panel,
-  labels overlay and belt trigger; the red-block fixes; the cell probe; the Grab Heavy
+  since the last compile (HeavyStone; the Filter Mk.3 research node, building, filter-list join,
+  belt trigger; the red-block fixes; the cell probe; the Grab Heavy
   Stone toggle). A recompile from `graph.json` would drop all of that, **reorder element
   registration (changing element ids and breaking saves)**, and roll the version back to
   the 0.8.1 in `compiler-cfg.json`. It refuses to write into `mods/manufacturing` without

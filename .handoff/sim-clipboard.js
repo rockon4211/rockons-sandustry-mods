@@ -1,8 +1,9 @@
-// sim-clipboard.js — Improved Filter Options 0.2.7: the filter clipboard, run from
+// sim-clipboard.js — Improved Filter Options 0.3.0: the filter clipboard, run from
 // mods/improvedfilters/main.js against a mocked sandkit. Checks:
 //   - COPY from the game's row editor takes getSelection().draft; with no row open it takes
 //     store.options.defaultFilter;
-//   - PASTE into an open row goes through the editor: setDraft, then apply;
+//   - PASTE into an open row goes through the editor: setDraft, then apply - a Mk.3 row too
+//     (Manufacturing 0.16.0 puts the Mk.3 in the game's filter lists, so its editor serves it);
 //   - the clip round-trips through localStorage by element ID (never a number), a material
 //     from a mod that isn't loaded is dropped, a clip with nothing resolvable stays unloaded;
 //   - Mk.1 filters (StructureType 17/18) are not pickable and never show the strip;
@@ -58,16 +59,16 @@ const stripShown = () => { const r = C.Strip(); return r !== null && r !== undef
 
 // --- 1. COPY from the game's editor / from the default ------------------------------------
 selection = { structureType: "filterRightMk2", memberCount: 3, draft: { mode: "block", elementType: [3, 36], affectsLiquid: true }, isDirty: false };
-check(C.menuUp() === "van-row", "a Mk.2 row open in the game's editor → menu 'van-row'");
-C.copyFromMenu("van-row");
+check(C.menuUp() === "row", "a Mk.2 row open in the game's editor → menu 'row'");
+C.copyFromMenu("row");
 check(!!C.clip && C.clip.mode === "block" && JSON.stringify(C.clip.elementType) === "[3,36]" && C.clip.affectsLiquid === true, "COPY takes getSelection().draft: " + JSON.stringify(C.clip));
 check(C.clip !== selection.draft && C.clip.elementType !== selection.draft.elementType, "…as a copy, not the editor's own object");
 check(toasts.some((t) => /Copied filter settings: Water \/ Copper · block/.test(t)), "the toast names the materials: " + JSON.stringify(toasts[toasts.length - 1]));
 selection = null; C.clip = null; toasts.length = 0;
 state.session.building.activeStructureType = "filterLeftMk2";
 state.store.options.defaultFilter = { mode: "allow", elementType: 36 };
-check(C.menuUp() === "van-new", "a Mk.2 in hand with no row open → menu 'van-new'");
-C.copyFromMenu("van-new");
+check(C.menuUp() === "new", "a Mk.2 in hand with no row open → menu 'new'");
+C.copyFromMenu("new");
 check(!!C.clip && C.clip.mode === "allow" && C.clip.elementType === 36, "COPY with no row open takes store.options.defaultFilter: " + JSON.stringify(C.clip));
 check(C.clip !== state.store.options.defaultFilter, "…as a copy");
 
@@ -76,7 +77,7 @@ state.session.building.activeStructureType = null;
 C.clip = { mode: "block", elementType: [3] };
 selection = { structureType: "filterRightMk2", memberCount: 2, draft: { mode: "allow", elementType: 1 } };
 editorCalls.length = 0;
-C.pasteIntoMenu("van-row");
+C.pasteIntoMenu("row");
 check(editorCalls.map((c) => c.op).join(",") === "setDraft,apply", "PASTE into a row = editor setDraft, then apply (" + editorCalls.map((c) => c.op).join(",") + ")");
 check(editorCalls[0] && editorCalls[0].f !== C.clip && JSON.stringify(editorCalls[0].f) === JSON.stringify({ mode: "block", elementType: [3] }), "…the draft handed over is a copy of the clip");
 check(updateManyCalls.length === 0, "…and nothing is written behind the editor's back");
@@ -117,9 +118,14 @@ state.session.building.activeStructureType = 18; engineActive = { type: "structu
 check(C.menuUp() === null && !stripShown(), "a Mk.1 filter in hand → no menu, no strip");
 state.session.building.activeStructureType = null; engineActive = null;
 check(!stripShown(), "nothing in hand → no strip");
-engineActive = { type: "structure", id: "filterRightMk3" };
-check(C.menuUp() === "mk3-new" && stripShown(), "a Mk.3 in hand (engine action.getActive) → menu 'mk3-new', strip shown");
-engineActive = null;
+state.session.building.activeStructureType = "filterRightMk3";
+check(C.menuUp() === "new" && stripShown(), "a Mk.3 in hand (the game's panel gate: activeStructureType) → menu 'new', strip shown");
+state.session.building.activeStructureType = null;
+selection = { structureType: "filterLeftMk3", memberCount: 4, draft: { mode: "allow", elementType: 3 } };
+check(C.menuUp() === "row", "a Mk.3 row open in the game's editor → menu 'row'");
+C.clip = { mode: "block", elementType: [36] }; editorCalls.length = 0; C.pasteIntoMenu("row");
+check(editorCalls.map((c) => c.op).join(",") === "setDraft,apply", "PASTE onto the Mk.3 row goes through the game's editor: setDraft, apply");
+selection = null; C.clip = null;
 // shakers carry a filter too but are not filters
 structs.push({ type: "shaker", x: 320, y: 10, filter: { mode: "allow", elementType: 3 } });
 check(C.rowAt(321, 10) === null, "a shaker's filter object does not make it pickable");
@@ -148,7 +154,7 @@ updateManyCalls.length = 0; C.doPasteRow(C.rowAt(100, 50));
 check(updateManyCalls[0] && updateManyCalls[0].list.every((m) => m.filter.affectsLiquid === true && m.filter.affectsGas === true), "a paste from a clip with false flags still leaves the row's flags true (only mode + elementType are written)");
 // the same rule for the new-filter setting
 state.store.options.defaultFilter = { mode: "allow", elementType: 1, affectsLiquid: true };
-C.pasteIntoMenu("van-new");
+C.pasteIntoMenu("new");
 const df = state.store.options.defaultFilter;
 check(df.mode === "allow" && df.elementType === 36 && !("affectsLiquid" in df) && !("affectsGas" in df), "pasted into the new-filter setting, false flags are dropped rather than written: " + JSON.stringify(df));
 

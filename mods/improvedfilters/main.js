@@ -9,10 +9,10 @@
 // left alone since 0.2.5.)
 //
 // The clipboard shows up as a strip in the same band as the filter menu, whenever a
-// filter menu is up - the game's (a Mk.2 filter in hand, or a Mk.2 row selected in
-// its editor) or the Mk.3's. COPY takes what that menu is showing (the row being
-// edited, else the setting new filters take); PASTE puts the clipboard into it (the
-// row - through the game's own editor, setDraft + apply - or store.options.defaultFilter,
+// filter menu is up - the game's, which since Manufacturing 0.16.0 serves the Mk.3 too (a
+// Mk.2 / Mk.3 in hand, or a row selected in its editor). COPY takes what that menu is
+// showing (the row being edited, else the setting new filters take); PASTE puts the
+// clipboard into it (the row - through the game's own editor, setDraft + apply - or store.options.defaultFilter,
 // which every new Mk.2 / Mk.3 takes when placed). PICK / ONTO arm a click on any placed
 // filter instead, for a row that isn't open in a menu.
 //
@@ -20,7 +20,7 @@
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.2.8";
+const BUILD = "0.3.0";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -89,7 +89,9 @@ const ST = safe(() => sandkit.enums.StructureType) || {};
 const VAN = new Set(["filterLeftMk2", "filterRightMk2", "filterWallMk2"]);
 const MK3 = new Set(["filterLeftMk3", "filterRightMk3"]);
 const WALLS = new Set(["filterWall", "filterWallMk2"]);
-const isFilter = (s) => !!s && (VAN.has(s.type) || MK3.has(s.type));   // real filter kinds only
+// the kinds the game's own filter menu and row editor serve (the Mk.3 joins its lists)
+const FAM = new Set([...VAN, ...MK3]);
+const isFilter = (s) => !!s && FAM.has(s.type);   // real filter kinds only
 // the game's own row key (its `Ak`): type, mode, whether elementType is set, the sorted
 // materials, density, the liquid / gas flags, the sorted speed-exempt list and the
 // wall's pass-through flag - so a row here is exactly a row in the game's editor
@@ -120,24 +122,13 @@ function writeRow(members) {   // only mode + elementType, exactly as the game's
 // the game's row editor (its filter panel in "editing" mode) is on the engine api
 const vanEditor = () => safe(() => engine().api.filterGroupEditor) || null;
 const vanSel = () => { const ed = vanEditor(); return ed ? (safe(() => ed.getSelection(engine().state)) || null) : null; };
-// the Mk.3 panel (Manufacturing) says what it is doing through this hook
-const mk3 = () => safe(() => window.__brandonFilterMk3) || null;
-const mk3Sel = () => { const k = mk3(); return k ? (safe(() => k.selection()) || null) : null; };
 function menuUp() {
-	const vs = vanSel(); if (vs) return VAN.has(vs.structureType) ? "van-row" : null;   // a Mk.1 row open in the game's editor: not ours
-	if (mk3Sel()) return "mk3-row";
-	const st = safe(state); if (!st) return null;
+	const vs = vanSel(); if (vs) return FAM.has(vs.structureType) ? "row" : null;   // a Mk.1 row open in the game's editor: not ours
 	// the game's panel shows while one of its filters is the active structure - same gate
-	if (VAN.has(safe(() => st.session.building.activeStructureType))) return "van-new";
-	// the Mk.3 panel shows while the game says a Mk.3 is in hand (action.getActive is what
-	// the game itself goes by), so the strip closes exactly when that panel does
-	const act = safe(() => engine().api.action.getActive(engine().state));
-	if (act !== undefined) return act && MK3.has(act.id) ? "mk3-new" : null;
-	const k = mk3(); return k && safe(() => k.inHand()) ? "mk3-new" : null;
+	return FAM.has(safe(() => state().session.building.activeStructureType)) ? "new" : null;
 }
 function menuFilter(which) {   // what the menu is showing right now
-	if (which === "van-row") { const s = vanSel(); return s && s.draft; }
-	if (which === "mk3-row") { const k = mk3(); return k && safe(() => k.draft()); }
+	if (which === "row") { const s = vanSel(); return s && s.draft; }
 	return safe(() => state().store.options.defaultFilter);
 }
 function setNewFilters() {   // what every new Mk.2 / Mk.3 takes - the setting the filter panels edit
@@ -149,33 +140,25 @@ function setNewFilters() {   // what every new Mk.2 / Mk.3 takes - the setting t
 	const CID = safe(() => sandkit.enums.ComponentId) || {};
 	if (CID.FilterConfig !== undefined) safe(() => api.ui.update(CID.FilterConfig));   // the game's panel reads it on render
 	safe(() => api.ui.overlays.update("hotbar"));
-	const k = mk3(); if (k) safe(() => k.refresh());
 	return ok;
 }
 let msg = "";
 function copyFromMenu(which) {
 	const f = menuFilter(which); if (!f) { msg = "nothing to copy"; return; }
 	clip = cloneFilter(f); saveClip();
-	const s = which === "van-row" ? vanSel() : which === "mk3-row" ? mk3Sel() : null;
-	const from = s ? (which === "van-row" ? kindName(s.structureType) + " row (" + s.memberCount + ")" : "Filter Mk.3 row (" + (s.count || "?") + ")") : "new-filter setting";
-	const forNew = which !== "van-new" && which !== "mk3-new" && setting("copyAlsoSetsNew", true) && setNewFilters();
+	const s = which === "row" ? vanSel() : null;
+	const from = s ? kindName(s.structureType) + " row (" + s.memberCount + ")" : "new-filter setting";
+	const forNew = which === "row" && setting("copyAlsoSetsNew", true) && setNewFilters();
 	msg = "copied from " + from + ": " + describe(clip) + (forNew ? " — new filters take it" : "");
 	safe(() => api.ui.toast("Copied filter settings: " + describe(clip)));
 }
 function pasteIntoMenu(which) {
 	if (!clip) { msg = "nothing copied yet"; return; }
-	if (which === "van-row") {   // the game's editor: set its draft, then its own apply writes the row and closes
+	if (which === "row") {   // the game's editor: set its draft, then its own apply writes the row and closes
 		const ed = vanEditor(), st = engine().state, s = vanSel();
 		const ok = ed && safe(() => ed.setDraft(st, cloneFilter(clip)), false) && safe(() => ed.apply(st), false);
 		msg = ok ? "pasted onto " + kindName(s.structureType) + " row (" + s.memberCount + "): " + describe(clip) : "the game's editor refused it";
 		if (ok) safe(() => api.ui.toast("Pasted filter settings onto " + s.memberCount + " " + kindName(s.structureType) + (s.memberCount === 1 ? "" : "s")));
-		return;
-	}
-	if (which === "mk3-row") {
-		const k = mk3(), s = mk3Sel();
-		const ok = k && safe(() => k.setDraft(cloneFilter(clip)), false) && safe(() => k.apply(), false);
-		msg = ok ? "pasted onto Filter Mk.3 row (" + (s && s.count || "?") + "): " + describe(clip) : "the Mk.3 panel refused it";
-		if (ok) safe(() => api.ui.toast("Pasted filter settings onto the Filter Mk.3 row"));
 		return;
 	}
 	msg = setNewFilters() ? "new filters now take: " + describe(clip) : "couldn't set it";
@@ -183,9 +166,6 @@ function pasteIntoMenu(which) {
 // PICK / ONTO: a click on any placed filter, taken before the game sees it (capture),
 // so nothing gets built or grabbed. Esc / right-click cancels.
 let mode = null, cursorStyle = null, swallowUntil = 0;
-// Manufacturing reads this: while a pick is armed the building in hand is put down on
-// purpose, so the Mk.3 panel must not take that as "the filter was put away"
-safe(() => { window.__brandonFilterClipboard = { picking: () => !!mode }; });
 // While a pick is armed the building in hand is put down (its placement ghost would sit
 // over the cursor and the game would build on the click), and handed back afterwards
 // through the game's own selectStructure - which also brings its filter menu back.
@@ -216,9 +196,9 @@ function unstash() {
 	uiHotbar();
 }
 function arm(m) {
-	// While the game is editing a Mk.2 row nothing is in hand (its editor already cancelled
+	// While the game is editing a row nothing is in hand (its editor already cancelled
 	// placement) and clearing activeStructureType would make it drop the row - so no stash
-	if (m && !mode && menuUp() !== "van-row") stash();
+	if (m && !mode && menuUp() !== "row") stash();
 	mode = m;
 	if (cursorStyle) { safe(() => cursorStyle.remove()); cursorStyle = null; }
 	if (m) safe(() => { cursorStyle = document.createElement("style"); cursorStyle.textContent = "*{cursor:" + (m === "copy" ? "copy" : "cell") + " !important}"; document.head.appendChild(cursorStyle); });
@@ -246,18 +226,17 @@ function doCopyRow(row) {
 	safe(() => api.ui.toast("Copied filter settings: " + describe(clip)));
 }
 function doPasteRow(row) {
-	// A Mk.2 row goes through the game's own editor (select → draft → apply): only its apply
-	// bumps the revision the game's labels overlay and tooltips redraw on, so a direct write
-	// left the old labels standing. A Mk.3 row is written directly (its overlay re-reads).
+	// A row goes through the game's own editor (select → draft → apply): only its apply bumps
+	// the revision the game's labels overlay and tooltips redraw on, so a direct write left
+	// the old labels standing. (A direct write is the fallback.)
 	let ok = false;
-	if (VAN.has(row.type)) {
+	if (FAM.has(row.type)) {
 		const ed = vanEditor(), st = engine().state, c = cloneFilter(clip);
 		const fx = safe(() => st.session.building.filterForceExpand);   // selectAt sets it (pops the game's panel open next time)
 		ok = !!(ed && safe(() => ed.selectAt(st, row.x, row.y, { toggle: false }), false) && safe(() => ed.setDraft(st, { mode: c.mode || "allow", elementType: c.elementType }), false) && safe(() => ed.apply(st), false));
 		safe(() => { st.session.building.filterForceExpand = fx; });
 	}
 	if (!ok) ok = writeRow(row.members);
-	if (ok && MK3.has(row.type)) { const k = mk3(); if (k) safe(() => k.refresh()); }
 	msg = ok ? "pasted onto " + kindName(row.type) + " row (" + row.members.length + "): " + describe(clip) : "couldn't write the row";
 	if (ok) safe(() => api.ui.toast("Pasted filter settings onto " + row.members.length + " " + kindName(row.type) + (row.members.length === 1 ? "" : "s")));
 }
@@ -314,7 +293,7 @@ function Strip() {
 	const which = mode ? (wasUp || menuUp()) : menuUp();
 	if (!which) return null;
 	const list = asList(clip && clip.elementType);
-	const target = which === "van-row" || which === "mk3-row" ? "this row" : "new filters";
+	const target = which === "row" ? "this row" : "new filters";
 	const names = list.length ? list.map(nameOf).join(" / ") : "no material";
 	// one narrow line (the band sits this next to the filter panel, so it must stay small):
 	// the material list is cut with an ellipsis and shown in full on hover
@@ -350,7 +329,7 @@ function viewCells() {   // the cells the canvas shows, plus a margin, in world 
 }
 function allRows() {
 	const N = 4, rows = [], V = viewCells();
-	for (const id of [...VAN, ...MK3]) {
+	for (const id of FAM) {
 		const list = []; safe(() => api.structures.forEachOfType(id, (s) => { if (typeof s.x === "number") list.push(s); }));
 		if (!list.length) continue;
 		const vert = WALLS.has(id), groups = new Map();

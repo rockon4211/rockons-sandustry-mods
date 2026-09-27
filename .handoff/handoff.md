@@ -75,11 +75,11 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   is left alone and only real deletes are counted in the `map-sweep` log event; ~100
   consecutive failed slices abort the sweep instead of looping; `isSweeping()` is exposed
   so the Sandbox Loop's census can yield to it.
-- **Manufacturing** `brandon.manufacturing` v0.15.8 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.16.0 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.2 (F10 quick reload).
-- **Improved Filter Options** `brandon.improvedfilters` v0.2.9 (2026-09-27) — a clipboard for
+- **Improved Filter Options** `brandon.improvedfilters` v0.3.0 (2026-09-27) — a clipboard for
   filter settings, built into the filter menus: a strip mounted in the hotbar band
   (`api.ui.overlays.register("hotbar", …)`) whenever a filter menu is up. It reads the
   game's row editor through `sandkit.engine.api.filterGroupEditor` (`getSelection(state)`
@@ -156,43 +156,37 @@ placement makes a vanilla `filterWallMk2`. Sprites: the Mk.2 strip with blue →
 (`filter_*_mk3.png`, 4 frames of 18×18), animated through `render.spritesheet.frameBuffer`:
 the renderer reads a frame index from a mod shared buffer (`mk3anim`, uint8[2]), which
 0.15.0 fills every `frame:render` from the game's own `shared.mods.conveyorMk2AnimationIndex`
-([0] left, [1] right) — so Mk.3s animate in lockstep with Mk.2 belts. Menu (0.15.0): the
-game's filter panel is gated on a fixed id list (`pk`/`hk`/`Uk` in the bundle, not
-exported), so `FilterMk3Panel` in main.real.js is a clone of it (same Tailwind classes),
-mounted with `api.ui.overlays.register("hotbar", …, () => hM(Panel))` (render() must
-RETURN an element). It edits `store.options.defaultFilter` like the Mk.2 panel; clicking a
-row's label selects the contiguous same-setting row (the game's row rule) and Apply writes
-it via `engine.api.structures.updateMany(state, members, {propagateToWorkers:true})`.
-(Until 0.15.8 clicking the placed Mk.3 itself also opened it, through
-`api.signals.interactables.register` - removed: the game's Mk.2 has no such click, and a row
-opened with an empty hand never closed.)
-The panel has the Mk.2's "labels overlay" switch (same setting, `store.options.showFilterOverlay`)
-and, since 0.15.3, its own overlay: the game draws labels only for its own filter ids, so
-`FilterMk3Overlay` (injected, fixed full-screen, pointer-events none) draws a box + label per
-Mk.3 row while a Mk.3 is in hand / edited and the switch is on, positioned per frame with the
-game's mapping above; clicking a label opens the row. Saves that researched the node before
-0.14.0 get the building unlocked on load. 0.14.0 confirmed in game: the building shows up.
-0.15.6: the Mk.2 is treated as the same filter at the slower speed — with a Mk.3 in hand the
-overlay also draws Mk.2 rows (not while a game filter is in hand: the game draws those), a Mk.2
-label opens that row in the Mk.3 panel, and its Apply goes through the game's editor (selectAt →
-setDraft → apply, so the game's own labels redraw); with a Mk.2 in hand the overlay draws the
-Mk.3 rows beside the game's labels. Labels and the editing tag name the kind (Mk.2 / Mk.3).
-0.15.7 (with Improved Filters 0.2.9): a row opened from a label while a Mk.2 / Mk.3 was held
-stayed open after the filter was put away (right-click / tool switch), which kept the Mk.3
-panel, its labels and the clipboard strip up. Now, like the game's editor, the row is dropped
-when the family filter leaves the hand - except while the clipboard is picking (it puts the
-building down on purpose; it says so through `window.__brandonFilterClipboard.picking()`).
-0.15.8: the Mk.3 follows the game's Mk.2 rules exactly (see Game internals → filter row
-editor): no click on the placed belt, the panel opens expanded on pick-up, the row is dropped
-every frame the hand isn't a Mk.2 / Mk.3, and placing is blocked while a row is open.
+([0] left, [1] right) — so Mk.3s animate in lockstep with Mk.2 belts.
+
+**Menu (0.16.0): the game's own.** The game decides "is this a filter?" with id lists in its
+bundle (see Game internals → Structures → "The game's filter lists"), and asks every one of
+them with `Array.prototype.includes`. Manufacturing replaces that one method (once per page,
+flagged `__brandonMk3`, non-enumerable) so a Mk.3 is in every list its Mk.2 twin is in:
+`filterRightMk3` wherever `filterRightMk2` is, `filterLeftMk3` wherever `filterLeftMk2` is;
+everything else goes straight to the original. So the game's own filter panel, labels
+overlay, row editor (incl. "Edit last placed" and "finish editing before placing"), hotbar
+handling, copy-paste and the new-filter default all serve the Mk.3 exactly as they serve the
+Mk.2. Two spots name the Mk.2 outright and are patched per frame: the panel's material pick
+sets `activeStructureType = "filterRightMk2"` (would swap a held Mk.3 for a Mk.2 → put back
+while `player.action` / the hotbar slot still say Mk.3), and taking a Mk.2 from the build menu
+sets `filterForceExpand` (done for the Mk.3 on pick-up). A self-check (every 3 s until it has
+run once per world, only with a Mk.3 placed, no row open and no placement under way) asks the
+game's editor to `selectAt` a Mk.3 and cancels; a refusal logs and toasts. Known cosmetic:
+the game's panel titles a Mk.3 "Filter Mk.2" (key `structures|filterMk2|name`, chosen by the
+Mk.2 list) — its icon is the red Mk.3 sprite. Removed in 0.16.0 (in git history before that):
+`FilterMk3Panel`, `FilterMk3Overlay`, the `mk3*` row editor, `window.__brandonFilterMk3`.
+How it got here: 0.15.0 cloned the panel (the lists looked unreachable); 0.15.3 added a cloned
+labels overlay; 0.15.6 let it edit Mk.2 rows; 0.15.7–0.15.8 chased behaviour differences
+(rows that never closed, starting minimized, placing while editing). Each clone was a place
+to differ — joining the lists removed all of them.
 
 0.15.x in game: the panel and the labels overlay were confirmed on 2026-09-25 (with Improved
 Filters 0.2.6); the belt animation and the Mk.3's actual belt speed are still unconfirmed.
 0.15.5 (2026-09-27): a Mk.3 picked up with the Copier shows its copied filter in the panel
 (`mk3Cfg` mirrors `customData.copiedStructure.filter` into `defaultFilter` the way the game
 does for its own ids), the overlay re-renders only when the rows change, and the in-hand
-gate is asked of `engine.api.action.getActive`. `sim-mk3.js` covers placement, the row
-editor, the belt trigger and the animation buffer. History: 0.10.0–0.12.2 sped up every
+gate is asked of `engine.api.action.getActive`. `sim-mk3.js` covers placement, the filter
+lists, the two patched spots, the self-check, the belt trigger and the animation buffer. History: 0.10.0–0.12.2 sped up every
 Mk.2 Filter instead; rejected, removed in 0.13.0.
 
 ## Sandbox Loop v0.4.6 — what it does
@@ -394,7 +388,7 @@ game build — search the bundle by string literals, not by those names.
   keeps `copiedStructure.filter`. The game's filter panel, labels overlay, hotbar handling
   and row editor are gated on fixed id lists (Mk.1 = StructureType 17/18,
   `filterLeft/RightMk2`, the walls) that are not exported — a mod filter needs its own
-  panel. Row editor (engine): `filterGroupEditor.getSelection(state)` →
+  panel — or join the lists (Manufacturing 0.16.0 does; see below). Row editor (engine): `filterGroupEditor.getSelection(state)` →
   `{structureType, memberCount, draft, isDirty, anchorX, anchorY}`, `setDraft(state, f)`,
   `apply(state)`, `cancel(state)`, `selectAt(state, x, y, {toggle})`. A row = same type, same filter
   key, touching (walls join vertically). `selectAt` also calls `building.cancelPlacement` +
@@ -409,6 +403,20 @@ game build — search the bundle by string literals, not by those names.
   placement with the toast `ui|filter|finishEditingBeforePlacing`; Esc (an `input:escape`
   interceptor) cancels the row first. Hotbar select sets activeStructureType only for
   the game's own filters and nulls it for anything else.
+- The game's filter lists (bundle v0.5.6, module-local consts, not exported):
+  `hk` = [Mk.1 left/right (StructureType numbers), filterLeftMk2, filterRightMk2] — the
+  horizontal filters (labels overlay rows); `mk` = [filterWall, filterWallMk2] (overlay
+  columns); `pk` = hk+mk → `bk(type)` "is a filter" (panel gate `TI` on activeStructureType,
+  row editor, its afterRender); `gk` = [Mk.1 left, filterLeftMk2] (label arrow faces left);
+  `Uk` = [filterLeftMk2, filterRightMk2, filterWallMk2] → `yk(type)` "Mk.2 features"
+  (multi-material, tabs, panel title key); the hotbar module's own `m` = [Mk.1 R/L, Mk.2 R/L]
+  (sets activeStructureType + filterForceExpand on slot select). Also asked with a literal
+  `["filterRightMk2","filterLeftMk2"].includes(type)`: new-filter default on placement and
+  the copied-structure filter paste. Every one is asked with `.includes` — which is how a
+  mod joins them. Named outright (no list): the build-menu pick (`FilterRight ||
+  "filterRightMk2"` → filterForceExpand), the panel's material pick (sets
+  activeStructureType = "filterRightMk2" / FilterRight), placement angles and hotbar
+  icons. The Copier's left/right flip pairs are read through a Map, not includes.
 - Terrain ids by name: `api.terrains.getTypeById("block")` (Block is built-in id 15); mod
   terrains are numbered by registration order — never hard-code them.
 - Tech: `api.tech.registerNode(id, {nameKey, descriptionKey, cost, currencyType:"gold",
