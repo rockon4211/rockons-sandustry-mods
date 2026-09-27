@@ -75,11 +75,11 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   is left alone and only real deletes are counted in the `map-sweep` log event; ~100
   consecutive failed slices abort the sweep instead of looping; `isSweeping()` is exposed
   so the Sandbox Loop's census can yield to it.
-- **Manufacturing** `brandon.manufacturing` v0.15.6 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.15.7 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.2 (F10 quick reload).
-- **Improved Filter Options** `brandon.improvedfilters` v0.2.8 (2026-09-27) — a clipboard for
+- **Improved Filter Options** `brandon.improvedfilters` v0.2.9 (2026-09-27) — a clipboard for
   filter settings, built into the filter menus: a strip mounted in the hotbar band
   (`api.ui.overlays.register("hotbar", …)`) whenever a filter menu is up. It reads the
   game's row editor through `sandkit.engine.api.filterGroupEditor` (`getSelection(state)`
@@ -175,6 +175,11 @@ overlay also draws Mk.2 rows (not while a game filter is in hand: the game draws
 label opens that row in the Mk.3 panel, and its Apply goes through the game's editor (selectAt →
 setDraft → apply, so the game's own labels redraw); with a Mk.2 in hand the overlay draws the
 Mk.3 rows beside the game's labels. Labels and the editing tag name the kind (Mk.2 / Mk.3).
+0.15.7 (with Improved Filters 0.2.9): a row opened from a label while a Mk.2 / Mk.3 was held
+stayed open after the filter was put away (right-click / tool switch), which kept the Mk.3
+panel, its labels and the clipboard strip up. Now, like the game's editor, the row is dropped
+when the family filter leaves the hand - except while the clipboard is picking (it puts the
+building down on purpose; it says so through `window.__brandonFilterClipboard.picking()`).
 
 0.15.x in game: the panel and the labels overlay were confirmed on 2026-09-25 (with Improved
 Filters 0.2.6); the belt animation and the Mk.3's actual belt speed are still unconfirmed.
@@ -386,8 +391,13 @@ game build — search the bundle by string literals, not by those names.
   `filterLeft/RightMk2`, the walls) that are not exported — a mod filter needs its own
   panel. Row editor (engine): `filterGroupEditor.getSelection(state)` →
   `{structureType, memberCount, draft, isDirty, anchorX, anchorY}`, `setDraft(state, f)`,
-  `apply(state)`, `cancel(state)`, `selectAt(state, x, y)`. A row = same type, same filter
-  key, touching (walls join vertically).
+  `apply(state)`, `cancel(state)`, `selectAt(state, x, y, {toggle})`. A row = same type, same filter
+  key, touching (walls join vertically). `selectAt` also calls `building.cancelPlacement` +
+  `input.resetMouseState` and sets `session.building.filterForceExpand = true` (the game's
+  panel opens expanded the next time it mounts, then clears it); `apply` writes via
+  `updateMany`, bumps the revision and drops the selection. Driving select→apply from a mod,
+  put `filterForceExpand` back afterwards. Hotbar select sets activeStructureType only for
+  the game's own filters and nulls it for anything else.
 - Terrain ids by name: `api.terrains.getTypeById("block")` (Block is built-in id 15); mod
   terrains are numbered by registration order — never hard-code them.
 - Tech: `api.tech.registerNode(id, {nameKey, descriptionKey, cost, currencyType:"gold",

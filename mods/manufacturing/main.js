@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.15.6 running"));
+		safe(() => api.ui.toast("Manufacturing v0.15.7 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -881,7 +881,9 @@ function mk3Apply() {
 	let done = false;
 	if (MK2_IDS.has(row.type)) {
 		const ed = safe(() => sandkit.engine.api.filterGroupEditor), st = safe(() => sandkit.engine.state);
+		const fx = safe(() => st.session.building.filterForceExpand);   // selectAt sets it (pops the game's panel open next time)
 		done = !!(ed && safe(() => ed.selectAt(st, row.x, row.y, { toggle: false }), false) && safe(() => ed.setDraft(st, { mode, elementType: types }), false) && safe(() => ed.apply(st), false));
+		safe(() => { st.session.building.filterForceExpand = fx; });
 	}
 	if (!done) {
 		for (const s of row.members) s.filter = Object.assign({}, s.filter || { mode: "allow" }, { mode, elementType: types.slice() });
@@ -1079,6 +1081,12 @@ if (hM) {
 		if (!mk3Ready) return;
 		const now = mk3Selected();
 		if (now !== mk3.wasSel) { mk3.wasSel = now; if (!now && !mk3.sel) mk3.open = false; mk3Refresh(); }
+		// the game's row editor drops its row when its filter leaves the hand; do the same
+		// for a row opened from a label while a Mk.2 / Mk.3 was held - except while the
+		// clipboard is picking (it puts the building down itself and hands it back)
+		const fam = now || gameFilterInHand();
+		if (mk3.wasFam && !fam && mk3.sel && !safe(() => window.__brandonFilterClipboard.picking(), false)) mk3Cancel();
+		mk3.wasFam = fam;
 	}, 250);
 	// what the panel is doing, for other mods (Improved Filter Options' clipboard reads and
 	// writes the row being edited through this)

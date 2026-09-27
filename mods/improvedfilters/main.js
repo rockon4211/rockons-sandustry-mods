@@ -183,6 +183,9 @@ function pasteIntoMenu(which) {
 // PICK / ONTO: a click on any placed filter, taken before the game sees it (capture),
 // so nothing gets built or grabbed. Esc / right-click cancels.
 let mode = null, cursorStyle = null, swallowUntil = 0;
+// Manufacturing reads this: while a pick is armed the building in hand is put down on
+// purpose, so the Mk.3 panel must not take that as "the filter was put away"
+safe(() => { window.__brandonFilterClipboard = { picking: () => !!mode }; });
 // While a pick is armed the building in hand is put down (its placement ghost would sit
 // over the cursor and the game would build on the click), and handed back afterwards
 // through the game's own selectStructure - which also brings its filter menu back.
@@ -249,7 +252,9 @@ function doPasteRow(row) {
 	let ok = false;
 	if (VAN.has(row.type)) {
 		const ed = vanEditor(), st = engine().state, c = cloneFilter(clip);
+		const fx = safe(() => st.session.building.filterForceExpand);   // selectAt sets it (pops the game's panel open next time)
 		ok = !!(ed && safe(() => ed.selectAt(st, row.x, row.y, { toggle: false }), false) && safe(() => ed.setDraft(st, { mode: c.mode || "allow", elementType: c.elementType }), false) && safe(() => ed.apply(st), false));
+		safe(() => { st.session.building.filterForceExpand = fx; });
 	}
 	if (!ok) ok = writeRow(row.members);
 	if (ok && MK3.has(row.type)) { const k = mk3(); if (k) safe(() => k.refresh()); }
