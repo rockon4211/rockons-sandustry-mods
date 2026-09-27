@@ -1,16 +1,23 @@
-# Mod file checksums — main, 11bc5ec, 2026-09-25
+# Mod file checksums — audit-fixes, 11bc5ec, 2026-09-25
 
 Versions: sandboxloop 0.4.5, screensaver 0.18.2, manufacturing 0.15.4, lavaboiloff 0.1.1, quickstart 1.0.1, improvedfilters 0.2.6.
+(The hash block below is from commit `11bc5ec` on the local `audit-fixes` branch — not `main`,
+which is still at `1ca265d`. It is STALE against the working tree as of 2026-09-27: sandboxloop
+0.4.6, screensaver 0.18.3, manufacturing 0.15.5 are committed since, improvedfilters 0.2.7 and
+quickstart 1.0.2 are in progress. Regenerate after the next commit.)
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
 text files out with CRLF, so hash those after converting, or compare with `git hash-object`.
+`mods/README.md` is left out on purpose (it is documentation, not an installed file), so a
+listing of an install has one file fewer than the repo folder.
 
 ## How to regenerate (after committing, so the header can name the commit)
 
-From the repo root in Git Bash:
+From the repo root in Git Bash (the header names the CURRENT branch, not `main`):
 
 ```bash
-( echo "# Mod file checksums — main, $(git rev-parse --short HEAD), $(date +%F)"; echo;
-  echo '```'; (cd mods && find . -type f | sort | sed 's|^\./||' | xargs sha256sum); echo '```' ) > /tmp/sums.md
+H=$(git rev-parse --short HEAD); B=$(git rev-parse --abbrev-ref HEAD)
+( echo "# Mod file checksums — $B, $H, $(date +%F)"; echo;
+  echo '```'; git ls-tree -r --name-only HEAD mods | grep -v README | sort | while read p; do echo "$(git show HEAD:"$p" | sha256sum | cut -d' ' -f1)  ${p#mods/}"; done; echo '```' ) > /tmp/sums.md
 ```
 
 then paste the block over the placeholder below and keep the sections after it.

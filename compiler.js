@@ -5,10 +5,14 @@
 // Manufacturing's source of truth is the HAND-MAINTAINED
 //   mods/manufacturing/main.real.js and mods/manufacturing/worker.real.js
 // (main.js / worker.js are hot-load stubs that embed a verbatim baked copy of
-// the .real files; edit the .real file and mirror the change into the baked
-// copy). Since v0.8.1 the mod has grown hand-written code this compiler knows
-// nothing about (HeavyStone, the Filter Mk.3 research node, the red-block
-// fixes, the probes). Recompiling from graph.json would:
+// the .real files; edit the .real file, then run
+// `node tools/rebuild-manufacturing-stubs.js` to regenerate the stubs -- never
+// edit them by hand). Since v0.8.1 the mod has grown hand-written code this
+// compiler knows nothing about: HeavyStone; the Filter Mk.3 research node, its
+// filterRightMk3 / filterLeftMk3 buildings, panel, labels overlay and the
+// brandonFilterMk3Belts manager trigger; the red-block fixes; the cell probe;
+// the Grab Heavy Stone toggle; the Matter Gun / vacuum tools' tracer filtering.
+// Recompiling from graph.json would:
 //   - DROP all of that hand-written code, and
 //   - REORDER element registration, which changes element type ids and
 //     breaks existing saves.

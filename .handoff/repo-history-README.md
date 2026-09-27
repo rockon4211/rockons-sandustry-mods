@@ -6,8 +6,10 @@ base64-encoded and split across the ten `chunks/repo-history-part-NN.txt` files 
 as `claude/repo-history/part-NN.txt` in the claude.ai project).
 
 Regenerated 2026-09-23 from `main` at `1ca265d` (GitHub `main` at that time). It does NOT
-include the 2026-09-23 audit round or Manufacturing 0.11.x (Filter Mk.3), which were still
-on branch `audit-fixes`. Regenerate after those are merged.
+include anything on the local branch `audit-fixes` — as of 2026-09-27 that is about 50
+commits: the audit round, Manufacturing 0.11–0.15.5 (Filter Mk.3), Improved Filter Options,
+Screensaver 0.18.x with the map sweep, Sandbox Loop 0.4.x, `CLAUDE.md`. Regenerate after
+Brandon pushes (see "Regenerate it" below) and update the head commit / counts here.
 
 **The binaries are stripped, so commit hashes differ from GitHub.** To keep it small the
 history was rewritten (in a throwaway clone) to drop the world saves under

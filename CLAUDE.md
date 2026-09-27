@@ -83,6 +83,20 @@ replaces the block in `.handoff/mods-checksums.md` (header gets `$H` and the dat
     diff yourself before committing (one of them re-checked emptiness after createAtCell,
     which would have made Sources count nothing).
 13. Subagent audit findings are leads, not facts: re-read the code before acting on one.
+14. **Removed a re-read inside an `api.world.mutate` callback on a hunch** ("a write may not
+    be visible yet"). Wrong: the callback runs on the main thread with the sim parked, so a
+    re-read is reliable — and `createAt` silently does nothing when the element pool is
+    full, so the re-read is the only way to know a grain exists. Rule: verify a claim
+    about the engine before removing a check that depends on it.
+15. **Persisted flags as `!!undefined === false`.** A filter setting that lacks
+    `affectsLiquid/affectsGas` came back from the clipboard as explicit `false` and, pasted
+    onto a row, switched liquid/gas filtering off with nothing visible. Rule: write only the
+    fields the game's own code writes (its row editor writes `mode` + `elementType`), and
+    never materialise a missing flag as `false`.
+16. **Changing what is in hand cancels the game's row editor.** Its `afterRender` drops the
+    selection whenever the active structure isn't one of its filters — so "put the tool
+    down, then pick" closed the row the user was editing. Rule: while the game's editor has
+    a selection, leave the hand alone.
 
 ## Uniform menu playbook — panels that look and behave like the game's
 Verified on the Mk.3 filter panel (`mods/manufacturing/main.real.js`, `FilterMk3Panel`)

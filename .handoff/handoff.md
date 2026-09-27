@@ -1,6 +1,6 @@
 # Sandustry mods — handoff
 
-Everything a new chat needs to pick this work up. Last updated 2026-09-23 (audit round).
+Everything a new chat needs to pick this work up. Last updated 2026-09-27.
 
 ## Start here
 
@@ -30,10 +30,16 @@ added). A cloud session that is refused by its proxy ("not in this session's aut
 repository set") should not fight it: hand Brandon the commits (or a patch) to push from
 the desktop, or ask him to start a task with the repo attached.
 
-**If GitHub is not reachable**, `.handoff/chunks/` (mirrored in the claude.ai project as
-`claude/repo-history/`) holds the code history as a git bundle in ten base64 parts;
-`repo-history-README.md` has the rebuild commands. It has no binaries and its commit hashes
-differ from GitHub (see that README).
+**If GitHub is not reachable**, `.handoff/chunks/` holds the code history as a git bundle
+in ten base64 parts; `repo-history-README.md` has the rebuild commands. It has no binaries
+and its commit hashes differ from GitHub (see that README). The chunks are from `main`
+`1ca265d` (2026-09-23) — about 50 commits behind the `audit-fixes` branch; regenerate them
+after the push. The mirror `claude/repo-history/` and the laptop notes
+`claude/laptop-install.md` live in the claude.ai project, not in this repo.
+
+**Where the work is right now (2026-09-27):** everything since 2026-09-23 is on the local
+branch `audit-fixes` in the desktop clone; GitHub `main` has not been pushed to since
+`1ca265d`. Brandon pushes — ask first.
 
 ## Where things live
 
@@ -47,13 +53,15 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 - Steam install: **varies per PC.** On the desktop it is
   `C:\Program Files (x86)\Steam\steamapps\common\Sandustry`; game code is readable at
   `resources\app.asar` → `dist/js/bundle.js`.
-- Test harnesses: `.handoff/sim-*.js` (see Testing below).
+- Test harnesses: `.handoff/sim-*.js` (see Testing below). `.handoff/binaries.md` /
+  `binaries-b64.txt` / `repo-binaries.md` are stale base64 copies of the PNGs (no regenerate
+  script) — prefer the PNGs in git.
 
-## Mods and versions (after the 2026-09-23 audit round)
+## Mods and versions (as of 2026-09-27, branch `audit-fixes`)
 
-- **Sandbox Loop** `brandon.sandboxloop` v0.4.5 — Sources and Removers, balance tracker,
+- **Sandbox Loop** `brandon.sandboxloop` v0.4.6 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.18.2 — plays the map when idle and follows one
+- **Screensaver** `brandon.screensaver` v0.18.3 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went. 0.18.2: every tracer
   element (the 5 generic tracers and every clone) is registered with the game's own
   `showInFilterPicker: false`, so no picker lists them - they exist only for the Sandbox
@@ -62,12 +70,16 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   (`startMapSweep`, 25k cells per 50ms tick, ~30s) removes every tracer grain wherever it
   is: 4s after each world load, 3s after each run, or via `__brandonScreensaver.sweepMap()`;
   it aborts if a run starts. Reason: the 2026-09-24 save's discoveries held 3 tracer types
-  (65, 109, 95) - tracer grains had been left on the map.
-- **Manufacturing** `brandon.manufacturing` v0.15.4 — soil/Sand rename + Glass, Mod Tools,
+  (65, 109, 95) - tracer grains had been left on the map. 0.18.3: the sweep deletes inside
+  `api.world.mutate` after re-reading the cell (`removeTracerAt`), so a grain that moved on
+  is left alone and only real deletes are counted in the `map-sweep` log event; ~100
+  consecutive failed slices abort the sweep instead of looping; `isSweeping()` is exposed
+  so the Sandbox Loop's census can yield to it.
+- **Manufacturing** `brandon.manufacturing` v0.15.5 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
-- **Lava Boiloff** v0.1.1, **Quickstart** v1.0.1 (F10 quick reload).
-- **Improved Filter Options** `brandon.improvedfilters` v0.2.6 (2026-09-25) — a clipboard for
+- **Lava Boiloff** v0.1.1, **Quickstart** v1.0.2 (F10 quick reload).
+- **Improved Filter Options** `brandon.improvedfilters` v0.2.8 (2026-09-27) — a clipboard for
   filter settings, built into the filter menus: a strip mounted in the hotbar band
   (`api.ui.overlays.register("hotbar", …)`) whenever a filter menu is up. It reads the
   game's row editor through `sandkit.engine.api.filterGroupEditor` (`getSelection(state)`
@@ -102,8 +114,13 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   screen over the game's shortcut help (seen in a 2026-09-25 screenshot). Confirmed in game
   that day: Pick / Onto, paste, the Mk.3 panel and labels overlay all work; only real filter kinds count (Mk.1 = StructureType 17/18, Mk.2,
   Mk.3, walls) — shakers, growers and critter fences carry a `filter` too but are excluded.
-  Clipboard persisted by element id (`brandon.improvedfilters.clip`). UNTESTED in game as
-  of 0.2.0 (0.1.0's floating panel was seen in game).
+  Clipboard persisted by element id (`brandon.improvedfilters.clip`). 0.2.7: a paste onto a
+  placed row writes only `{mode, elementType}` (what the game's own row editor writes), the
+  liquid/gas flags are stored and written only when true — never materialised as `false` —
+  and arming Pick while the game's editor has a row open no longer touches what is in hand
+  (its `afterRender` drops the selection whenever the active structure isn't one of its
+  filters). In-game status: 0.2.6 confirmed 2026-09-25 (Pick / Onto, paste, the Mk.3 panel
+  and labels); 0.2.7's changes are covered by `sim-clipboard.js` and not yet seen in game.
 - **Workshop** — retired on 2026-09-20. Code in `.handoff/workshop/` and git history; the
   early root `workshop/` copy was removed on 2026-09-23. On the PC it was moved to
   `sandustry\_to_delete\retired-2026-09-20\workshop`.
@@ -114,7 +131,9 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 source of truth. `main.js` / `worker.js` are hot-load stubs: they load the `.real` file
 from the mod's own folder at start-up (so an F10 reload picks up a new `.real`) and fall
 back to a **verbatim baked copy** of it embedded in the stub. Every edit goes into the
-`.real` file **and** is mirrored into the baked copy.
+`.real` file only; then `node tools/rebuild-manufacturing-stubs.js` regenerates both stubs
+(`git status --short mods/manufacturing` clean afterwards = baked copy == real). Never edit
+`main.js` / `worker.js` by hand.
 
 The Material Studio compiler (`compiler.js`) is **retired**: recompiling from `graph.json`
 would drop the hand-written code (HeavyStone, the Filter Mk.3 research node, red-block fixes,
@@ -151,10 +170,16 @@ and, since 0.15.3, its own overlay: the game draws labels only for its own filte
 Mk.3 row while a Mk.3 is in hand / edited and the switch is on, positioned per frame with the
 game's mapping above; clicking a label opens the row. Saves that researched the node before
 0.14.0 get the building unlocked on load. 0.14.0 confirmed in game: the building shows up.
-0.15.x (panel, animation, overlay) UNTESTED. History: 0.10.0–0.12.2 sped up every Mk.2 Filter instead;
-rejected, removed in 0.13.0.
+0.15.x in game: the panel and the labels overlay were confirmed on 2026-09-25 (with Improved
+Filters 0.2.6); the belt animation and the Mk.3's actual belt speed are still unconfirmed.
+0.15.5 (2026-09-27): a Mk.3 picked up with the Copier shows its copied filter in the panel
+(`mk3Cfg` mirrors `customData.copiedStructure.filter` into `defaultFilter` the way the game
+does for its own ids), the overlay re-renders only when the rows change, and the in-hand
+gate is asked of `engine.api.action.getActive`. `sim-mk3.js` covers placement, the row
+editor, the belt trigger and the animation buffer. History: 0.10.0–0.12.2 sped up every
+Mk.2 Filter instead; rejected, removed in 0.13.0.
 
-## Sandbox Loop v0.4.5 — what it does
+## Sandbox Loop v0.4.6 — what it does
 
 A **Source** is a structure that emits a chosen material at an adjustable rate (decimals
 allowed, up to 100/s); a **Remover** is a single block that deletes one chosen material at
@@ -165,6 +190,29 @@ surplus/deficit per material, keeps running totals, logs a 30-second history tha
 exported as JSON (samples carry `t` wall-clock ms and `st` game-time ms), can lock Thermal
 Buffers at their peak temperature, and freezes every counter while the game is paused. It
 hides the Screensaver's tracer copies from its lists.
+
+**Per world.** Running totals, the census baseline and the history log describe one map,
+so they are stored per world (`<key>@<store.meta.worldId>`) and swapped when another world
+is loaded; anything persisted by element number carries a `{number: id}` map and is mapped
+back on load.
+
+**✎ Placed.** A collapsible "Placed (n)" list on the panel shows every Source and Remover
+on the map with what it does; ✎ opens a row editor (change material / rate, "use panel" to
+bake the panel's current setting into a structure already on the map, or remove it), so a
+structure never has to be re-placed. Rows whose material can't be resolved on this PC are
+flagged "not set".
+
+**Height cap.** The panel is never taller than the window: `maxHeight: calc(100vh - top)`
+with the title bar fixed (drag / minimize) and the rest scrolling inside.
+
+**0.4.6.** A grain is created inside `api.world.mutate` and *re-read* there before it is
+counted (`createAt` silently does nothing when the element pool is full; the callback runs
+on the main thread with the sim parked, so the re-read is reliable) — the tracer is reported
+to the Screensaver only once it exists. `game:ready` also fires when the SAME world is
+reloaded (F10), so the structure cache and pacing state are dropped there too (✎ edits hit
+dead objects otherwise). `Scene.Deploy` (3, the landing cinematic) counts as "not in a
+world". The census yields while the Screensaver's map sweep runs
+(`__brandonScreensaver.isSweeping()`).
 
 It exposes a hook other mods use:
 
@@ -184,7 +232,7 @@ The panel also carries the Screensaver row: **🌙 START NOW** and a **⤓ log (
 saves the tracer flight recorder. Its companion graph page for history exports is
 `tools/resource-history` in the repo.
 
-## Screensaver v0.18.1 — what it does
+## Screensaver v0.18.3 — what it does
 
 After N minutes without input (or automatically from the main menu, for a Windows "on idle"
 task), it hides the HUD and cursor, goes fullscreen, caps the frame rate, holds a screen wake
@@ -230,8 +278,11 @@ tracer grain is **deleted** when the screensaver ends; only the **E** key ends t
 screensaver and a "press E to exit" tip sits in the top-right, with all other keys and
 clicks swallowed so they can't disturb the game.
 
-Hook: `window.__brandonScreensaver = { build, isActive(), exportLog(), logSize(), stop(), start() }`
-(`start()` returns a short reason string, which the Sandbox Loop button displays).
+Hook: `window.__brandonScreensaver = { build, isActive(), exportLog(), logSize(), stop(), start(),
+sweepMap(), isSweeping() }` (`start()` returns a short reason string, which the Sandbox Loop
+button displays; `sweepMap()` starts the whole-map tracer sweep from cell 0 and returns
+false when not in a world or a run is active; `isSweeping()` is true while one runs — the
+Sandbox Loop's census pauses on it).
 
 ## Game internals — verified reference (keep adding to this)
 
@@ -367,6 +418,20 @@ game build — search the bundle by string literals, not by those names.
   `getTypeFromId`. Registering an element with `showInFilterPicker: false` keeps it out of
   the game's pickers. Matter tabs: solid = Solid/Powder/Wisp/Slushy, liquid = Liquid,
   gas = Gas.
+- The game's row editor (`filterGroupEditor`) cancels its selection in its `afterRender`
+  whenever `session.building.activeStructureType` isn't one of the game's own filter ids —
+  so while it has a row open, leave the hand alone (no `cancelPlacement`, no clearing the
+  hotbar slot). Seen when "put the tool down, then pick" closed the row being edited.
+- The Copier: a picked-up filter travels as `session.action.customData.copiedStructure`
+  (its `.filter`), and the game mirrors that filter into `store.options.defaultFilter` only
+  for its own filter ids; `copiedStructure` carries no `type` — what is held is what
+  `action.getActive` says. A mod filter has to mirror it itself (Manufacturing `mk3Cfg`).
+- Scenes (`sandkit.enums.Scene`): MainMenu = 1, Intro = 2, Deploy = 3 (the landing
+  cinematic — no world yet), Game = 4. "In a world" is Game only.
+- `configSchema` (modinfo.json settings): the `*Key` fields (`labelKey`, `descriptionKey`)
+  go through the translator and show the raw key if it isn't registered; plain text belongs
+  in `label` / `description`.
+- `session.saving` is true while a save is in flight.
 
 ### Elements and the world
 - Element numbers are assigned at runtime in registration order (mods by `loadOrder`,
@@ -375,9 +440,16 @@ game build — search the bundle by string literals, not by those names.
 - `api.world.isCellEmptyAtCell(x, y)` is false for material, terrain AND a building
   (reading the element type gives null for a building cell — that bug counted grains that
   were never made). `api.world.mutate(w => { w.elements.createAtCell / removeAtCell /
-  replaceAtCell })` runs at the sim's next idle moment; `createAtCellWhenIdle` silently
-  no-ops on a non-empty cell; `removeAtCellWhenIdle` checks only that the slot still holds
-  an element; `replaceAtCell` often misses a moving grain. `getResolvedTypeAtCell` in a
+  replaceAtCell })` runs at the sim's next idle moment, on the main thread with the sim
+  parked — so a read inside the callback (`api.elements.getResolvedTypeAtCell`) sees the
+  writes made just before it and is reliable; that matters because `createAt` silently does
+  nothing when the game's element pool is full (the re-read is the only way to know the
+  grain exists), and a re-read before a delete is what keeps a grain that moved on from
+  being deleted. `api.elements.removeAtCell(x, y)` is deferred too (queued, not immediate)
+  and only removes a non-null cell; `removeAtCellWhenIdle` additionally requires the cell's
+  id to be unchanged since the call — it still deletes whatever element sits there, not
+  necessarily the one you saw. `createAtCellWhenIdle` silently no-ops on a non-empty cell;
+  `replaceAtCell` often misses a moving grain. `getResolvedTypeAtCell` in a
   tight loop at ~25k cells per 50 ms tick sweeps the 14.7M-cell map in ~30 s without
   stalling. `api.world.getDimensions()` → `{widthCells, heightCells}`. The world id is
   `store.meta.worldId` (saved with the world).
@@ -401,8 +473,11 @@ game build — search the bundle by string literals, not by those names.
   mods' localStorage is NOT rolled back (so mod settings and the world can disagree).
 - The game's localStorage is Chromium LevelDB at `%APPDATA%\sandustry\Local Storage\
   leveldb` (.ldb tables + .log; snappy-compressed blocks; values are utf16le after a
-  leading type byte; keys are prefixed `_file://` + two bytes). Read a COPY — the
-  scratchpad `readls.js` from 2026-09-24 did.
+  leading type byte; keys are prefixed `_file://` + two bytes). Read a COPY — a session
+  scratch script did on 2026-09-24 (recipe: copy the `leveldb` folder, walk the `.ldb`
+  tables and `.log` with a LevelDB reader or a snappy-aware block parser, strip the
+  `_file://` + 2-byte key prefix, decode values as utf16le after the leading type byte, and
+  look for the `brandon.*` keys). Nothing of it is kept in the repo.
 - `%APPDATA%\sandustry\logs\main.log` holds only startup/GPU lines, nothing about gameplay.
 - Sim speed is worker message `SetSimulationSpeed = 68`; the cinematic panel's speed is
   `session.cinematic.speed.multiplier`.
@@ -435,18 +510,45 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   filter and resolved (pick-up / give-up), no stray tracers left.
 - `sim-lost.js` — a spot that keeps eating the tracer: the third loss must fire the
   `hotspot` bailout, with no further pick-ups there.
-- `sim-loop.js` — Sandbox Loop: a Source keeps its material across PCs (desktop, fresh
-  laptop, baked-in-save all emit soil).
+- `sim-loop.js` — Sandbox Loop: a Source keeps the material baked into it by element id
+  across PCs (golden Sand is number 61 on one PC and 74 on the other and still comes out as
+  golden Sand while the panel default stays soil); an unknown id falls back to the panel and
+  is flagged unset; `bake()` writes the id through `updateData`. Verified to FAIL against a
+  copy whose `cfgFor` always returns the default (the old version only ever checked the
+  default, which a broken `cfgFor` also produces).
+- `sim-mapsweep.js` — Screensaver 0.18.3 map sweep, booted twice (with `api.world.mutate`
+  and with the `removeAtCellWhenIdle` fallback): every tracer cell emptied, ordinary grains
+  untouched, a grain that moved on between read and delete is left alone and NOT counted,
+  one `map-sweep` log event with the real count, `isSweeping()` true mid-sweep, abort when
+  `active`, abort after 100 consecutive read errors (30 do not), `sweepMap()` and the
+  `game:ready` schedule; every `api.elements.register` call has `showInFilterPicker: false`.
+- `sim-mk3.js` — Manufacturing's Filter Mk.3 from `main.real.js` (run inside the game's
+  async wrapper): `building:placed` copies `defaultFilter` with affects* true and its own
+  array (vanilla filters and copy-pasted Mk.3s left alone); the interactable selects the
+  contiguous same-setting row and Apply writes it via `structures.updateMany` with a filter
+  object per member, flags kept; trigger `brandonFilterMk3Belts` at 166 ms with a
+  self-contained callback, both conveyor types, both re-sent on `game:ready`; the
+  `frame:render` handler mirrors `conveyorMk2AnimationIndex` into `mk3anim`; ELEMENTS order.
+- `sim-clipboard.js` — Improved Filter Options 0.2.8: COPY takes the editor's draft, else
+  `defaultFilter`; PASTE into a row is `setDraft` then `apply`; the clip round-trips through
+  localStorage by element id (a material from a missing mod is dropped, an unresolvable clip
+  stays unloaded and is retried); Mk.1 (StructureType 17/18) rows are not pickable and show
+  no strip; a paste onto a row writes only mode + elementType so `affectsLiquid: true` stays
+  true and false flags are never persisted or written; arming Pick with a row open in the
+  game's editor leaves the hand alone, with a Mk.2 in hand it stashes and hands back.
 
-They are the only way to test without the game.
+They are the only way to test without the game. Run them all:
+`cd .handoff && for s in sim-*.js; do node $s >/dev/null 2>&1 && echo "$s pass" || echo "$s FAIL"; done`
 
 ## Before changing a mod / deploy workflow (desktop PC)
 
 1. Edit in the clone, `C:\Users\Brand\dev\rockons-sandustry-mods\mods\<mod>\`. Read the
    current source first.
 2. Bump `BUILD` in main.js (the tracker/banner shows it) and `version` in modinfo.json.
-3. Manufacturing: edit `main.real.js` / `worker.real.js`, then mirror the same change into
-   the baked copy inside `main.js` / `worker.js`. Never recompile with `compiler.js`.
+3. Manufacturing: edit `main.real.js` / `worker.real.js` only, then run
+   `node tools/rebuild-manufacturing-stubs.js` (regenerates the baked copies inside
+   `main.js` / `worker.js`; `git status --short mods/manufacturing` shows only the files
+   you meant to change). Never recompile with `compiler.js`.
 4. Run every `.handoff/sim-*.js`; all must exit 0.
 5. Deploy: copy the mod's files from `mods\<mod>\` into `%APPDATA%\sandustry\mods\<mod>\`.
 6. **Fully quit and relaunch** the game (the game caches mod files at launch); confirm the
@@ -458,21 +560,25 @@ There is no device bridge any more; everything happens directly on the desktop.
 
 ## Open issues / next steps
 
-1. **Screensaver 0.18.x needs an in-game run** to confirm on the real map: the tracker's
-   "reactions armed" count is above zero, a grain follows soil → wet soil → residue →
-   burnt residue → seed without hand-backs, and nothing is refused (the log says why if so).
+1. **Screensaver 0.18.x in-game confirmation is still partial.** 0.18.x has run on the real
+   map (the 2026-09-24 save shows its tracer types in the discoveries, which is what led to
+   the map sweep), but the full check has not been reported: the tracker's "reactions
+   armed" count above zero, a grain following soil → wet soil → residue → burnt residue →
+   seed without hand-backs, nothing refused (the log says why if so). 0.18.3's sweep
+   changes are covered by `sim-mapsweep.js` only. Also unconfirmed in game: Manufacturing's
+   Mk.3 belt animation and speed, Improved Filters 0.2.7, Sandbox Loop 0.4.6, Quickstart 1.0.2.
 2. **Hard-wired steps still hand back** (a planter growing a flower, steam → cloud, the
    thermofroster). These are game code, not tables; hand-back is the permanent answer
    unless the game exposes them.
-3. **Laptop** — the mods were installed there on 2026-09-23 (`claude/laptop-install.md`).
-   Left to do: update it to the current versions, delete `mods\workshop` by hand, and
-   confirm the builds in game. Old Sources never opened on the desktop may need their
-   material set once (Sandbox Loop 0.4.0 migration).
+3. **Laptop** — the mods were installed there on 2026-09-23 (notes in the claude.ai project,
+   `claude/laptop-install.md`). Left to do: update it to the current versions, delete
+   `mods\workshop` by hand, and confirm the builds in game. Old Sources never opened on the
+   desktop may need their material set once (Sandbox Loop 0.4.0 migration).
 4. The desktop's newest saves (2026-09-21) were never committed; the snapshot branch map is
    from 2026-09-20.
-5. `.handoff/binaries.md` / `binaries-b64.txt` / `repo-binaries.md` are stale (written
-   before this round, no regenerate script). `mods/README.md` still describes an older
-   deployed set.
+5. **Push.** Everything since 2026-09-23 is on the local `audit-fixes` branch; after Brandon
+   pushes, regenerate `.handoff/chunks/` (see `repo-history-README.md`) and
+   `mods-checksums.md`, and fix the `1ca265d` notes in `.handoff/README.md`.
 
 Done, for the record: the 0.17.2 in-game check and the fire-reaction / machine gaps (#1, #2
 in older copies of this file) were superseded by 0.18, which copies burning and teaches

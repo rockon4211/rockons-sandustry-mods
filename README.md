@@ -9,12 +9,15 @@ its Mods menu.
 
 | Mod | Version | What it does |
 | --- | --- | --- |
-| **sandboxloop** | 0.4.5 | Sources and Removers for an endless, self-balancing factory, plus a whole-map balance tracker with history export. |
-| **screensaver** | 0.18.2 | After a few idle minutes the HUD hides and the camera follows one real grain through the factory, material by material. Press **E** to exit. |
-| **improvedfilters** | 0.2.6 | Filter clipboard built into the Mk.2 / Mk.3 filter menus: copy what a filter menu shows, paste it into the other (rows or new filters). |
-| **manufacturing** | 0.15.4 | Renames vanilla sand to "soil" and adds a golden Sand (→ Glass on the Smelter); Mod Tools (Matter Gun, vacuum tank delete buttons, Omni Vacuum); **Filter Mk.3** — its own building (research under Manufacturing, 25,000 gold): sorts like the Mk.2 Filter at Mk.2 belt speed, with its own copy of the filter panel. |
+| **sandboxloop** | 0.4.6 | Sources and Removers for an endless, self-balancing factory, plus a whole-map balance tracker with history export and a ✎ Placed list to edit what is already on the map. |
+| **screensaver** | 0.18.3 | After a few idle minutes the HUD hides and the camera follows one real grain through the factory, material by material. Press **E** to exit. Sweeps stray tracer grains off the map on every world load. |
+| **improvedfilters** | 0.2.8 | Filter clipboard built into the Mk.2 / Mk.3 filter menus: copy what a filter menu shows, paste it into the other (rows or new filters). |
+| **manufacturing** | 0.15.5 | Renames vanilla sand to "soil" and adds a golden Sand (→ Glass on the Smelter); Mod Tools (Matter Gun, vacuum tank delete buttons, Omni Vacuum, red-block fix, cell probe, Grab Heavy Stone toggle); **Filter Mk.3** — its own building (research under Manufacturing, 25,000 gold): sorts like the Mk.2 Filter at Mk.2 belt speed, with its own copy of the filter panel and labels overlay. |
 | **lavaboiloff** | 0.1.1 | Lava has a 1-in-N chance to burn itself out each time it boils water into steam. |
-| **quickstart** | 1.0.1 | **F10** quick reload: reboots the game straight back into the current save (prefers the F5 quicksave). |
+| **quickstart** | 1.0.2 | **F10** quick reload: reboots the game straight back into the current save (prefers the F5 quicksave). |
+
+Versions as of 2026-09-27. This work is on the local branch `audit-fixes` until Brandon
+pushes it; GitHub `main` is still at the 2026-09-23 state (`1ca265d`).
 
 ### Sandbox Loop
 
@@ -40,9 +43,11 @@ with the reason) to Downloads.
 
 ### Manufacturing — source of truth
 
-Edit `mods/manufacturing/main.real.js` / `worker.real.js` by hand. `main.js` / `worker.js`
-are hot-load stubs that embed a verbatim **baked copy** of the `.real` files; every edit to
-a `.real` file must be mirrored into the baked copy. Do **not** regenerate the mod with
+Edit `mods/manufacturing/main.real.js` / `worker.real.js` by hand, then run
+`node tools/rebuild-manufacturing-stubs.js`. `main.js` / `worker.js` are hot-load stubs
+that embed a verbatim **baked copy** of the `.real` files; the script regenerates them
+(never edit the stubs directly — `git status --short mods/manufacturing` should show only
+the `.real` files plus the regenerated stubs). Do **not** regenerate the mod with
 `compiler.js` (see below).
 
 ## The rest
@@ -52,8 +57,9 @@ a `.real` file must be mirrored into the baked copy. Do **not** regenerate the m
   machines between them. Still useful for browsing the game's recipe graph.
 - `compiler.js`, `compiler-cfg.json`, `tools-bolton.js`, `tech-glass-bolton.js` — the
   studio's mod compiler. **RETIRED — DANGER.** Manufacturing has grown hand-written code
-  since the last compile (HeavyStone, the Filter Mk.3 research node, red-block fixes,
-  probes). A recompile from `graph.json` would drop all of that, **reorder element
+  since the last compile (HeavyStone; the Filter Mk.3 research node, building, panel,
+  labels overlay and belt trigger; the red-block fixes; the cell probe; the Grab Heavy
+  Stone toggle). A recompile from `graph.json` would drop all of that, **reorder element
   registration (changing element ids and breaking saves)**, and roll the version back to
   the 0.8.1 in `compiler-cfg.json`. It refuses to write into `mods/manufacturing` without
   `--force`. Bolt-on paths in the config are relative to the config file. Its
@@ -74,13 +80,18 @@ The retired Workshop mod lives in `.handoff/workshop/` and in git history (the e
 
 ## Testing
 
-`node .handoff/sim-<name>.js` for each harness (see `.handoff/handoff.md`). Each exits
-non-zero on a failed check.
+`node .handoff/sim-<name>.js` for each harness (see `.handoff/handoff.md` → Testing, or
+`.handoff/README.md`). Each `eval`s a mod's real code against a mocked game and exits
+non-zero on a failed check. Current set: `sim-clone`, `sim-copies`, `sim-output`,
+`sim-filter`, `sim-lost`, `sim-mapsweep` (Screensaver), `sim-loop` (Sandbox Loop),
+`sim-mk3` (Manufacturing's Filter Mk.3), `sim-clipboard` (Improved Filter Options).
 
 ## Branches and pushing
 
 `main` is the live line of work. `snapshot/loamcrest-2026-09-20` (tag
 `loamcrest-2026-09-20`) is a frozen copy of the map and the mods as they were that day.
+Everything since 2026-09-23 (the audit round, Filter Mk.3, Improved Filter Options, the
+map sweep) is on the local branch `audit-fixes` until it is pushed.
 
 The repo is `rockon4211/rockons-sandustry-mods` on GitHub. On the desktop PC the clone is
 `C:\Users\Brand\dev\rockons-sandustry-mods` and git is already authenticated (Git

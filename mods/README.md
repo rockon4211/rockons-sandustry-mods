@@ -1,11 +1,12 @@
 # Mods (source of truth)
 
 These folders are what gets installed in `%APPDATA%\sandustry\mods\`:
-  sandboxloop (v0.4.5), screensaver (v0.18.2), manufacturing (v0.15.4, Mod Tools),
-  lavaboiloff (v0.1.1), quickstart (v1.0.1), improvedfilters (v0.2.6)
+  sandboxloop (v0.4.6), screensaver (v0.18.3), manufacturing (v0.15.5, Mod Tools),
+  lavaboiloff (v0.1.1), quickstart (v1.0.2), improvedfilters (v0.2.8)
 
-Manufacturing: edit `main.real.js` / `worker.real.js`, then mirror the change into the
-baked copy inside `main.js` / `worker.js` (they must stay identical).
+Manufacturing: edit `main.real.js` / `worker.real.js` ONLY, then run
+`node tools/rebuild-manufacturing-stubs.js` to regenerate `main.js` / `worker.js` (they embed
+a verbatim baked copy and must stay identical). Never hand-edit the stubs.
 
 Retired: `workshop` (removed from main 2026-09-20; still recoverable from git history).
 On the desktop it was moved to `sandustry\_to_delete\retired-2026-09-20\workshop`.

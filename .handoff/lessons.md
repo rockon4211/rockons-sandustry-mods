@@ -49,6 +49,16 @@ reading. Updated 2026-09-25.
    vanishes, while the mods' own memory of settings doesn't roll back — which looks exactly
    like a mod bug. *Rule: check the reload story before hunting one.*
 10. **A test that passed while testing nothing.** *Rule: every harness must fail loudly.*
+11. **Second-guessing a safety check.** A check that a grain really appeared was removed on a
+    hunch that the game might not show the write yet. The game does, and without the check a
+    full material pool means grains get counted that were never made. *Rule: verify a claim
+    about the game before removing a check that depends on it.*
+12. **A missing setting saved as "off".** The clipboard saved absent liquid/gas flags as
+    "off", and pasting that onto a row quietly let liquids and gases straight through.
+    *Rule: only write the fields the game's own editor writes; never turn "not set" into "off".*
+13. **Putting the tool down closed the row.** The game stops editing a row the moment the
+    held tool changes, so the clipboard's "put the tool down, then pick" closed the row being
+    edited. *Rule: while the game is editing a row, leave the tool alone.*
 
 ## Making a menu that fits the game (in words)
 - Put it where the game puts its own: in the band above the hotbar, appearing only while
