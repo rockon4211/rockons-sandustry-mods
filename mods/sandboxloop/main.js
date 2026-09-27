@@ -7,7 +7,7 @@ const api = sandkit.api;
 const React = sandkit.react;
 const h = React.createElement;
 const MOD_ID = "brandon.sandboxloop";
-const BUILD = "0.4.5";
+const BUILD = "0.4.6";
 
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
@@ -15,8 +15,9 @@ function isEnabled() { return setting("enabled", true); }
 const Scene = safe(() => sandkit.enums.Scene) || {};
 function inWorld() {
 	const a = safe(() => api.scene.getActive());
-	const menus = [Scene.MainMenu, Scene.Intro].filter((v) => typeof v === "number");
-	return a !== undefined && a !== null && (menus.length ? !menus.includes(a) : a > 2);
+	// Scene: MainMenu=1, Intro=2, Deploy=3 (the landing cinematic), Game=4
+	const menus = [Scene.MainMenu, Scene.Intro, Scene.Deploy].filter((v) => typeof v === "number");
+	return a !== undefined && a !== null && (menus.length ? !menus.includes(a) : a > 3);
 }
 
 // --- pause detection + game clock -------------------------------------------
@@ -41,6 +42,7 @@ setInterval(() => safe(() => window.localStorage.setItem(SIM_KEY, String(Math.ro
 function simNow() { return simMs; }
 function running() { return isEnabled() && inWorld() && !simPaused; }
 function saverActive() { const s = safe(() => window.__brandonScreensaver); return !!(s && s.isActive && s.isActive()); }   // live answer from the Screensaver mod (a stored flag went stale and hid the panel)
+function saverSweeping() { return !!safe(() => window.__brandonScreensaver.isSweeping()); }   // the Screensaver's whole-map sweep (optional hook: older builds have none)
 
 const SRC_ID = "brandonSandboxSource", SRC_SPRITE = "brandonSandboxSourceSprite";
 const SNK_ID = "brandonSandboxSink",   SNK_SPRITE = "brandonSandboxSinkSprite";
@@ -71,7 +73,10 @@ function buildPalette() {
 }
 buildPalette();
 setTimeout(buildPalette, 3000);
-safe(() => api.events.on("game:ready", () => { buildPalette(); safe(ensureDefaults); }));
+// game:ready also fires when the SAME world is reloaded (F10 quickload): every cached
+// structure object is dead then, and switchWorld doesn't run because the id didn't change —
+// so drop the structure cache and the pacing state here (✎ edits hit dead objects otherwise)
+safe(() => api.events.on("game:ready", () => { buildPalette(); safe(ensureDefaults); structsChanged(); runtime.clear(); }));
 setTimeout(() => safe(ensureDefaults), 3500);
 
 // resolve stored ids to numbers and fill in a default material if there is none yet
@@ -149,7 +154,7 @@ function ikey(x, y) { const w = worldId(); return (w ? w + "@" : "") + x + "," +
 // the structure the first time it is seen — but only an entry holding the element ID. A
 // number-only entry (pre-0.4.0) means whatever this PC numbered it, so it counts as unset.
 function cfgFor(s, fallback) {
-	const d = s && s.data;
+	const d = s && s.data;   // read fresh every call: updateData/setData REPLACE s.data, so a held object goes stale after a bake
 	if (d && d.brandonMat) {
 		const t = typeOfEid(d.brandonMat);
 		if (typeof t === "number") return { mat: d.brandonMat, type: t, rate: typeof d.brandonRate === "number" ? d.brandonRate : (fallback ? fallback.rate : 0) };
@@ -166,8 +171,10 @@ function cfgFor(s, fallback) {
 function bake(s, cfg) {
 	const mat = cfg.mat || eidOfType(cfg.type), rate = cfg.rate;
 	cfgMap.set(ikey(s.x, s.y), { mat: mat, type: cfg.type, rate: rate });
-	// through the game's own setter (it tells the game the structure changed); poking
-	// s.data directly is only the fallback
+	// through the game's own setter: updateData (= setData) replaces s.data with the patch
+	// merged in and re-writes the tile on the main thread (workers are only told with
+	// {propagateToWorkers:true}, which nothing here needs — the loops read s.data from
+	// here). Poking s.data directly is only the fallback.
 	const viaApi = safe(() => { api.structures.updateData(s, { brandonMat: mat, brandonRate: rate }); return true; }, false);
 	if (!viaApi || !s.data || s.data.brandonMat !== mat) { if (!s.data) s.data = {}; s.data.brandonMat = mat; s.data.brandonRate = rate; }
 	saveCfg();
@@ -300,7 +307,7 @@ function setGentle(v) {
 	if (_sweep) _sweep.budget = sweepBudget(_sweep.total);   // takes effect on the running sweep too
 	if (panelRepaint) panelRepaint((x) => x + 1);
 }
-function sweepBudget(total) { return Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.ceil(total / (((scanGentle || saverActive()) ? SWEEP_SECS_GENTLE : SWEEP_SECS_NORMAL) * 20)))); }   // screensaver → always gentle
+function sweepBudget(total) { return Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, Math.ceil(total / (((scanGentle || saverActive() || saverSweeping()) ? SWEEP_SECS_GENTLE : SWEEP_SECS_NORMAL) * 20)))); }   // screensaver running, or its own map sweep → always gentle (two full-map reads at once stutter)
 // watchlist: show only the materials you've pinned (★) instead of the top movers
 let censusWatchOnly = false;
 (function loadWatch() { if (safe(() => window.localStorage.getItem("brandon.sandboxloop.watch")) === "1") censusWatchOnly = true; })();
@@ -483,12 +490,20 @@ safe(() => api.events.on("building:removed", (p) => {
 }));
 safe(() => api.events.on("structures:removed", (p) => {
 	structsChanged();
-	const list = p && p.structures; if (!Array.isArray(list)) return;
-	for (const s of list) {
-		if (!s || typeof s.x !== "number") continue;
-		if (s.type === SRC_ID || s.type === SNK_ID) forgetAt(s.x, s.y);
-		else if (isThermal(s.type)) thermalPins.delete(ikey(s.x, s.y));
+	const list = p && p.structures;
+	if (Array.isArray(list) && list.length) {   // the game always sends an array — EMPTY on a failed move (its own listener checks length too)
+		for (const s of list) {
+			if (!s || typeof s.x !== "number") continue;
+			if (s.type === SRC_ID || s.type === SNK_ID) forgetAt(s.x, s.y);
+			else if (isThermal(s.type)) thermalPins.delete(ikey(s.x, s.y));
+		}
+		return;
 	}
+	// a move whose targets failed to place sends {removed:[{x,y}…], byMove:true} with an
+	// empty structures list: forget the baked settings at those positions too (a lingering entry
+	// would be baked into whatever is placed there next)
+	const gone = p && p.removed; if (!Array.isArray(gone)) return;
+	for (const r of gone) { if (r && typeof r.x === "number") { forgetAt(r.x, r.y); thermalPins.delete(ikey(r.x, r.y)); } }
 }));
 
 // --- register the two structures --------------------------------------------
@@ -537,7 +552,7 @@ function cellEmpty(x, y) {
 // sim's next idle moment and is confirmed there, so only grains that really appeared are
 // counted, and the Screensaver's tracer is reported only once it exists. A tracer whose
 // request was cancelled/replaced meanwhile comes out as the normal material; one that
-// found its cell filled goes back in the queue.
+// found its cell filled (or that the game couldn't make) goes back in the queue.
 function emitGrain(ox, oy, s, cfg, tracer) {
 	const w = safe(() => api.world), seq = emitSeq;
 	const report = (x, y) => { emitOnceAt = { x, y, at: Date.now(), src: { x: s.x, y: s.y }, material: cfg.type }; };
@@ -545,10 +560,12 @@ function emitGrain(ox, oy, s, cfg, tracer) {
 		const queued = safe(() => { w.mutate((wr) => { try {
 			const live = tracer != null && seq === emitSeq;
 			if (!w.isCellEmptyAtCell(ox, oy)) { if (live && emitOnceType == null) emitOnceType = tracer; return; }
-			// createAtCell makes the grain whenever the cell is empty, which was just checked in
-			// this same idle moment — so it exists now (no re-read: whether a write inside
-			// mutate is visible to a read before it returns isn't something to rely on)
-			wr.elements.createAtCell(ox, oy, live ? tracer : cfg.type);
+			// createAtCell silently does nothing when the game's element pool is full. The mutate
+			// queue drains synchronously on the main thread with the sim parked, so a read here
+			// does see the write: confirm the grain before counting it (or reporting the tracer)
+			const want = live ? tracer : cfg.type;
+			wr.elements.createAtCell(ox, oy, want);
+			if (api.elements.getResolvedTypeAtCell(ox, oy) !== want) { if (live && emitOnceType == null) emitOnceType = tracer; return; }
 			bump(emitTot, cfg.type);
 			if (live) report(ox, oy);
 		} catch (e) {} }); return true; }, false);
@@ -571,6 +588,11 @@ setInterval(() => {
 		rt.accum += (cfg.rate * dt) / 1000;
 		const cap = Math.max(8, cfg.rate);              // buffer up to ~1s of the set rate
 		if (rt.accum > cap) rt.accum = cap;
+		// a tracer request for THIS Source shouldn't wait on a slow rate (below ~0.17/s a grain
+		// never accumulates inside the Screensaver's 6s window): let it emit one grain now,
+		// once per request (emitSeq changes with every emitOnce / cancelEmitOnce)
+		const mineNow = emitOnceType != null && (!emitOnceSrc || (emitOnceSrc.x === s.x && emitOnceSrc.y === s.y));
+		if (mineNow && rt.accum < 1 && rt.tracerSeq !== emitSeq) { rt.accum = 1; rt.tracerSeq = emitSeq; }
 		// Drop across the WHOLE underside of the hopper (10 cols) and well below it,
 		// not a 2-cell column — that alone was choking the rate. And keep a per-tick
 		// `claimed` set: createAtCellWhenIdle is queued, so within one tick re-reads
@@ -607,10 +629,11 @@ setInterval(() => {
 }, TICK);
 
 // --- remove loop (rate-limited: deletes only cfg.type, slowly) --------------
-// The delete runs at the sim's next idle moment. removeAtCellWhenIdle only checks the cell
-// still holds the same element slot — a grain that changed material in place (wet → dry,
-// melting…) would still go. Through api.world.mutate the material is checked again right
-// before the delete, and only a real delete is counted.
+// The delete runs at the sim's next idle moment. Neither queued deleter checks the MATERIAL:
+// api.elements.removeAtCellWhenIdle requires the cell id to be unchanged since the call (the
+// same slot — a grain that changed material in place, wet → dry, melting…, still goes), and
+// plain removeAtCell only that something is still there. Through api.world.mutate the material
+// is checked again right before the delete, and only a real delete is counted.
 function removeGrain(x, y, type) {
 	const w = safe(() => api.world);
 	if (w && typeof w.mutate === "function") {
@@ -619,7 +642,7 @@ function removeGrain(x, y, type) {
 		} catch (e) {} }); return true; }, false);
 		if (queued) return;
 	}
-	safe(() => api.elements.removeAtCellWhenIdle(x, y)); bump(rmTot, type);
+	safe(() => api.elements.removeAtCellWhenIdle(x, y)); bump(rmTot, type);   // no mutate (older runtime): WhenIdle = the same slot must still be there
 }
 const rmRecent = new Map();
 setInterval(() => {
@@ -743,7 +766,13 @@ function doReset() {
 }
 // --- draggable panel position (drag the title bar) --------------------------
 let panelPos = { x: 12, y: 84 };
-(function loadPos() { const raw = safe(() => window.localStorage.getItem("brandon.sandboxloop.panelpos")); const o = raw && safe(() => JSON.parse(raw)); if (o && typeof o.x === "number" && typeof o.y === "number") panelPos = o; })();
+(function loadPos() {
+	const raw = safe(() => window.localStorage.getItem("brandon.sandboxloop.panelpos")); const o = raw && safe(() => JSON.parse(raw));
+	if (!o || typeof o.x !== "number" || typeof o.y !== "number") return;
+	// clamp to the window: a position saved on a bigger screen would put the panel off-screen
+	const W = safe(() => window.innerWidth), H = safe(() => window.innerHeight);
+	panelPos = { x: Math.max(0, typeof W === "number" && W > 0 ? Math.min(o.x, W - 60) : o.x), y: Math.max(0, typeof H === "number" && H > 0 ? Math.min(o.y, H - 60) : o.y) };
+})();
 let _drag = false, _ddx = 0, _ddy = 0;
 safe(() => {
 	window.addEventListener("mousemove", (e) => { if (!_drag) return; panelPos = { x: Math.max(0, e.clientX - _ddx), y: Math.max(0, e.clientY - _ddy) }; if (panelRepaint) panelRepaint((v) => v + 1); });
@@ -1016,15 +1045,17 @@ function HistoryRow() {
 }
 
 // --- cleanup: remove every Source/Remover the mod knows about, including ones
-//     that render as blank/red "error" blocks. Only cells INSIDE each
-//     structure's own footprint are touched (Source 12×12, Remover 4×4), so a
-//     conveyor or machine next door is never removed by accident. -------------
-const FOOTPRINT = { [SRC_ID]: [[0, 0], [5, 5], [11, 9]], [SNK_ID]: [[0, 0], [3, 3]] };
+//     that render as blank/red "error" blocks. One call per structure, at its
+//     origin cell (the game's removeAt finds the structure covering that cell,
+//     and every call walks all ~29k structures — the old three-cells-per-structure
+//     sweep tripled that). Only the structure's own cell is named, so a conveyor
+//     or machine next door is never removed by accident. The removal is QUEUED
+//     for the sim's next idle moment, so it hasn't happened when this returns. --
 function clearSandbox() {
 	let n = 0;
 	for (const id of [SRC_ID, SNK_ID]) {
 		for (const s of eachOf(id)) {
-			for (const c of FOOTPRINT[id]) safe(() => api.structures.removeAtCellWhenIdle(s.x + c[0], s.y + c[1]));
+			safe(() => api.structures.removeAtCell(s.x, s.y));   // = removeAtCellWhenIdle in the runtime (both queue structures.removeAt for the idle moment)
 			forgetAt(s.x, s.y);
 			n++;
 		}
@@ -1038,7 +1069,7 @@ function doClear() {
 	if (clearArmed < now) { clearArmed = now + 3000; clearMsg = ""; if (panelRepaint) panelRepaint((v) => v + 1); return; }
 	clearArmed = 0;
 	const n = clearSandbox();
-	clearMsg = "removed " + n + (n === 1 ? " structure" : " structures");
+	clearMsg = "queued " + n + (n === 1 ? " structure" : " structures") + " for removal";
 	if (panelRepaint) panelRepaint((v) => v + 1);
 }
 function CleanupRow() {
