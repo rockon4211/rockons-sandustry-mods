@@ -1,6 +1,6 @@
-# Mod file checksums — audit-fixes, 11bc5ec, 2026-09-25
+# Mod file checksums — audit-fixes, 919f552, 2026-09-27
 
-Versions: sandboxloop 0.4.5, screensaver 0.18.2, manufacturing 0.15.4, lavaboiloff 0.1.1, quickstart 1.0.1, improvedfilters 0.2.6.
+Versions: sandboxloop 0.4.6, screensaver 0.18.3, manufacturing 0.15.5, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.2.8.
 (The hash block below is from commit `11bc5ec` on the local `audit-fixes` branch — not `main`,
 which is still at `1ca265d`. It is STALE against the working tree as of 2026-09-27: sandboxloop
 0.4.6, screensaver 0.18.3, manufacturing 0.15.5 are committed since, improvedfilters 0.2.7 and
@@ -26,31 +26,31 @@ To compare an install, run the same `find … | xargs sha256sum` inside
 `%APPDATA%\sandustry\mods\` (Git Bash: `cd "$APPDATA/sandustry/mods"`).
 
 ```
-0ed385f3a8e5717164519bc4719c8661f77b42767e51fcca57593ca30a8a4673  improvedfilters/main.js
-375d9372975f24bfcfb8ff27e2fabfd5d9109e8206bbd0ee6eb60f6d76e03379  improvedfilters/modinfo.json
+4d446886c32abf7e45840f9ac2bd029fe79b2c1087036acf223f28b615d49d76  improvedfilters/main.js
+5989d78b7d867b07a434f153c862f1f5d8d687c891866e06b6b6b64bf4b2244c  improvedfilters/modinfo.json
 b77d7dbf8f5d674034316ff9af034f1da170dad21f4bcdf12c63540916c1c653  lavaboiloff/main.js
 311973d685f93b75546a1af856febf8a8e293bc8e6d1b98da2c616459b436509  lavaboiloff/modinfo.json
 1e4b15b61a5006819fc8d69eeca740b230348493f97440d081812ed1c29e9fcd  lavaboiloff/worker.js
 ff36b12798a7aa8d6983f2c165326ddb38391d218443498bc07cd9ab31c935cc  manufacturing/filter_left_mk3.png
 9bf29fe79ee1c8870df691face431ddd948c2af078fa7524a32a7535c52c5b3e  manufacturing/filter_right_mk3.png
-23c77120ce093a2a76d48480f9767a857775d8de1a924156fe84e88729c7906c  manufacturing/main.js
-609550ab1008e4b3243d603b33e6b0dca62135d6bd0f60c319f7ae31be54381e  manufacturing/main.real.js
+69f6962e841e95e31ca0f7c7f893a9b5daafe90c166fbdf5a5b0cf59e913df21  manufacturing/main.js
+d9112bc6f4288aff1b2a9cea0a509c10bebb98774caed3a3fa6c505ee6b088fc  manufacturing/main.real.js
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun.png
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun_icon.png
-43ad52d38004c5ebbaade82301749f85e298d87a34f0d51c0e162e310e718b4f  manufacturing/modinfo.json
+667201e192fca62309f439c16532cfbaabaa3969e1d325dbf578659f95ff9358  manufacturing/modinfo.json
 bb6b7ac569af46b8b32072d79df284210d4f8b70e5a84ffa0407fac9c1475189  manufacturing/preview.png
 8018d0144f77848af41857926ed3d93d02d0db2a5482c9ef37b590839876c1f6  manufacturing/worker.js
 b5d6484016e77e14a2650302ea7da93e24213a94e7b87e0fef8facc00965310a  manufacturing/worker.real.js
-6d4f399c4dffcecd3c0a94738438a2d76cd9b438135ea5c3bae94b938871a4cf  quickstart/main.js
-cbe98a26414ea9cdeca5a1739a8900e1a798d274084370ca45ecfd730b34ab4e  quickstart/modinfo.json
+f4aba9709ca13335204debbc2a30cdf48158b7120f74e7ed0fe8dca740ae2287  quickstart/main.js
+01c53d5949444b4b00ab65e90c51db5b1c596067467d73b04e9459089ff0b916  quickstart/modinfo.json
 93da1be7de59ea4f5db0384e5d83098567fbdf5e9f75ca92f20ee2c0a05708b2  quickstart/preview.png
-eaff15b33cde35d7f23e1f7015b1d11fdb3091d7e12494709bc33c8c719c759a  sandboxloop/main.js
+9bc16a7b1491fc14ec0d3689475113c41e3fe8c412d9271608d2cc5e550d5798  sandboxloop/main.js
 c67969b7ba30cb5a1f8967aebd2571d31cfa2945b7bed51623c4f0b4647f22d8  sandboxloop/make-sprites.js
-9d4c9c4be1b51a356ac37df27fefb30901722fe780b470c7c48463f1ff19299f  sandboxloop/modinfo.json
+698edfb72208907cfcf5d1cf8555c13bb8ae9be0d96c7e73b33531a21bea1b61  sandboxloop/modinfo.json
 d03eb83fbe5c5aba303955cdd28dfe08fcdfc9089a18fd5117b57cbf529b703a  sandboxloop/sink.png
 2fcbee7b58f45f11f52db540b59894490f89bfa6096a1abcf0c1e7aea0d54d18  sandboxloop/source.png
-897a07aeab82d48bd5aa683cc9840bf7504ef3986be6a19ffda9d1fc7d0ad381  screensaver/main.js
-903f43518ef149b4646fc042f52b94b614eea16c230adcfe7d4aa6af9b52c656  screensaver/modinfo.json
+46134abbe4a18ee4f6c5e9ae5d856d8eabbb234ce15f3ef4da9d4d89a54001ac  screensaver/main.js
+10c029567f7fa0d1fa3cab10229b7119408297b7e3c8cecfe38f06ac5ae9ce60  screensaver/modinfo.json
 ```
 
 ## PNGs
