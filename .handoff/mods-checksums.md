@@ -1,6 +1,6 @@
-# Mod file checksums — audit-fixes, c67389f, 2026-09-27
+# Mod file checksums — audit-fixes, 5b84490, 2026-09-27
 
-Versions: sandboxloop 0.4.6, screensaver 0.18.3, manufacturing 0.15.8, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.2.9.
+Versions: sandboxloop 0.4.6, screensaver 0.18.3, manufacturing 0.16.0, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.3.0.
 (The hash block below is from commit `11bc5ec` on the local `audit-fixes` branch — not `main`,
 which is still at `1ca265d`. It is STALE against the working tree as of 2026-09-27: sandboxloop
 0.4.6, screensaver 0.18.3, manufacturing 0.15.5 are committed since, improvedfilters 0.2.7 and
@@ -26,18 +26,18 @@ To compare an install, run the same `find … | xargs sha256sum` inside
 `%APPDATA%\sandustry\mods\` (Git Bash: `cd "$APPDATA/sandustry/mods"`).
 
 ```
-1f47e1ce534f99079558f4a2ca7cdc50975d10f5ae0944f629fb537c2f1d7cf6  improvedfilters/main.js
-b86b2fc0ab4cfde791140d5c16e762b9c1a2696d4adcd6bb2ffd2025c5ea1c54  improvedfilters/modinfo.json
+15904050cec367a3c67f55ea92d4c10de589df17850d0a9456249d100bc1169f  improvedfilters/main.js
+8fd9641c4bd50a50f6d85b3d24f4f35bb34e6df085053019184b5f5dee844b8f  improvedfilters/modinfo.json
 b77d7dbf8f5d674034316ff9af034f1da170dad21f4bcdf12c63540916c1c653  lavaboiloff/main.js
 311973d685f93b75546a1af856febf8a8e293bc8e6d1b98da2c616459b436509  lavaboiloff/modinfo.json
 1e4b15b61a5006819fc8d69eeca740b230348493f97440d081812ed1c29e9fcd  lavaboiloff/worker.js
 ff36b12798a7aa8d6983f2c165326ddb38391d218443498bc07cd9ab31c935cc  manufacturing/filter_left_mk3.png
 9bf29fe79ee1c8870df691face431ddd948c2af078fa7524a32a7535c52c5b3e  manufacturing/filter_right_mk3.png
-2c0e096ff5e612ed3d3889a01ba46133d4a4a0957240d913b0a6930064d0e538  manufacturing/main.js
-06bf8ed9199abd2d04e80f3e412eb783ac3b280b991efdad585bebc5224e5ca5  manufacturing/main.real.js
+a1892bb6800e009d55067a7ca5713ff35001b93a0576eddfdb5408ef34a31bba  manufacturing/main.js
+31a052b721641d4e290dce8317c02e7f21289989e4799d286455006a0d68fffc  manufacturing/main.real.js
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun.png
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun_icon.png
-af8ee2b6e11cfd36b59dcf239f25acde6f1909b986facfbc540f181a09c50b7e  manufacturing/modinfo.json
+b75c57f00149fbcfb64945953a3435ad25055d2f498f80d8b8681a9785da5569  manufacturing/modinfo.json
 bb6b7ac569af46b8b32072d79df284210d4f8b70e5a84ffa0407fac9c1475189  manufacturing/preview.png
 8018d0144f77848af41857926ed3d93d02d0db2a5482c9ef37b590839876c1f6  manufacturing/worker.js
 b5d6484016e77e14a2650302ea7da93e24213a94e7b87e0fef8facc00965310a  manufacturing/worker.real.js
