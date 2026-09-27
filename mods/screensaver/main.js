@@ -131,11 +131,11 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.18.2";
+const BUILD = "0.18.3";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
-function sourcesList() { const hook = safe(() => window.__brandonSandboxLoop); return (hook && hook.sources && hook.sources()) || []; }
+function sourcesList() { return safe(() => window.__brandonSandboxLoop.sources(), null) || []; }
 function matName(t) { return safe(() => api.elements.getNameByType(t)) || ("type " + t); }
 let dbg = { phase: "idle", note: "-", tracers: 0, belts: 0, cells: 0, near: -1, path: 0, pos: 0, ms: 0 };
 
@@ -271,8 +271,10 @@ function cloneDefFor(realType, id, cloneIds) {
 	dbg.tracers = tracerTypes.size;
 	console.log("[" + MOD_ID + "] tracer copies registered: " + cloneOf.size + " materials" + (cloneSkipped ? " (" + cloneSkipped + " skipped: out of element slots)" : ""));
 })();
-// updateDefinition only reaches the render/sim workers once they exist, so re-apply
+// updateDefinition only reaches the render/sim workers once they exist, so re-apply on game:ready
+// (it posts every copy to every worker - not something to repeat from each teaching pass)
 function applyCloneDefs() { for (const [t, def] of cloneDefs) safe(() => api.elements.updateDefinition(t, Object.assign({ nameKey: undefined }, def))); }
+applyCloneDefs();
 const goldT = () => typeOfId("gold");
 const isGold = (t) => typeof t === "number" && t === goldT();
 const clonable = (t) => typeof t === "number" && cloneOf.has(t) && !isGold(t);
@@ -423,7 +425,6 @@ function armCloneReactions() {
 	}
 	// 4) the hard-wired steps (only used to know what to look for after a hand-back)
 	for (const id in EXTRA_STEPS) { const a = typeOfId(id); if (typeof a !== "number") continue; for (const b of EXTRA_STEPS[id]) addSucc(a, typeOfId(b), 0.5); }
-	applyCloneDefs();
 	console.log("[" + MOD_ID + "] tracer copies taught " + reactionsArmed + " reactions/recipes" + (armErrors ? " (" + armErrors + " refused)" : ""));
 }
 // what a material can turn into next (skipping growth stages, which are never ridden)
@@ -535,7 +536,7 @@ function possess(x, y, matType) {
 // the queued swap only applies if the cell hasn't moved on, so every clean-up is repeated a
 // few times; the timers are kept so a new run can cancel them
 let sweepTimers = [];
-function sweepLater(fn) { fn(); for (const ms of [200, 600, 1200, 2500]) sweepTimers.push(setTimeout(() => safe(fn), ms)); }
+function sweepLater(fn) { fn(); for (const ms of [200, 600, 1200, 2500]) { const id = setTimeout(() => { sweepTimers = sweepTimers.filter((x) => x !== id); safe(fn); }, ms); sweepTimers.push(id); } }
 function cancelSweeps() { for (const id of sweepTimers) safe(() => clearTimeout(id)); sweepTimers = []; }
 // a tracer cell that belongs to the CURRENT journey — a clean-up of an old grain must never
 // touch it (the next grain is often emitted at the same Source within ~200ms)
@@ -554,10 +555,24 @@ function release() {
 	trc = null;
 	sweepLater(() => { const f = findTracer(at.x, at.y, 60, 0, isCurrent); if (f) { at.x = f.x; at.y = f.y; const real = realOf.get(f.t) !== undefined ? realOf.get(f.t) : orig; safe(() => api.elements.replaceAtCell(f.x, f.y, real)); } });
 }
+// delete a tracer cell - but only if it STILL holds a tracer when the sim is parked (an
+// ordinary grain can move into the cell first). With api.world.mutate the check and the
+// delete happen together and `then(removed)` says what happened; otherwise the game's
+// removeAtCellWhenIdle (same cell id required) or removeAtCell is queued unconfirmed.
+// Returns true when the outcome will be reported through `then`, false when only queued.
+function removeTracerAt(x, y, then) {
+	const el = api.elements;
+	if (typeof safe(() => api.world.mutate) === "function") {
+		api.world.mutate((wr) => safe(() => { const t = el.getResolvedTypeAtCell(x, y); const hit = t !== null && t !== undefined && tracerTypes.has(t); if (hit) wr.elements.removeAtCell(x, y); if (then) then(hit); }));
+		return true;
+	}
+	if (typeof el.removeAtCellWhenIdle === "function") el.removeAtCellWhenIdle(x, y); else el.removeAtCell(x, y);
+	return false;
+}
 // the screensaver is over: just delete our grain (no need to give it back)
 function removeNear(x, y) {
 	const at = { x: x, y: y };
-	sweepLater(() => { let f, n = 0; while ((f = findTracer(at.x, at.y, 60)) && n++ < 8) { at.x = f.x; at.y = f.y; safe(() => api.elements.removeAtCell(f.x, f.y)); } });
+	sweepLater(() => { let f, n = 0; while ((f = findTracer(at.x, at.y, 60)) && n++ < 8) { at.x = f.x; at.y = f.y; safe(() => removeTracerAt(f.x, f.y)); } });
 }
 function discard() {
 	if (!trc) return;
@@ -931,14 +946,15 @@ function sweepTracers() {
 // taken mid-journey can leave some behind, anywhere. On every world load and after each
 // run the whole map is read - a slice per tick, so no frame stalls (~30s for 14.7M
 // cells) - and every cell holding a tracer type is emptied. Aborted if a run starts.
-let mapSweep = null;   // { W, total, cursor, found, why }
+let mapSweep = null;   // { W, total, cursor, found, why, queued, pending, errs, wait }
 const MAP_SWEEP_BUDGET = 25000;   // cells per 50ms tick
+const MAP_SWEEP_MAX_ERRS = 100;   // consecutive failed slices before the sweep gives up
 function startMapSweep(why) {
 	if (!setting("enabled", true) || !inWorld() || active || !tracerTypes.size) return false;
 	const d = safe(() => api.world.getDimensions()) || {};
 	const W = d.widthCells | 0, H = d.heightCells | 0;
 	if (W <= 0 || H <= 0) return false;
-	mapSweep = { W, total: W * H, cursor: 0, found: 0, why };
+	mapSweep = { W, total: W * H, cursor: 0, found: 0, why, queued: false, pending: 0, errs: 0, wait: 0 };
 	return true;
 }
 setInterval(() => {
@@ -949,15 +965,25 @@ setInterval(() => {
 		while (s.cursor < s.total && n < MAP_SWEEP_BUDGET) {
 			const cx = s.cursor % s.W, cy = (s.cursor / s.W) | 0;
 			const t = el.getResolvedTypeAtCell(cx, cy);
-			if (t !== null && t !== undefined && tracerTypes.has(t)) { el.removeAtCellWhenIdle(cx, cy); s.found++; }
+			if (t !== null && t !== undefined && tracerTypes.has(t)) {
+				// found is only stepped when the delete really happens (a moving tracer is skipped)
+				if (removeTracerAt(cx, cy, (removed) => { if (removed) s.found++; s.pending--; })) s.pending++; else { s.found++; s.queued = true; }
+			}
 			s.cursor++; n++;
 		}
-	} catch (e) { s.cursor++; }
+		s.errs = 0;
+	} catch (e) {
+		s.cursor++;
+		if (++s.errs >= MAP_SWEEP_MAX_ERRS) { mapSweep = null; console.log("[" + MOD_ID + "] map sweep (" + s.why + ") aborted at cell " + s.cursor + ": " + (e && e.message ? e.message : e)); }
+		return;
+	}
 	if (s.cursor >= s.total) {
+		if (s.pending > 0 && s.wait++ < 40) return;   // let the last slice's deletes land (up to 2s)
 		mapSweep = null;
+		const verb = s.queued ? "queued" : "removed";
 		const what = s.found + " stray tracer grain" + (s.found === 1 ? "" : "s");
-		if (s.found) { logEvt("map-sweep", { removed: s.found, why: s.why }); track("removed " + what + " from the map (" + s.why + ")", true); safe(() => api.ui.toast("Screensaver: removed " + what + " from the map")); }
-		console.log("[" + MOD_ID + "] map sweep (" + s.why + "): " + what + " removed");
+		if (s.found) { logEvt("map-sweep", { [verb]: s.found, why: s.why }); track(verb + " " + what + " from the map (" + s.why + ")", true); safe(() => api.ui.toast("Screensaver: " + verb + " " + what + " from the map")); }
+		console.log("[" + MOD_ID + "] map sweep (" + s.why + "): " + what + " " + verb);
 	}
 }, 50);
 
@@ -1271,7 +1297,8 @@ safe(() => { window.__brandonScreensaver = {
 	isActive: () => active,
 	exportLog: () => exportLog(),
 	logSize: () => tlog.length,
-	sweepMap: () => startMapSweep("hook"),   // remove every tracer grain on the map (false = already running / not in a world)
+	sweepMap: () => startMapSweep("hook"),   // remove every tracer grain on the map; (re)starts from cell 0 (false = not in a world / a run is active)
+	isSweeping: () => !!mapSweep,   // the Sandbox Loop eases its census off while a sweep runs
 	stop: () => stop("hook"),
 	// returns a short status string so the Sandbox Loop button can say what happened
 	start: () => {
@@ -1379,7 +1406,7 @@ if (h) { safe(() => api.ui.inject("brandon-screensaver-pill", Pill)); setInterva
 
 // Teach the copies after the game's content (and other mods) have registered their recipes;
 // look again for a while, since some mods add recipes late. Only new or changed rules are sent.
-safe(() => api.events.on("game:ready", () => { indexBelts(true); safe(armCloneReactions); setTimeout(() => startMapSweep("world load"), 4000); }));
+safe(() => api.events.on("game:ready", () => { indexBelts(true); safe(armCloneReactions); applyCloneDefs(); setTimeout(() => startMapSweep("world load"), 4000); }));
 for (const ms of [3000, 9000, 20000, 45000]) setTimeout(() => safe(() => { if (inWorld()) armCloneReactions(); }), ms);
 setInterval(() => safe(() => { if (inWorld() && Date.now() - lastArmAt > 60000) armCloneReactions(); }), 15000);
 setTimeout(() => safe(() => indexBelts(true)), 8000);
