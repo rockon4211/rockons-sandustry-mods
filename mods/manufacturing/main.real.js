@@ -210,7 +210,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.15.5 running"));
+		safe(() => api.ui.toast("Manufacturing v0.15.6 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -847,9 +847,17 @@ function mk3Elements() {
 function mk3Tabs() { const MT = safe(() => sandkit.enums.MatterType) || {}; return { solid: [MT.Solid, MT.Powder, MT.Wisp, MT.Slushy], liquid: [MT.Liquid], gas: [MT.Gas] }; }
 // every Mk.3 joined to the one at x,y (same type, same setting) - the game's row rule
 const mk3Key = (s) => { const f = s.filter || {}; return [s.type, f.mode, asList(f.elementType).slice().sort((a, b) => a - b).join(","), f.affectsLiquid ? 1 : 0, f.affectsGas ? 1 : 0].join("_"); };
+// The Mk.2 filter is the same filter at the slower speed, so the panel and its labels treat
+// both kinds as one family: a Mk.2 row can be opened and edited here too
+const MK2_IDS = new Set(["filterRightMk2", "filterLeftMk2"]);
+const isMk3Type = (t) => t === MK3_R || t === MK3_L;
+const isFamilyType = (t) => isMk3Type(t) || MK2_IDS.has(t);
+const kindOf = (t) => isMk3Type(t) ? "Mk.3" : "Mk.2";
+// is one of the game's own filters the active structure? (then the game draws its labels)
+const gameFilterInHand = () => MK2_IDS.has(safe(() => sandkit.state.session.building.activeStructureType));
 function mk3Row(x, y) {
 	const at = (cx, cy) => safe(() => api.structures.getAtCell(cx, cy));
-	const s0 = at(x, y); if (!s0 || (s0.type !== MK3_R && s0.type !== MK3_L)) return null;
+	const s0 = at(x, y); if (!s0 || !isFamilyType(s0.type)) return null;
 	const k = mk3Key(s0), N = 4, same = (s) => !!s && s.type === s0.type && s.y === s0.y && mk3Key(s) === k;
 	let x0 = s0.x; while (x0 - N >= 0 && same(at(x0 - N, s0.y))) x0 -= N;
 	const members = []; for (let cx = x0; members.length < 4096; cx += N) { const s = at(cx, s0.y); if (!same(s)) break; members.push(s); }
@@ -865,8 +873,18 @@ function mk3Select(x, y) {
 function mk3Cancel() { mk3.sel = null; mk3.draft = null; mk3.open = false; mk3Refresh(); }
 function mk3Apply() {
 	const row = mk3.sel, d = mk3.draft; if (!row || !d) return mk3Cancel();
-	for (const s of row.members) s.filter = Object.assign({}, s.filter || { mode: "allow" }, { mode: d.mode || "allow", elementType: asList(d.elementType) });
-	safe(() => sandkit.engine.api.structures.updateMany(sandkit.engine.state, row.members, { propagateToWorkers: true }));
+	const mode = d.mode || "allow", types = asList(d.elementType);
+	// a Mk.2 row goes through the game's own editor (select → draft → apply): only its apply
+	// bumps the revision the game's labels overlay redraws on
+	let done = false;
+	if (MK2_IDS.has(row.type)) {
+		const ed = safe(() => sandkit.engine.api.filterGroupEditor), st = safe(() => sandkit.engine.state);
+		done = !!(ed && safe(() => ed.selectAt(st, row.x, row.y, { toggle: false }), false) && safe(() => ed.setDraft(st, { mode, elementType: types }), false) && safe(() => ed.apply(st), false));
+	}
+	if (!done) {
+		for (const s of row.members) s.filter = Object.assign({}, s.filter || { mode: "allow" }, { mode, elementType: types.slice() });
+		safe(() => sandkit.engine.api.structures.updateMany(sandkit.engine.state, row.members, { propagateToWorkers: true }));
+	}
 	mk3Cancel();
 }
 // what a new Mk.3 would get: the row draft while editing, else the shared default. A Mk.3
@@ -915,7 +933,7 @@ function FilterMk3Panel() {
 		src ? hM("span", { style: { width: "20px", height: "20px", backgroundImage: `url(${src})`, backgroundSize: "80px 20px", backgroundPosition: "0 0", imageRendering: "pixelated" } }) : null);
 	const title = hM("div", { className: "flex items-center gap-2" }, icon,
 		hM("span", { className: "text-white text-xs font-semibold" }, name),
-		editing ? hM("span", { className: "text-[10px] text-[#ffe700]" }, tr("ui|filter|editing", null, "editing")) : null);
+		editing ? hM("span", { className: "text-[10px] text-[#ffe700]" }, tr("ui|filter|editing", null, "editing") + " · Filter " + kindOf(mk3.sel.type) + " ×" + mk3.sel.members.length) : null);
 	const list = hM("div", { className: "flex flex-wrap items-center gap-x-2 gap-y-1" }, chosen.length ? chosen.map((e, i) => hM("div", { key: e.id, className: "flex items-center gap-2" },
 		i > 0 ? hM("span", { className: "text-slate-500" }, tr("ui|tooltip|filterSeparator", null, "/")) : null,
 		hM("span", { className: "w-3 h-3 flex-shrink-0", style: { backgroundColor: e.color, boxShadow: `0 0 6px ${e.color}80` } }),
@@ -977,7 +995,9 @@ const overlayOn = () => safe(() => sandkit.state.store.options.showFilterOverlay
 // Clicking a label opens that row in the panel.
 function mk3Rows() {
 	const all = [];
-	for (const id of [MK3_R, MK3_L]) safe(() => api.structures.forEachOfType(id, (s) => { if (typeof s.x === "number") all.push(s); }));
+	// Mk.2 rows too - but not while one of the game's filters is in hand, when the game draws them itself
+	const ids = gameFilterInHand() ? [MK3_R, MK3_L] : [MK3_R, MK3_L, "filterRightMk2", "filterLeftMk2"];
+	for (const id of ids) safe(() => api.structures.forEachOfType(id, (s) => { if (typeof s.x === "number") all.push(s); }));
 	const groups = new Map();
 	for (const s of all) { const k = s.y + "_" + mk3Key(s); let g = groups.get(k); if (!g) { g = []; groups.set(k, g); } g.push(s); }
 	const rows = [];
@@ -985,7 +1005,7 @@ function mk3Rows() {
 		g.sort((a, b) => a.x - b.x);
 		let run = [];
 		const flush = () => { if (!run.length) return; const f = run[0].filter || {};
-			rows.push({ key: run[0].type + "_" + run[0].x + "_" + run[0].y, x: run[0].x, y: run[0].y, x1: run[run.length - 1].x + 4, count: run.length, mode: f.mode === "block" ? "block" : "allow", types: asList(f.elementType) }); run = []; };
+			rows.push({ key: run[0].type + "_" + run[0].x + "_" + run[0].y, type: run[0].type, x: run[0].x, y: run[0].y, x1: run[run.length - 1].x + 4, count: run.length, mode: f.mode === "block" ? "block" : "allow", types: asList(f.elementType) }); run = []; };
 		for (const s of g) { if (run.length && s.x !== run[run.length - 1].x + 4) flush(); run.push(s); }
 		flush();
 	}
@@ -999,7 +1019,8 @@ function FilterMk3Overlay() {
 		let raf = 0, lastRows = 0, shown = false, lastSig = null;
 		const frame = () => {
 			raf = requestAnimationFrame(frame);
-			const on = mk3Ready && isEnabled() && inGame() && overlayOn() && (mk3.sel || mk3Selected());
+			// shown with a Mk.3 OR a Mk.2 in hand (the Mk.3 rows beside the game's own Mk.2 labels), or while editing
+			const on = mk3Ready && isEnabled() && inGame() && overlayOn() && (mk3.sel || mk3Selected() || gameFilterInHand());
 			const el = box.current; if (!el) return;
 			if (!on) { if (shown) { el.style.display = "none"; shown = false; } return; }
 			if (!shown) { el.style.display = ""; shown = true; }
@@ -1035,7 +1056,7 @@ function FilterMk3Overlay() {
 				r.types.map((t) => { const c = colorOfType(t); return hM("span", { key: t, style: { width: "8px", height: "8px", background: c, boxShadow: "0 0 4px " + c, flexShrink: 0 } }); }),
 				hM("span", null, r.types.length ? r.types.map((t) => safe(() => api.elements.getNameByType(t), null) || ("type " + t)).join(" / ") : tr("ui|filterOverlay|none", null, "none")),
 				hM("span", { style: { color: r.mode === "allow" ? "rgb(30,255,0)" : "rgb(255,77,21)", fontWeight: 700 } }, r.mode === "allow" ? "✓" : "✕"),
-				r.count > 1 ? hM("span", { style: { color: "#94a3b8" } }, "×" + r.count) : null))));
+				hM("span", { style: { color: "#94a3b8" } }, kindOf(r.type) + (r.count > 1 ? " ×" + r.count : ""))))));
 }
 if (hM) {
 	safe(() => api.ui.inject("brandon-filter-mk3-overlay", () => hM(FilterMk3Overlay)));

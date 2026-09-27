@@ -75,7 +75,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   is left alone and only real deletes are counted in the `map-sweep` log event; ~100
   consecutive failed slices abort the sweep instead of looping; `isSweeping()` is exposed
   so the Sandbox Loop's census can yield to it.
-- **Manufacturing** `brandon.manufacturing` v0.15.5 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.15.6 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.2 (F10 quick reload).
@@ -170,6 +170,12 @@ and, since 0.15.3, its own overlay: the game draws labels only for its own filte
 Mk.3 row while a Mk.3 is in hand / edited and the switch is on, positioned per frame with the
 game's mapping above; clicking a label opens the row. Saves that researched the node before
 0.14.0 get the building unlocked on load. 0.14.0 confirmed in game: the building shows up.
+0.15.6: the Mk.2 is treated as the same filter at the slower speed — with a Mk.3 in hand the
+overlay also draws Mk.2 rows (not while a game filter is in hand: the game draws those), a Mk.2
+label opens that row in the Mk.3 panel, and its Apply goes through the game's editor (selectAt →
+setDraft → apply, so the game's own labels redraw); with a Mk.2 in hand the overlay draws the
+Mk.3 rows beside the game's labels. Labels and the editing tag name the kind (Mk.2 / Mk.3).
+
 0.15.x in game: the panel and the labels overlay were confirmed on 2026-09-25 (with Improved
 Filters 0.2.6); the belt animation and the Mk.3's actual belt speed are still unconfirmed.
 0.15.5 (2026-09-27): a Mk.3 picked up with the Copier shows its copied filter in the panel
