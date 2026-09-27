@@ -20,7 +20,7 @@
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.2.7";
+const BUILD = "0.2.8";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -243,7 +243,16 @@ function doCopyRow(row) {
 	safe(() => api.ui.toast("Copied filter settings: " + describe(clip)));
 }
 function doPasteRow(row) {
-	const ok = writeRow(row.members);
+	// A Mk.2 row goes through the game's own editor (select → draft → apply): only its apply
+	// bumps the revision the game's labels overlay and tooltips redraw on, so a direct write
+	// left the old labels standing. A Mk.3 row is written directly (its overlay re-reads).
+	let ok = false;
+	if (VAN.has(row.type)) {
+		const ed = vanEditor(), st = engine().state, c = cloneFilter(clip);
+		ok = !!(ed && safe(() => ed.selectAt(st, row.x, row.y, { toggle: false }), false) && safe(() => ed.setDraft(st, { mode: c.mode || "allow", elementType: c.elementType }), false) && safe(() => ed.apply(st), false));
+	}
+	if (!ok) ok = writeRow(row.members);
+	if (ok && MK3.has(row.type)) { const k = mk3(); if (k) safe(() => k.refresh()); }
 	msg = ok ? "pasted onto " + kindName(row.type) + " row (" + row.members.length + "): " + describe(clip) : "couldn't write the row";
 	if (ok) safe(() => api.ui.toast("Pasted filter settings onto " + row.members.length + " " + kindName(row.type) + (row.members.length === 1 ? "" : "s")));
 }
