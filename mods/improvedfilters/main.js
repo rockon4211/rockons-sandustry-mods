@@ -2,13 +2,14 @@
 //
 // A filter's settings are the `filter` object the game keeps on the structure
 // ({mode: allow|block, elementType: one number or a list, affectsLiquid, affectsGas,
-// density}). Every kind of filter carries the same object - Mk.1, Mk.2, the Mk.3 from
-// the Manufacturing mod, and the filter walls - so settings copied from one kind fit
+// density}). Every kind of filter carries the same object - Mk.2, the Mk.3 from the
+// Manufacturing mod, and the Mk.2 filter wall - so settings copied from one kind fit
 // any other. (Shakers, growers and critter fences carry a `filter` too, for their own
-// purposes; only the real filter kinds count here.)
+// purposes; only the real filter kinds count here. The Mk.1 filter and its wall are
+// left alone since 0.2.5.)
 //
 // The clipboard shows up as a strip in the same band as the filter menu, whenever a
-// filter menu is up - the game's (a Mk.1 / Mk.2 filter in hand, or a row selected in
+// filter menu is up - the game's (a Mk.2 filter in hand, or a Mk.2 row selected in
 // its editor) or the Mk.3's. COPY takes what that menu is showing (the row being
 // edited, else the setting new filters take); PASTE puts the clipboard into it (the
 // row - through the game's own editor, setDraft + apply - or store.options.defaultFilter,
@@ -19,7 +20,7 @@
 // game gives a material - those differ between PCs and mod sets.
 const api = sandkit.api;
 const MOD_ID = "brandon.improvedfilters";
-const BUILD = "0.2.6";
+const BUILD = "0.2.7";
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
 const isEnabled = () => setting("enabled", true);
@@ -50,24 +51,36 @@ function cloneFilter(f) {
 	if (Array.isArray(o.speedExemptElementTypes)) o.speedExemptElementTypes = o.speedExemptElementTypes.slice();
 	return o;
 }
+// The liquid / gas flags are only ever stored or written when they are true: a row's
+// own `affectsLiquid: true` must never be overwritten with a false the clipboard made up
+// (the game's own editor writes only mode + elementType onto a row).
 function saveClip() {
 	if (!clip) { safe(() => window.localStorage.removeItem(CLIP_KEY)); return; }
 	const ids = asList(clip.elementType).map(eidOfType).filter(Boolean);
 	const exempt = asList(clip.speedExemptElementTypes).map(eidOfType).filter(Boolean);
-	safe(() => window.localStorage.setItem(CLIP_KEY, JSON.stringify({ mode: clip.mode || "allow", ids, single: !Array.isArray(clip.elementType), affectsLiquid: !!clip.affectsLiquid, affectsGas: !!clip.affectsGas, density: clip.density, exempt })));
+	const o = { mode: clip.mode || "allow", ids, single: !Array.isArray(clip.elementType) };
+	if (clip.affectsLiquid) o.affectsLiquid = true;
+	if (clip.affectsGas) o.affectsGas = true;
+	if (typeof clip.density === "number") o.density = clip.density;
+	if (exempt.length) o.exempt = exempt;
+	safe(() => window.localStorage.setItem(CLIP_KEY, JSON.stringify(o)));
 }
-function loadClip() {
-	const raw = safe(() => window.localStorage.getItem(CLIP_KEY)), o = raw && safe(() => JSON.parse(raw));
-	if (!o || !Array.isArray(o.ids)) return;
+function loadClip() {   // true when the stored clip was resolved (or there is nothing to resolve)
+	const raw = safe(() => window.localStorage.getItem(CLIP_KEY)); if (!raw) return true;
+	const o = safe(() => JSON.parse(raw));
+	if (!o || !Array.isArray(o.ids)) return true;
 	const types = o.ids.map(typeOfEid).filter((t) => typeof t === "number");   // a material from a mod that isn't loaded is dropped
-	if (!types.length && o.ids.length) return;
-	clip = { mode: o.mode === "block" ? "block" : "allow", elementType: o.single && types.length === 1 ? types[0] : types, affectsLiquid: !!o.affectsLiquid, affectsGas: !!o.affectsGas };
+	if (!types.length && o.ids.length) return false;
+	clip = { mode: o.mode === "block" ? "block" : "allow", elementType: o.single && types.length === 1 ? types[0] : types };
+	if (o.affectsLiquid) clip.affectsLiquid = true;
+	if (o.affectsGas) clip.affectsGas = true;
 	if (typeof o.density === "number") clip.density = o.density;
 	const ex = (o.exempt || []).map(typeOfEid).filter((t) => typeof t === "number"); if (ex.length) clip.speedExemptElementTypes = ex;
+	return true;
 }
 // materials only resolve once the world has registered them: try until they do
 let clipLoaded = false;
-setInterval(() => { if (clipLoaded || !inWorld()) return; loadClip(); clipLoaded = true; repaint(); }, 1500);
+setInterval(() => { if (clipLoaded || !inWorld()) return; if (loadClip()) { clipLoaded = true; repaint(); } }, 1500);
 
 // --- filters on the map ------------------------------------------------------------
 const ST = safe(() => sandkit.enums.StructureType) || {};
@@ -77,7 +90,11 @@ const VAN = new Set(["filterLeftMk2", "filterRightMk2", "filterWallMk2"]);
 const MK3 = new Set(["filterLeftMk3", "filterRightMk3"]);
 const WALLS = new Set(["filterWall", "filterWallMk2"]);
 const isFilter = (s) => !!s && (VAN.has(s.type) || MK3.has(s.type));   // real filter kinds only
-const filterKey = (s) => { const f = s.filter || {}; return [s.type, f.mode || "allow", asList(f.elementType).slice().sort((a, b) => a - b).join(","), f.affectsLiquid ? 1 : 0, f.affectsGas ? 1 : 0, f.density || 0].join("_"); };
+// the game's own row key (its `Ak`): type, mode, whether elementType is set, the sorted
+// materials, density, the liquid / gas flags, the sorted speed-exempt list and the
+// wall's pass-through flag - so a row here is exactly a row in the game's editor
+const sortedList = (v) => [...new Set(asList(v))].sort((a, b) => a - b).join(",");
+const filterKey = (s) => { const f = s.filter; if (!f) return "none_" + s.type; return [s.type, f.mode, f.elementType !== undefined ? 1 : 0, sortedList(f.elementType), f.density !== undefined && f.density !== null ? f.density : "", f.affectsLiquid ? 1 : 0, f.affectsGas ? 1 : 0, sortedList(f.speedExemptElementTypes), s.data && s.data.filterPassThrough ? 1 : 0].join("_"); };
 // the whole row joined to the filter at x,y: same kind, same setting, touching - the
 // game's own rule for its row editor (walls join vertically)
 function rowAt(x, y) {
@@ -93,8 +110,9 @@ function rowAt(x, y) {
 }
 const kindName = (t) => t === ST.FilterLeft || t === ST.FilterRight ? "Filter" : t === "filterLeftMk2" || t === "filterRightMk2" ? "Filter Mk.2" : MK3.has(t) ? "Filter Mk.3" : t === "filterWall" ? "Filter wall" : t === "filterWallMk2" ? "Filter wall Mk.2" : String(t);
 function describe(f) { const l = asList(f && f.elementType); return (l.length ? l.map(nameOf).join(" / ") : "no material") + " · " + ((f && f.mode) === "block" ? "block" : "allow"); }
-function writeRow(members) {
-	for (const s of members) s.filter = Object.assign({}, s.filter || {}, cloneFilter(clip));
+function writeRow(members) {   // only mode + elementType, exactly as the game's editor apply writes a row
+	const c = cloneFilter(clip), mode = c.mode || "allow";
+	for (const s of members) s.filter = Object.assign({}, s.filter || { mode }, { mode, elementType: c.elementType });
 	return safe(() => { engine().api.structures.updateMany(engine().state, members, { propagateToWorkers: true }); return true; }, false);
 }
 
@@ -124,7 +142,8 @@ function menuFilter(which) {   // what the menu is showing right now
 }
 function setNewFilters() {   // what every new Mk.2 / Mk.3 takes - the setting the filter panels edit
 	if (!clip) return false;
-	const ok = safe(() => { const st = state(); st.store.options.defaultFilter = cloneFilter(clip);
+	const df = cloneFilter(clip); if (!df.affectsLiquid) delete df.affectsLiquid; if (!df.affectsGas) delete df.affectsGas;   // flags only when true
+	const ok = safe(() => { const st = state(); st.store.options.defaultFilter = df;
 		const cd = st.session.action.customData; if (cd && cd.copiedStructure && cd.copiedStructure.filter) cd.copiedStructure.filter = undefined;   // as the panel does: a copied structure's own filter no longer applies
 		return true; }, false);
 	const CID = safe(() => sandkit.enums.ComponentId) || {};
@@ -133,7 +152,6 @@ function setNewFilters() {   // what every new Mk.2 / Mk.3 takes - the setting t
 	const k = mk3(); if (k) safe(() => k.refresh());
 	return ok;
 }
-function newFiltersMatch() { const df = safe(() => state().store.options.defaultFilter); return !!clip && !!df && filterKey({ type: 0, filter: df }) === filterKey({ type: 0, filter: clip }); }
 let msg = "";
 function copyFromMenu(which) {
 	const f = menuFilter(which); if (!f) { msg = "nothing to copy"; return; }
@@ -195,14 +213,22 @@ function unstash() {
 	uiHotbar();
 }
 function arm(m) {
-	if (m && !mode) stash();
+	// While the game is editing a Mk.2 row nothing is in hand (its editor already cancelled
+	// placement) and clearing activeStructureType would make it drop the row - so no stash
+	if (m && !mode && menuUp() !== "van-row") stash();
 	mode = m;
 	if (cursorStyle) { safe(() => cursorStyle.remove()); cursorStyle = null; }
 	if (m) safe(() => { cursorStyle = document.createElement("style"); cursorStyle.textContent = "*{cursor:" + (m === "copy" ? "copy" : "cell") + " !important}"; document.head.appendChild(cursorStyle); });
 	if (m) msg = m === "copy" ? "click a filter (or its label) to copy its settings — Esc cancels" : "click a filter (or its label): its whole row gets the clipboard — Esc cancels";
-	if (!m) unstash();
+	if (!m) { unstash(); wasUp = menuUp(); }   // the row may have closed meanwhile: don't keep saying "this row"
 	repaint();
 }
+function disarmHard() {   // a new world: nothing is armed, held or swallowed any more
+	mode = null; held = null; swallowUntil = 0;
+	if (cursorStyle) { safe(() => cursorStyle.remove()); cursorStyle = null; }
+	repaint();
+}
+safe(() => api.events.on("game:ready", disarmHard));
 function pickRow(r) {   // a label was clicked
 	const m = mode; if (!m) return;
 	const row = rowAt(r.x, r.y); arm(null);
@@ -239,9 +265,9 @@ safe(() => {
 	// so a handler waiting on mousedown would never run.
 	window.addEventListener("pointerdown", (e) => {
 		if (!mode || ours(e)) return;
-		if (e.button === 2) { eat(e); swallowUntil = Date.now() + 400; arm(null); msg = "cancelled"; repaint(); return; }
+		eat(e); swallowUntil = Date.now() + 400;   // every button: its up / click is swallowed below, so its down must be too
+		if (e.button === 2) { arm(null); msg = "cancelled"; repaint(); return; }
 		if (e.button !== 0) return;
-		eat(e); swallowUntil = Date.now() + 400;
 		const c = cellFromClient(e.clientX, e.clientY);
 		const row = c ? rowAt(c.x, c.y) : null;
 		const m = mode; arm(null);
@@ -297,11 +323,19 @@ function Strip() {
 // --- while a pick is armed: the game's own labels, for every filter kind ----------------
 // The game's labels overlay draws only while one of ITS filters is in hand, and the hand
 // is empty during a pick - so the strip draws the same thing itself: a box and a label
-// (materials, allow/block, count) on every filter row of every kind, placed the way the
-// game places its own (screen = canvas origin + (world px - camera) * zoom * scale),
-// refreshed every frame; the rows are re-read twice a second. Clicking a label picks it.
+// (materials, allow/block, count) on every filter row of every kind that is in view,
+// placed the way the game places its own (screen = canvas origin + (world px - camera)
+// * zoom * scale), refreshed every frame; the rows are re-read twice a second (rows
+// off screen are skipped then, with a margin for the label). Clicking a label picks it.
+function viewCells() {   // the cells the canvas shows, plus a margin, in world cells
+	return safe(() => {
+		const ses = state().session, M = ses.rendering.canvas.getBoundingClientRect();
+		const I = ((ses.view && ses.view.zoom) || 1) * (ses.scale || 1), pad = 240 / I;
+		return { x0: (ses.camera.x - pad) / 4, y0: (ses.camera.y - pad) / 4, x1: (ses.camera.x + M.width / I + pad) / 4, y1: (ses.camera.y + M.height / I + pad) / 4 };
+	}) || null;
+}
 function allRows() {
-	const N = 4, rows = [];
+	const N = 4, rows = [], V = viewCells();
 	for (const id of [...VAN, ...MK3]) {
 		const list = []; safe(() => api.structures.forEachOfType(id, (s) => { if (typeof s.x === "number") list.push(s); }));
 		if (!list.length) continue;
@@ -311,6 +345,8 @@ function allRows() {
 			g.sort(vert ? (a, b) => a.y - b.y : (a, b) => a.x - b.x);
 			let run = [];
 			const flush = () => { if (!run.length) return; const s0 = run[0], f = s0.filter || {};
+				const w = vert ? N : run.length * N, hh = vert ? run.length * N : N;
+				if (V && (s0.x + w < V.x0 || s0.x > V.x1 || s0.y + hh < V.y0 || s0.y > V.y1)) { run = []; return; }   // entirely off screen
 				rows.push({ key: String(s0.type) + "_" + s0.x + "_" + s0.y, type: s0.type, x: s0.x, y: s0.y, w: vert ? N : run.length * N, hh: vert ? run.length * N : N, count: run.length, mode: f.mode === "block" ? "block" : "allow", types: asList(f.elementType) }); run = []; };
 			for (const s of g) { if (run.length) { const p = run[run.length - 1]; if (vert ? s.y !== p.y + N : s.x !== p.x + N) flush(); } run.push(s); }
 			flush();
