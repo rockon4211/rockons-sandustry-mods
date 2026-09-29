@@ -22,7 +22,7 @@ const recipeTable = { contacts: [], shakers: [], kineticPresses: [], growers: []
 const cells = new Map(); const K = (x, y) => x + "," + y;
 let NOW = 1e9; const RD = Date; global.Date = class extends RD { constructor(...a) { super(...(a.length ? a : [NOW])); } static now() { return NOW; } };
 global.performance = { now: () => NOW };
-const queued = [];
+const queued = [], sharedBufs = {};
 global.sandkit = { api: {
 	elements: { getRegisteredTypes: () => Object.keys(defs).map(Number).concat(Object.keys(regs).map(Number)).sort((a, b) => a - b),
 		getResolvedTypeAtCell: (x, y) => cells.get(K(x, y)) || 0, getInfoAtCell: (x, y) => ({ elementType: cells.get(K(x, y)), isParticle: false }),
@@ -33,6 +33,7 @@ global.sandkit = { api: {
 		removeAtCell: (x, y) => queued.push({ x, y, t: 0 }), isFreeFallingAtCell: () => false, getVelocityAtCell: () => ({ x: 0, y: 0 }) },
 	reactions: { registerContact: (c) => { if (c.inputA === undefined || c.inputB === undefined) throw new Error("bad contact"); contacts.push(c); } },
 	structures: { getAtCell: () => null, forEachOfType: () => {}, getTypeById: () => 5, recipes: { register: (m, r) => recipes.push([m, r]) } },
+	shared: { buffers: { create: (k, o) => (sharedBufs[k] = new Uint8Array(o.length)) } },
 	settings: { get: () => undefined }, scene: { getActive: () => 3 }, ui: { update() {}, inject() {}, toast() {} }, events: { on() {} } },
 	state: { sandkit: { mods: { recipes: recipeTable } }, session: { overrideCamera: false, ui: {}, settings: {}, view: { zoom: 2 }, rendering: { canvas: { width: 1920, height: 1080 } } }, store: { structures: [], player: { x: 0, y: 0 } } },
 	enums: { Scene: { Game: 3, MainMenu: 0 }, ElementType: { Empty: 0 }, ComponentId: {}, MatterType: { Solid: 1, Liquid: 2, Gas: 4, Slushy: 6, Powder: 7, Static: 8, Wisp: 9, Particle: 99 } }, react: null };
@@ -47,6 +48,8 @@ console.log = log;
 
 const C = (id) => M.cloneOf.get(T(id));
 check(M.cloneOf.size > 0, "clones built: " + M.cloneOf.size);
+const tr = sharedBufs.trcreal;
+check(!!tr && tr.length === 256 && tr[C("sand")] === T("sand") && tr[C("wetSand")] === T("wetSand") && tr[T("sand")] === 0, "0.19.0: the trcreal table maps each copy to its real material (and real types to nothing) for worker.js");
 check(!!C("sand") && !!C("wetSand") && !!C("water"), "soil, wet soil and water each have a copy");
 check(C("sand") && regs[C("sand")] && regs[C("sand")].density === defs[T("sand")].density, "the soil copy has soil's density");
 M.active = true; M.armCloneReactions();

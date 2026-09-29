@@ -131,7 +131,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.18.8";
+const BUILD = "0.19.0";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -270,7 +270,16 @@ function cloneDefFor(realType, id, cloneIds) {
 	}
 	dbg.tracers = tracerTypes.size;
 	console.log("[" + MOD_ID + "] tracer copies registered: " + cloneOf.size + " materials" + (cloneSkipped ? " (" + cloneSkipped + " skipped: out of element slots)" : ""));
+	publishRealOf();
 })();
+// 0.19.0: filters see a copy as its real material. The table "copy type -> real type" goes to the
+// simulation threads in a shared buffer ("trcreal", uint8[256]: [copy] = real, 0 = not a copy);
+// worker.js wraps the game's filter-mask check with it. See worker.js for how and why.
+function publishRealOf() {
+	const buf = safe(() => api.shared.buffers.create("trcreal", { type: "uint8", length: 256 }));
+	if (!buf) { console.error("[" + MOD_ID + "] filter override: shared buffer not created - filters will treat copies as their own material"); return; }
+	for (const [copy, real] of realOf) if (copy > 0 && copy < 256 && real > 0 && real < 256) buf[copy] = real;
+}
 // updateDefinition only reaches the render/sim workers once they exist, so re-apply on game:ready
 // (it posts every copy to every worker - not something to repeat from each teaching pass)
 function applyCloneDefs() { for (const [t, def] of cloneDefs) safe(() => api.elements.updateDefinition(t, Object.assign({ nameKey: undefined }, def))); }

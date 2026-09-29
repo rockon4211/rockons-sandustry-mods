@@ -17,7 +17,8 @@ Notes and test harnesses for whoever picks this up next — a person or a new ch
     output picked up, never gold), `sim-filter.js` (loss at the filter section resolved),
     `sim-lost.js` (third loss fires `hotspot`), `sim-mapsweep.js` (0.18.3 whole-map tracer
     sweep, both delete paths, real-delete counting, error abort, `isSweeping()`, every
-    registered element has `showInFilterPicker: false`).
+    registered element has `showInFilterPicker: false`), `sim-trcfilter.js` (0.19.0
+    `worker.js`: filters read a copy as its real material, everything else untouched).
   - Sandbox Loop: `sim-loop.js` (a Source keeps its material by element id across PCs;
     fails against a broken `cfgFor`).
   - Manufacturing: `sim-mk3.js` (Filter Mk.3 from `main.real.js`: placement copies the

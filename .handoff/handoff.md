@@ -63,7 +63,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
 - **Sandbox Loop** `brandon.sandboxloop` v0.4.9 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.18.8 — plays the map when idle and follows one
+- **Screensaver** `brandon.screensaver` v0.19.0 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went. 0.18.2: every tracer
   element (the 5 generic tracers and every clone) is registered with the game's own
   `showInFilterPicker: false`, so no picker lists them - they exist only for the Sandbox
@@ -264,7 +264,7 @@ The panel also carries the Screensaver row: **🌙 START NOW** and a **⤓ log (
 saves the tracer flight recorder. Its companion graph page for history exports is
 `tools/resource-history` in the repo.
 
-## Screensaver v0.18.8 — what it does
+## Screensaver v0.19.0 — what it does
 
 After N minutes without input (or automatically from the main menu, for a Windows "on idle"
 task), it hides the HUD and cursor, goes fullscreen, caps the frame rate, holds a screen wake
@@ -286,6 +286,17 @@ game's own tables (`sandkit.mods.recipes` plus the hard-wired rules):
   **kineticPress** (burnt residue → seed) and **planterBox** growers;
 - **burning**: the copy's `flammable` output points at the product's copy, always
   (residue copy → burnt residue copy, dry amethelis copy → florin copy).
+
+**Filters see a copy as its real material (0.19.0).** A copy is its own element type, so every
+filter sorted it as "not copper" and the followed grain took other paths than the real material
+(Brandon, 2026-09-28). `worker.js` (a new worker entry) wraps the game's filter-mask check in
+each simulation thread: a copy's type is looked up as its real material, everything else gets
+the game's own answer. The table comes from `main.js` in a shared buffer `trcreal` (uint8[256],
+`[copy] = real`, filled right after the copies are registered). Mk.1/Mk.2/Mk.3 filters, walls
+and the shaker's own filter all go through it; nothing is written to saves, structures or the
+filter palette. How it reaches the check: see Game internals → "Filter masks". If a game update
+moves it, the console says `filter override off: <why>` and copies sort as their own type again.
+Not yet seen in game.
 
 **Never gold, main product.** Wherever a step produces gold and something else, the copy
 continues as the something else, and the hand-back search never adopts gold. Where a step
@@ -458,6 +469,24 @@ game build — search the bundle by string literals, not by those names.
 - Icons: the tech tree, build menu and hotbar draw `render.ui.imageName` (size `ui.size`) when a
   structure sets it, else `render.imageName` whole — a spritesheet shows every frame. Give an
   animated structure a one-frame icon image.
+- Filter masks (sim worker, bundle v0.5.6, read 2026-09-28): a structure's `filter` object is
+  compiled on the main thread into a shared palette (`filterPaletteSab`, 20 uint32 per entry:
+  [0] mode 0 allow / 1 block, [1] density (float bits), [2] flags 1 liquid / 2 gas / 4 has list,
+  [3..10] 256-bit material mask, [11..18] speed-exempt mask; max 255 entries, deduplicated by
+  comparing the words — so never edit entries in place, a changed entry stops matching and every
+  new structure appends another). A tile carries the entry id (block access `>>8 & 255`). The
+  sim asks `getFilterConfig(id)`, which returns ONE shared object (`ce`) with plain-property
+  methods `isInElementMask(type)` / `isSpeedExempt(type)`; the decision is "allow: pass if in
+  mask (or no mask)", "block: the reverse", plus liquid/gas flags and density. No mod hook.
+  Reaching it from a worker entry: `self.webpackChunksand_v1.push([[id], {}, r => …])` hands the
+  callback webpack's loader `r` (`r.m` = module factories; `r(id)` returns a loaded module's
+  cached exports). The block-grid module is the one exporting `getFilterConfig`,
+  `getFilterConfigId` and `getOrCreateFilterPaletteEntry` (id 38394 in this build — find it by
+  the names). Mod worker entries run in the same global (the worker mod runtime is itself a
+  chunk on that list). The shaker's own filter is `{mode:"allow", elementType: <shaker outputs,
+  gold by default>}`; growers allow a fixed list. Belt speeds: every belt and filter moves 1 cell
+  per pass (`transport.conveyors.structures.<id>.maxDisplacementCellsPerPass`); a belt carries
+  the whole column above each cell (up to 100, or `maxTransportDistance` for a mod belt).
 - Terrain ids by name: `api.terrains.getTypeById("block")` (Block is built-in id 15); mod
   terrains are numbered by registration order — never hard-code them.
 - Tech: `api.tech.registerNode(id, {nameKey, descriptionKey, cost, currencyType:"gold",
@@ -578,8 +607,9 @@ game build — search the bundle by string literals, not by those names.
 Three Sources: copper at 1788,3028 (1/s) and soil at 1676,3772 and 1440,3144 (3/s each).
 On the belt line at y 2340, x 1968–1987, there are five `filterRightMk2` set to allow only
 Water and Steam. They were briefly suspected of eating resources; Brandon concluded the belt
-just runs faster there. A tracer copy is its own element type, so those filters drop it like
-any disallowed material (`sim-filter.js` checks the tracker handles that cleanly).
+just runs faster there. A tracer copy is its own element type; before Screensaver 0.19.0 those filters dropped it like
+any disallowed material (`sim-filter.js` checks the tracker handles that cleanly); since 0.19.0
+filters read it as its real material.
 An earlier history export showed water running a deficit, cloud climbing about 3,000/min,
 and the gold chain starved (gold, residue, aurixite and auralite all falling).
 
@@ -630,6 +660,13 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   no strip; a paste onto a row writes only mode + elementType so `affectsLiquid: true` stays
   true and false flags are never persisted or written; arming Pick with a row open in the
   game's editor leaves the hand alone, with a Mk.2 in hand it stashes and hands back.
+
+- `sim-trcfilter.js` — Screensaver 0.19.0 `worker.js` against a stand-in of the game's chunk list
+  and block-grid module (same mask layout and decision as the bundle): the bug reproduced without
+  it; with it an allow-copper / block-copper / water / shaker filter treats each copy exactly as
+  its real material, real materials and generic tracers get the game's own answer, the table is
+  live, a second load doesn't stack, a worker without the module stays quiet, a renamed method is
+  reported and left alone. `sim-clone.js` checks `main.js` fills `trcreal`.
 
 They are the only way to test without the game. Run them all:
 `cd .handoff && for s in sim-*.js; do node $s >/dev/null 2>&1 && echo "$s pass" || echo "$s FAIL"; done`
