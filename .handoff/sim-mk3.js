@@ -8,8 +8,8 @@
 //       Array.prototype.includes (in every list its Mk.2 twin is in; every other answer
 //       unchanged), the panel's material pick can't swap a held Mk.3 for a Mk.2, a Mk.3 taken
 //       up opens the panel expanded, and the self-check asks the game's editor to select one;
-//   (c) the manager-worker trigger `brandonFilterMk3Belts` is registered at 166 ms and both
-//       ids are conveyor types;
+//   (c) (0.16.2) the sim grid stores a Mk.3 as a Mk.2 belt (blockGridType) and there is no
+//       Mk.3 trigger or mod conveyor type any more (0.14-0.16.1 had a separate 166 ms one);
 //   (d) the frame:render handler copies conveyorMk2AnimationIndex [0],[1] into `mk3anim`.
 // Run from anywhere:  node .handoff/sim-mk3.js   (exit 1 on any failed check)
 const fs = require("fs"), path = require("path");
@@ -163,15 +163,14 @@ global.requestAnimationFrame = () => 0; global.cancelAnimationFrame = () => {};
 	check(editorOps.join(",") === "getSelection", "…and a row already open in the editor is never disturbed");
 	edBusy = false;
 
-	// --- (c) the belt trigger and the conveyor types ---------------------------------------
-	const trig = triggers.filter((t) => t.id === "brandonFilterMk3Belts");
-	check(trig.length >= 1 && trig[0].st === state, "trigger brandonFilterMk3Belts registered through engine workers.triggers with the engine state");
-	check(trig.length && trig[0].def.interval === 166 && trig[0].def.sequentialRuns === 2, "…interval 166 ms, 2 sequential runs (right then left)");
-	check(trig.length && typeof trig[0].def.callback === "function" && !/MOD_ID|MK3_R|MK3_L|safe\(/.test(trig[0].def.callback.toString()), "…the callback is self-contained (it is sent to the manager worker as text)");
-	check(conveyors.some((c) => c.id === R && c.o.velocity.x === 1) && conveyors.some((c) => c.id === L && c.o.velocity.x === -1), "both ids registered as conveyor types (velocity +1 / -1)");
-	const nT = triggers.length, nC = conveyors.length;
+	// --- (c) moving (0.16.2): the sim grid stores a Mk.3 as a Mk.2 belt ---------------------
+	// blockGridType aliases the grid type, so the game's own Mk.2 belt pass moves it, in the
+	// same sweep as the belts around it. The old separate trigger + mod conveyor type (a second
+	// sweep that let grains through one or two at a time) must be gone, or it would move twice.
+	check(structDefs[R].blockGridType === "conveyorRightMk2" && structDefs[L].blockGridType === "conveyorLeftMk2", "the sim grid sees a right Mk.3 as conveyorRightMk2 and a left one as conveyorLeftMk2");
+	check(structDefs[R].id === R && structDefs[L].id === L, "…while the structure itself keeps its own id (menus, labels, saves)");
 	fire("game:ready");
-	check(triggers.length === nT + 1 && conveyors.length === nC + 2, "game:ready re-sends the trigger and both conveyor types (new worker threads)");
+	check(!triggers.some((t) => t.id === "brandonFilterMk3Belts") && !conveyors.some((c) => c.id === R || c.id === L), "no separate Mk.3 belt trigger and no mod conveyor type (not even after game:ready)");
 
 	// --- (d) frame:render mirrors the Mk.2 belt frame counter ------------------------------
 	const buf = buffers["mk3anim"];

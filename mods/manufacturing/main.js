@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.16.1 running"));
+		safe(() => api.ui.toast("Manufacturing v0.16.2 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -778,32 +778,24 @@ try {
 		categoryKey: "logistics", tooltipHover: { type: "filter" }, variants };
 	// the strip is 4 frames of 18x18, the Mk.2's belt animation; frameBuffer picks the frame
 	const sheet = (index) => mk3Anim ? { frames: 4, frameSize: { width: 18, height: 18 }, frameBuffer: { key: "mk3anim", index } } : { frames: 4, frameSize: { width: 18, height: 18 }, intervalMs: MK3_BELT_MS };
-	api.structures.register(Object.assign({ id: MK3_R, order: 52,
+	// blockGridType: the sim sees a Mk.3 tile as a Mk.2 belt (see "Moving" below); everything
+	// outside the sim grid (menus, labels, saves, the Copier) still sees filterRightMk3
+	api.structures.register(Object.assign({ id: MK3_R, order: 52, blockGridType: "conveyorRightMk2",
 		buildModes: [{ type: "line", directions: ["horizontal"] }, { type: "line", directions: ["vertical"] }],
 		render: { imageName: "brandon_filter_right_mk3", size: { width: 18, height: 18 }, offset: { x: -1, y: -1 }, z: .85, spritesheet: sheet(1), ui: Object.assign({ outline: true, width: "18px", height: "18px" }, mk3Icon ? { imageName: mk3Icon, size: { width: 18, height: 18 } } : null) } }, common));
-	api.structures.register(Object.assign({ id: MK3_L,
+	api.structures.register(Object.assign({ id: MK3_L, blockGridType: "conveyorLeftMk2",
 		render: { imageName: "brandon_filter_left_mk3", size: { width: 18, height: 18 }, offset: { x: -1, y: -1 }, z: .85, spritesheet: sheet(0) } }, common));
 	mk3Ready = true;
 } catch (e) { console.error(`[${MOD_ID}] Filter Mk.3 structures failed to register:`, e); }
-// conveyor behaviour (+ the 166 ms pass). Both only reach worker threads that exist, so
-// they are sent again whenever a world is ready; the manager keeps one trigger per id.
-function armFilterMk3() {
-	if (!mk3Ready) return;
-	safe(() => api.structureBehaviors.registerConveyorType(MK3_R, { velocity: { x: 1, y: 0 } }));
-	safe(() => api.structureBehaviors.registerConveyorType(MK3_L, { velocity: { x: -1, y: 0 } }));
-	const eng = safe(() => sandkit.engine);
-	// the callback is sent to the manager worker as TEXT: it must not use anything from this file
-	safe(() => eng.api.workers.triggers.register(eng.state, "brandonFilterMk3Belts", {
-		interval: MK3_BELT_MS, sequentialRuns: 2, extra: { runOrder: ["right", "left"] },
-		callback: async function (e, t) {
-			const n = e.sandkit.getApi(), r = n.workers.messages.getIdByName("RunConveyorBelts");
-			if (t.extra.runOrder[t.runCount - 1] !== "right") await n.workers.messages.postToEachThreadColumnSequentiallyAwait(e, [r, "filterLeftMk3"]);
-			else await n.workers.messages.postToEachThreadColumnSequentiallyAwait(e, [r, "filterRightMk3"], true);
-		},
-	}));
-}
-armFilterMk3();
-safe(() => api.events.on("game:ready", () => safe(armFilterMk3)));
+// Moving: 0.16.2 - the simulation grid stores a Mk.3 tile AS a Mk.2 belt tile (blockGridType,
+// in the register calls above), so the game's own Mk.2 belt pass moves it: same speed, same
+// schedule, and - what mattered - the same sweep as the belts around it, column by column,
+// downstream first. Its filter object still sorts (the grid's filter bits come from the
+// structure's `filter`, not its type) - a Mk.2 Filter that moves like a Mk.2 belt.
+// Until 0.16.1 it was a mod conveyor type moved by its own 166 ms trigger
+// ("brandonFilterMk3Belts"): a separate sweep, so whenever the belt's sweep ran first the
+// belt's front column found the Mk.3's first cell still full - grains queued in front of it
+// and went through one or two at a time.
 // a new Mk.3 takes the Mk.2 Filter panel's current setting (the game's own default filter)
 safe(() => api.events.on("building:placed", (p) => {
 	const s = p && p.structure;

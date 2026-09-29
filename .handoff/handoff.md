@@ -77,7 +77,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   is left alone and only real deletes are counted in the `map-sweep` log event; ~100
   consecutive failed slices abort the sweep instead of looping; `isSweeping()` is exposed
   so the Sandbox Loop's census can yield to it.
-- **Manufacturing** `brandon.manufacturing` v0.16.1 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.16.2 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.2 (F10 quick reload).
@@ -181,6 +181,20 @@ How it got here: 0.15.0 cloned the panel (the lists looked unreachable); 0.15.3 
 labels overlay; 0.15.6 let it edit Mk.2 rows; 0.15.7–0.15.8 chased behaviour differences
 (rows that never closed, starting minimized, placing while editing). Each clone was a place
 to differ — joining the lists removed all of them.
+
+**0.16.2 (2026-09-28): the Mk.3 moves as a Mk.2 belt.** Brandon's side-by-side screenshot: grains
+queued in front of the Mk.3 and went through one or two at a time, while the Mk.2 Filter carried
+its whole heap. Per step the two were identical (1 cell, whole column); the difference was the
+SWEEP. The game moves belts in sweeps, column by column, downstream first, and puts the Mk.1
+belts, the Mk.2 filters and (when both passes are due) the Mk.2 belts in one sweep, so a stream
+moves as a block. The Mk.3 had its own trigger and sweep; whenever the belt's sweep ran first, the
+belt's front column found the Mk.3's first cell still full and stalled. Now both Mk.3s register
+with `blockGridType: "conveyorRightMk2"` / `"conveyorLeftMk2"` (the engine's alias, also used by
+its Prefabulator): the sim grid stores a Mk.3 tile as a Mk.2 belt tile, so the game's own Mk.2
+belt pass moves it; the tile still filters, because the grid's filter bits come from the
+structure's `filter` object, not its type. The trigger `brandonFilterMk3Belts` and the two mod
+conveyor types are gone. Menus, labels, saves and the Copier still see `filterRightMk3`. Not yet
+seen in game.
 
 **0.16.1 (2026-09-28).** Two bugs Brandon hit in game:
 (1) **Bought Filter Mk.3 but it never reached the build menu.** The game unlocks a building with
@@ -487,6 +501,15 @@ game build — search the bundle by string literals, not by those names.
   gold by default>}`; growers allow a fixed list. Belt speeds: every belt and filter moves 1 cell
   per pass (`transport.conveyors.structures.<id>.maxDisplacementCellsPerPass`); a belt carries
   the whole column above each cell (up to 100, or `maxTransportDistance` for a mod belt).
+- Belt sweeps (manager worker, bundle v0.5.6): the built-in triggers ConveyorBelts (332 ms) and
+  ConveyorBeltsMk2 (166 ms) set a run mask; when both are due the manager posts ONE
+  `[RunConveyorBelts, ConveyorRight, true]` whose sweep, per thread column right to left, moves
+  Mk.1 belts + Mk.1 filters, `filterRightMk2`, mod conveyor types with `runWith:"right"`, then
+  `conveyorRightMk2`; a Mk.2-only moment posts `[RunConveyorBelts, "conveyorRightMk2"]`. A mod
+  conveyor type WITHOUT runWith moves only when something posts its own id — a separate sweep,
+  which stalls a stream at every join with belts of another sweep. `structures.register` takes
+  `blockGridType: "<id>"`: the sim grid (and the type registry sent to workers) stores the
+  structure as that type (`registerStructureTypeAlias`), so it moves exactly like it.
 - Terrain ids by name: `api.terrains.getTypeById("block")` (Block is built-in id 15); mod
   terrains are numbered by registration order — never hard-code them.
 - Tech: `api.tech.registerNode(id, {nameKey, descriptionKey, cost, currencyType:"gold",
@@ -651,7 +674,7 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   array (vanilla filters and copy-pasted Mk.3s left alone); the interactable selects the
   contiguous same-setting row and Apply writes it via `structures.updateMany` with a filter
   object per member, flags kept; trigger `brandonFilterMk3Belts` at 166 ms with a
-  self-contained callback, both conveyor types, both re-sent on `game:ready`; the
+  self-contained callback, both conveyor types, both re-sent on `game:ready` (0.16.2: replaced by the blockGridType checks — no trigger, no conveyor type); the
   `frame:render` handler mirrors `conveyorMk2AnimationIndex` into `mk3anim`; ELEMENTS order.
 - `sim-clipboard.js` — Improved Filter Options 0.2.8: COPY takes the editor's draft, else
   `defaultFilter`; PASTE into a row is `setDraft` then `apply`; the clip round-trips through
