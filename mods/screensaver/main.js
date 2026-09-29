@@ -131,7 +131,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.18.6";
+const BUILD = "0.18.7";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -1359,16 +1359,18 @@ if (h) { safe(() => api.ui.inject("brandon-screensaver-debug", Debug)); setInter
 // session.ui.hudHidden is set (bundle v0.5.6: the Root returns only the cinematic pieces then) —
 // so an injected label vanished exactly when the screensaver hid the HUD.
 const TRK_CSS = "position:fixed;right:12px;top:46px;z-index:100010;pointer-events:none;font:700 15px -apple-system,'Segoe UI',Roboto,sans-serif;color:#dfe6ee;background:rgba(10,14,20,0.7);border:1px solid rgba(255,255,255,0.14);border-radius:6px;padding:5px 12px;letter-spacing:.02em;white-space:nowrap";
-let trkEl = null, trkName = null;
+let trkEl = null, trkNameEl = null, trkName = null;
 function followedName() {
 	if (trc) return matName(trc.search ? trc.search.orig : trc.orig);
 	if (pathSrc) return matName(pathSrc.type);   // tracer off: following the belt route from a Source
 	if (fol && fol.names && fol.names.length) return fol.names[fol.names.length - 1];
 	return null;
 }
+// 0.18.7: shown for the WHOLE run, "…" until a grain is picked, with the build number, so a
+// missing label can't be confused with "nothing to name yet" (0.18.6 drew nothing then)
 function trackerName() {
 	if (!setting("showTracker", true) || !inWorld() || !(active || setting("debugOverlay", false))) return null;
-	return followedName();
+	return followedName() || "…";
 }
 function updateTracker() {
 	const name = trackerName();
@@ -1376,10 +1378,11 @@ function updateTracker() {
 	if (!trkEl || !trkEl.isConnected) {
 		trkEl = document.createElement("div"); trkEl.setAttribute("data-brandon-screensaver", "tracker"); trkEl.style.cssText = TRK_CSS;
 		trkEl.appendChild(document.createTextNode("Following: "));
-		const s = document.createElement("span"); s.style.color = "#ffe27a"; trkEl.appendChild(s);
+		trkNameEl = document.createElement("span"); trkNameEl.style.color = "#ffe27a"; trkEl.appendChild(trkNameEl);
+		const v = document.createElement("span"); v.style.cssText = "color:#6f7b88;font-size:10px;font-weight:600;margin-left:8px"; v.textContent = BUILD; trkEl.appendChild(v);
 		document.body.appendChild(trkEl); trkName = null;
 	}
-	if (name !== trkName) { trkEl.lastChild.textContent = name; trkName = name; }
+	if (name !== trkName) { trkNameEl.textContent = name; trkName = name; }   // a held reference: the DOM's .children skips the text node
 }
 setInterval(() => safe(updateTracker), 300);
 // the one way out, spelled out in the corner

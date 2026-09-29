@@ -63,7 +63,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
 - **Sandbox Loop** `brandon.sandboxloop` v0.4.9 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.18.6 — plays the map when idle and follows one
+- **Screensaver** `brandon.screensaver` v0.18.7 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went. 0.18.2: every tracer
   element (the 5 generic tracers and every clone) is registered with the game's own
   `showInFilterPicker: false`, so no picker lists them - they exist only for the Sandbox
@@ -249,7 +249,7 @@ The panel also carries the Screensaver row: **🌙 START NOW** and a **⤓ log (
 saves the tracer flight recorder. Its companion graph page for history exports is
 `tools/resource-history` in the repo.
 
-## Screensaver v0.18.6 — what it does
+## Screensaver v0.18.7 — what it does
 
 After N minutes without input (or automatically from the main menu, for a Windows "on idle"
 task), it hides the HUD and cursor, goes fullscreen, caps the frame rate, holds a screen wake
@@ -286,7 +286,8 @@ up. Passive structures (frames, launchers, platforms) never trigger a hand-back.
 last known one while it is being re-found; the belt route's material with the tracer off),
 changing as the grain does. 0.18.6: drawn as a plain element on `document.body` (not
 `api.ui.inject`) — injected UI is not rendered at all while the HUD is hidden, so the 0.18.5
-label never showed during a run (see UI below). Replaced at Brandon's request (2026-09-28) the old stats panel
+label never showed during a run (see UI below). 0.18.7: the label stays up for the whole
+run — "Following: …" until a grain is picked — and carries the build number. Replaced at Brandon's request (2026-09-28) the old stats panel
 (journeys, marks, losses, re-finds, jumps, stray tracers, copies, armed reactions, "why it was
 lost", last nine events); those are still counted and saved by the **flight recorder**, which
 keeps up to 500 events and saves `tracer-log-<date>.json` to Downloads — on demand from the
@@ -629,7 +630,7 @@ There is no device bridge any more; everything happens directly on the desktop.
    armed" count above zero, a grain following soil → wet soil → residue → burnt residue →
    seed without hand-backs, nothing refused (the log says why if so). 0.18.3's sweep
    changes are covered by `sim-mapsweep.js` only. Also unconfirmed in game: Manufacturing's
-   Mk.3 belt animation and speed, Sandbox Loop 0.4.6/0.4.9, Screensaver 0.18.6 ("Following:" label during the screensaver), Quickstart 1.0.2.
+   Mk.3 belt animation and speed, Sandbox Loop 0.4.6/0.4.9, Screensaver 0.18.6–0.18.7 ("Following:" label during the screensaver — 0.18.6 reported not showing; 0.18.7 shows it for the whole run with "…" and the build number to tell the cases apart), Quickstart 1.0.2.
 1b. **Filter Mk.3 on the game's own menu (Manufacturing 0.16.0 + Improved Filters 0.3.0) is
    untested in game.** Check: a Mk.3 in hand opens the game's panel expanded; picking a
    material keeps a Mk.3 in hand (not a Mk.2); Mk.3 rows get the game's labels; clicking one

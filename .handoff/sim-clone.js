@@ -81,9 +81,15 @@ global.document.createElement = mk; global.document.createTextNode = (t) => ({ t
 global.document.body = { appendChild(el) { body.push(el); el.isConnected = true; return el; } };
 const labelText = () => (body.length ? body[0].children.map((c) => c.textContent).join("") : null);
 M.active = true; M.updateTracker();
-check(body.length === 1 && labelText() === "Following: " + NM("wetSand") && /z-index:100010/.test(body[0].style.cssText || ""), "while running, a label sits on document.body: " + labelText());
+const BUILD_NOW = (/const BUILD = "([^"]+)"/.exec(src) || [])[1];
+check(body.length === 1 && labelText() === "Following: " + NM("wetSand") + BUILD_NOW && /z-index:100010/.test(body[0].style.cssText || ""), "while running, a label sits on document.body: " + labelText());
 M.updateTracker();
 check(body.length === 1, "updating again reuses the same label (no duplicates)");
+// 0.18.7: nothing to name yet (between journeys) still shows the label, with "…"
+const keep = M.trc; M.trc = null; M.updateTracker();
+check(body.length === 1 && labelText() === "Following: …" + BUILD_NOW, "no grain yet: the label still shows, as 'Following: …' + build: " + labelText());
+M.trc = keep; M.updateTracker();
+check(labelText() === "Following: " + NM("wetSand") + BUILD_NOW, "…and picks the name back up: " + labelText());
 M.active = false; M.updateTracker();
 check(body.length === 0, "stopped: the label is removed");
 check(!src.includes('api.ui.inject("brandon-screensaver-tracker"'), "the tracker is no longer an injected component (the HUD hide would swallow it)");
