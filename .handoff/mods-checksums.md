@@ -1,6 +1,6 @@
-# Mod file checksums — sandboxloop-inspect, f6fcc06, 2026-09-28
+# Mod file checksums — sandboxloop-inspect, 370f92b, 2026-09-28
 
-Versions: sandboxloop 0.4.9, screensaver 0.18.8, manufacturing 0.16.0, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.3.0.
+Versions: sandboxloop 0.4.9, screensaver 0.18.8, manufacturing 0.16.1, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.3.0.
 All 26 installed files; every hash is of the file at the commit named in the title, which is
 the mod content now on `main` (later commits only touch docs). Regenerate after changing a mod.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
@@ -31,11 +31,12 @@ b77d7dbf8f5d674034316ff9af034f1da170dad21f4bcdf12c63540916c1c653  lavaboiloff/ma
 1e4b15b61a5006819fc8d69eeca740b230348493f97440d081812ed1c29e9fcd  lavaboiloff/worker.js
 ff36b12798a7aa8d6983f2c165326ddb38391d218443498bc07cd9ab31c935cc  manufacturing/filter_left_mk3.png
 9bf29fe79ee1c8870df691face431ddd948c2af078fa7524a32a7535c52c5b3e  manufacturing/filter_right_mk3.png
-a1892bb6800e009d55067a7ca5713ff35001b93a0576eddfdb5408ef34a31bba  manufacturing/main.js
-31a052b721641d4e290dce8317c02e7f21289989e4799d286455006a0d68fffc  manufacturing/main.real.js
+293664543c1abc30cfd969e49abe0133437156935fe8d261623f4c403fc92eeb  manufacturing/filter_right_mk3_icon.png
+b59136b895d7291fc537412e09997ad750b9578c9aedeae6c22afd301bde33bf  manufacturing/main.js
+ac552c65eff9a00a5c966a953f76d8fb015b07ab98fac6197ecf84a8351088a5  manufacturing/main.real.js
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun.png
 c124677898beaa9861eaedc1dc18d3fca47441be87e5476f412d8bcf5905d1df  manufacturing/matter_gun_icon.png
-b75c57f00149fbcfb64945953a3435ad25055d2f498f80d8b8681a9785da5569  manufacturing/modinfo.json
+14aa60eef671a22e37efc9040dbc1dae20ff1d016c3bb712fe00d88f473ce991  manufacturing/modinfo.json
 bb6b7ac569af46b8b32072d79df284210d4f8b70e5a84ffa0407fac9c1475189  manufacturing/preview.png
 8018d0144f77848af41857926ed3d93d02d0db2a5482c9ef37b590839876c1f6  manufacturing/worker.js
 b5d6484016e77e14a2650302ea7da93e24213a94e7b87e0fef8facc00965310a  manufacturing/worker.real.js
