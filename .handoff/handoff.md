@@ -61,7 +61,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
 ## Mods and versions (as of 2026-09-27, branch `main`)
 
-- **Sandbox Loop** `brandon.sandboxloop` v0.4.6 — Sources and Removers, balance tracker,
+- **Sandbox Loop** `brandon.sandboxloop` v0.4.7 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
 - **Screensaver** `brandon.screensaver` v0.18.3 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went. 0.18.2: every tracer
@@ -191,7 +191,7 @@ gate is asked of `engine.api.action.getActive`. `sim-mk3.js` covers placement, t
 lists, the two patched spots, the self-check, the belt trigger and the animation buffer. History: 0.10.0–0.12.2 sped up every
 Mk.2 Filter instead; rejected, removed in 0.13.0.
 
-## Sandbox Loop v0.4.6 — what it does
+## Sandbox Loop v0.4.7 — what it does
 
 A **Source** is a structure that emits a chosen material at an adjustable rate (decimals
 allowed, up to 100/s); a **Remover** is a single block that deletes one chosen material at
@@ -225,6 +225,15 @@ reloaded (F10), so the structure cache and pacing state are dropped there too (�
 dead objects otherwise). `Scene.Deploy` (3, the landing cinematic) counts as "not in a
 world". The census yields while the Screensaver's map sweep runs
 (`__brandonScreensaver.isSweeping()`).
+
+**0.4.7 — 🔍 Inspect.** An Inspect pill on the panel (persisted, `brandon.sandboxloop.inspect`)
+turns on a read-only box beside the cursor naming the grain under the mouse: display name,
+element id, this PC's number, matter type, PARTICLE when it is in flight, "Screensaver tracer
+copy of X" for `brandonTrc_*` / `brandonTracer*`, the game's per-grain data (data fields
+1–4, duration, velocity, falling/resting, variant, skipPhysics), the structure or terrain
+there, the cell and the grain index. Added 2026-09-28 to check whether a Source's soil is the
+same thing as the world's (Brandon saw emitted soil apparently not going on to residue /
+burnt residue). Not yet seen in game.
 
 It exposes a hook other mods use:
 
@@ -486,7 +495,17 @@ game build — search the bundle by string literals, not by those names.
   and only removes a non-null cell; `removeAtCellWhenIdle` additionally requires the cell's
   id to be unchanged since the call — it still deletes whatever element sits there, not
   necessarily the one you saw. `createAtCellWhenIdle` silently no-ops on a non-empty cell;
-  `replaceAtCell` often misses a moving grain. `getResolvedTypeAtCell` in a
+  `replaceAtCell` often misses a moving grain.
+- Per-grain data (bundle v0.5.6, `getInfoAtPosition` / `defaultDataFields`, read
+  2026-09-28): `api.elements.getInfoAtCell(x, y)` → `{elementType, isParticle, cellId,
+  elementIndex}` (a flying grain is a Particle cell linked to its element via
+  `linkedElementIndex`; `elementType` is already the linked one) or null. The grain's data
+  lives in parallel arrays `sandkit.state.shared.sim.elementData.<field>[elementIndex]`:
+  `type, x, y, dataField1–4, durationLeft, durationMax, hasDuration, variantIndex, density,
+  isFreeFalling, skipPhysics, velocityX/Y, thresholdX/Y, linkedElementIndex,
+  hasBeenUpdated`. `api.elements.createAtCell(x, y, type, opts)` fills dataField1–4 from the
+  definition's `defaultDataFields`. Mouse cell: `api.input.getMouseCellPosition()`. The game
+  has its own `debug.cellInspector` flag (draws a green box on the mouse cell). `getResolvedTypeAtCell` in a
   tight loop at ~25k cells per 50 ms tick sweeps the 14.7M-cell map in ~30 s without
   stalling. `api.world.getDimensions()` → `{widthCells, heightCells}`. The world id is
   `store.meta.worldId` (saved with the world).
@@ -552,7 +571,9 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   golden Sand while the panel default stays soil); an unknown id falls back to the panel and
   is flagged unset; `bake()` writes the id through `updateData`. Verified to FAIL against a
   copy whose `cfgFor` always returns the default (the old version only ever checked the
-  default, which a broken `cfgFor` also produces).
+  default, which a broken `cfgFor` also produces). 0.4.7: the 🔍 Inspect readout on a mocked
+  grid — soil grain, flying tracer copy, structure, terrain, empty — reads the right element
+  index's data and prints it.
 - `sim-mapsweep.js` — Screensaver 0.18.3 map sweep, booted twice (with `api.world.mutate`
   and with the `removeAtCellWhenIdle` fallback): every tracer cell emptied, ordinary grains
   untouched, a grain that moved on between read and delete is left alone and NOT counted,
@@ -603,7 +624,7 @@ There is no device bridge any more; everything happens directly on the desktop.
    armed" count above zero, a grain following soil → wet soil → residue → burnt residue →
    seed without hand-backs, nothing refused (the log says why if so). 0.18.3's sweep
    changes are covered by `sim-mapsweep.js` only. Also unconfirmed in game: Manufacturing's
-   Mk.3 belt animation and speed, Sandbox Loop 0.4.6, Quickstart 1.0.2.
+   Mk.3 belt animation and speed, Sandbox Loop 0.4.6–0.4.7 (🔍 Inspect), Quickstart 1.0.2.
 1b. **Filter Mk.3 on the game's own menu (Manufacturing 0.16.0 + Improved Filters 0.3.0) is
    untested in game.** Check: a Mk.3 in hand opens the game's panel expanded; picking a
    material keeps a Mk.3 in hand (not a Mk.2); Mk.3 rows get the game's labels; clicking one

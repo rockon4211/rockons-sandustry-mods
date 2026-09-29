@@ -7,7 +7,7 @@ const api = sandkit.api;
 const React = sandkit.react;
 const h = React.createElement;
 const MOD_ID = "brandon.sandboxloop";
-const BUILD = "0.4.6";
+const BUILD = "0.4.7";
 
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
@@ -1116,6 +1116,108 @@ function ScreensaverRow() {
 		h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } }, hook ? ("build " + (hook.build || "?")) : "mod not loaded")),
 		saverMsg ? h("div", { style: { fontSize: "9.5px", color: "#e0b060", fontWeight: 600, marginLeft: "65px", lineHeight: 1.4 } }, saverMsg) : null);
 }
+// --- 🔍 inspect: a debug readout of the grain under the mouse ----------------
+// Shows exactly what the game has at the cell under the cursor: material name, element id,
+// this PC's number, whether it is a Screensaver tracer copy, whether it is a flying particle,
+// and the game's per-grain data (data fields, duration, velocity, falling). Built to check
+// whether a Source's grains are the same thing as the world's own (e.g. soil that never goes
+// on to residue / burnt residue). Read-only: it never changes the cell.
+const INSPECT_KEY = "brandon.sandboxloop.inspect";
+let inspectOn = safe(() => window.localStorage.getItem(INSPECT_KEY)) === "1";
+let inspectRepaint = null, _mouseX = 0, _mouseY = 0;
+safe(() => window.addEventListener("mousemove", (e) => { _mouseX = e.clientX; _mouseY = e.clientY; }, true));
+function setInspect(v) {
+	inspectOn = !!v;
+	safe(() => window.localStorage.setItem(INSPECT_KEY, inspectOn ? "1" : "0"));
+	if (panelRepaint) panelRepaint((x) => x + 1);
+	if (inspectRepaint) inspectRepaint((x) => x + 1);
+}
+function mouseCell() {
+	const p = safe(() => api.input.getMouseCellPosition()) || safe(() => sandkit.state.session.input.mouse.cellPosition);
+	return p && typeof p.x === "number" && typeof p.y === "number" ? { x: Math.floor(p.x), y: Math.floor(p.y) } : null;
+}
+const MATTER_NAMES = safe(() => { const o = {}, M = sandkit.enums.MatterType; for (const k in M) if (typeof M[k] === "number") o[M[k]] = k; return o; }) || {};
+const GRAIN_FIELDS = ["dataField1", "dataField2", "dataField3", "dataField4", "durationLeft", "durationMax", "hasDuration", "variantIndex", "density", "isFreeFalling", "skipPhysics", "velocityX", "velocityY"];
+// everything known about one cell, as plain data (the box below just prints it)
+function inspectCell(x, y) {
+	const r = { x, y };
+	const info = safe(() => api.elements.getInfoAtCell(x, y));
+	const t = info && typeof info.elementType === "number" ? info.elementType : safe(() => api.elements.getResolvedTypeAtCell(x, y));
+	if (typeof t === "number") {
+		r.type = t;
+		r.id = eidOfType(t) || "?";
+		r.name = safe(() => api.elements.getNameByType(t), null) || nameOf(t);
+		const def = safe(() => api.elements.getDefinitionByType(t)) || {};
+		r.matter = MATTER_NAMES[def.matterType] || (def.matterType != null ? String(def.matterType) : "?");
+		const m = /^brandonTrc_(.+)$/.exec(r.id);
+		if (m) { const rt = typeOfEid(m[1]); r.tracerOf = typeof rt === "number" ? nameOf(rt) : m[1]; }
+		else if (/^brandonTracer/.test(r.id)) r.tracerOf = "(generic tracer)";
+		if (info) {
+			r.particle = !!info.isParticle;
+			r.index = info.elementIndex;
+			const ed = safe(() => sandkit.state.shared.sim.elementData);
+			if (ed && typeof info.elementIndex === "number") {
+				r.data = {};
+				for (const f of GRAIN_FIELDS) { const a = ed[f]; if (a && a.length > info.elementIndex) r.data[f] = a[info.elementIndex]; }
+			}
+		}
+	}
+	const s = safe(() => api.structures.getAtCell(x, y));
+	if (s) r.structure = (typeof s.type === "string" ? s.type : safe(() => api.structures.getIdByType(s.type)) || String(s.type)) + (typeof s.x === "number" ? " @" + s.x + "," + s.y : "");
+	if (r.type == null && !s && safe(() => api.world.isTerrainAtCell(x, y))) {
+		const tt = safe(() => api.terrains.getTypeAtCell(x, y));
+		r.terrain = (tt != null && safe(() => api.terrains.getIdByType(tt))) || (tt != null ? "terrain " + tt : "terrain");
+	}
+	return r;
+}
+function fmtVal(v) { return typeof v === "number" && !Number.isInteger(v) ? (Math.round(v * 1000) / 1000).toString() : String(v); }
+function inspectLines(r) {
+	const L = [];
+	if (r.type != null) {
+		L.push([r.name, "#ffe27a"]);
+		L.push(["id " + r.id + "  ·  #" + r.type + "  ·  " + r.matter + (r.particle ? "  ·  PARTICLE (in flight)" : ""), "#cdd6df"]);
+		if (r.tracerOf) L.push(["Screensaver tracer copy of " + r.tracerOf, "#e0b060"]);
+		if (r.data) {
+			const d = r.data, bits = [];
+			for (let i = 1; i <= 4; i++) if (("dataField" + i) in d) bits.push("f" + i + "=" + fmtVal(d["dataField" + i]));
+			if (bits.length) L.push(["data  " + bits.join("  "), "#9aa6b2"]);
+			if (d.hasDuration || d.durationLeft) L.push(["duration  " + fmtVal(d.durationLeft) + " / " + fmtVal(d.durationMax), "#9aa6b2"]);
+			const mv = [];
+			if ("velocityX" in d) mv.push("vel " + fmtVal(d.velocityX) + "," + fmtVal(d.velocityY));
+			if ("isFreeFalling" in d) mv.push(d.isFreeFalling ? "falling" : "resting");
+			if ("variantIndex" in d) mv.push("variant " + d.variantIndex);
+			if (d.skipPhysics) mv.push("skipPhysics");
+			if (mv.length) L.push([mv.join("  ·  "), "#9aa6b2"]);
+		}
+	} else L.push([r.terrain ? "terrain: " + r.terrain : r.structure ? "(no material)" : "empty", "#9aa6b2"]);
+	if (r.structure) L.push(["on structure " + r.structure, "#a9b8e8"]);
+	L.push(["cell " + r.x + "," + r.y + (r.index != null ? "  ·  grain #" + r.index : ""), "#6f7b88"]);
+	return L;
+}
+function InspectBox() {
+	const [, b] = React.useState(0); inspectRepaint = b;
+	if (!inspectOn || !isEnabled() || !inWorld() || saverActive()) return null;
+	const c = mouseCell();
+	if (!c) return null;
+	const lines = inspectLines(inspectCell(c.x, c.y));
+	// beside the cursor, flipped to the other side near the window's right / bottom edge
+	const W = safe(() => window.innerWidth) || 1920, H = safe(() => window.innerHeight) || 1080;
+	const left = _mouseX + 330 > W ? Math.max(0, _mouseX - 318) : _mouseX + 18, top = _mouseY + 150 > H ? Math.max(0, _mouseY - 140) : _mouseY + 18;
+	return h("div", { style: { position: "fixed", left: left + "px", top: top + "px", zIndex: 99999, pointerEvents: "none", maxWidth: "300px",
+		background: "rgba(10,14,20,0.94)", border: "1px solid #e0b060", borderRadius: "6px", padding: "5px 8px",
+		font: '600 11px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#e8edf3", lineHeight: 1.45, boxShadow: "0 4px 12px rgba(0,0,0,.5)" } },
+		lines.map((l, i) => h("div", { key: i, style: { color: l[1], fontWeight: i ? 600 : 800, fontSize: i ? "10.5px" : "12px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, l[0])));
+}
+safe(() => api.ui.inject("brandon-sandboxloop-inspect", InspectBox));
+setInterval(() => { if (inspectOn && inspectRepaint) inspectRepaint((v) => v + 1); }, 100);
+function InspectRow() {
+	return h("div", { style: { display: "flex", alignItems: "center", gap: "7px", margin: "5px 0 2px" } },
+		h("span", { style: { width: "58px", color: "#e0b060", fontWeight: 700, lineHeight: 1.1 } }, "Inspect"),
+		h("button", { onClick: (e) => { if (e.stopPropagation) e.stopPropagation(); setInspect(!inspectOn); },
+			title: inspectOn ? "A box beside the cursor names the grain under it (material, id, tracer or not, the game's data on it). Tap to turn it off." : "Debug: show what the grain under the mouse really is — material, element id, whether it's a tracer copy, and the game's data on it.",
+			style: pillStyle(inspectOn, "#e0b060", "#3a2f12") }, inspectOn ? "🔍 ON" : "🔍 OFF"),
+		h("span", { style: { fontSize: "10px", color: "#93a1b0", fontWeight: 600 } }, inspectOn ? "hover a grain to see what it is" : "what's under the mouse?"));
+}
 const MINBTN = { background: "#1c2530", color: "#cdd6df", border: "1px solid #3a4550", borderRadius: "5px", fontSize: "13px", fontWeight: 800, lineHeight: 1, padding: "2px 9px", cursor: "pointer", flexShrink: 0 };
 function TitleBar() {
 	return h("div", { onMouseDown: startDrag, title: "drag to move", style: { fontWeight: 800, marginBottom: "4px", letterSpacing: ".02em", cursor: _drag ? "grabbing" : "grab", userSelect: "none", display: "flex", alignItems: "center", gap: "7px" } },
@@ -1152,6 +1254,7 @@ function Panel() {
 			h("div", { style: { marginTop: "5px", fontSize: "10px", color: "#93a1b0", fontWeight: 500 } }, "Set these, then place a Source / Remover — each bakes in the settings shown now. To change or remove one already placed, press ✎ on it below."),
 			PlacedList(),
 			ThermalRow(),
+			InspectRow(),
 			ScreensaverRow(),
 			Tracker(),
 			CleanupRow()));

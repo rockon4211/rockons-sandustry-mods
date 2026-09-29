@@ -35,7 +35,7 @@ function run(label, ids, names, storedCfg, structData) {
 	global.document = { addEventListener() {}, createElement: () => ({ remove() {}, click() {}, style: {} }), head: { appendChild() {} }, body: { appendChild() {} }, getElementById: () => null };
 	global.setInterval = () => 0; global.setTimeout = (fn) => { try { fn(); } catch (e) {} return 0; };
 	const log = console.log; console.log = () => {}; console.error = () => {};
-	eval('"use strict";\n' + src + "\nglobal.L = { defaultType, cfgFor, bake, get emitCfg(){return emitCfg}, buildPalette };");
+	eval('"use strict";\n' + src + "\nglobal.L = { defaultType, cfgFor, bake, get emitCfg(){return emitCfg}, buildPalette, inspectCell, inspectLines };");
 	console.log = log;
 	const panel = { mat: L.emitCfg.mat, type: L.emitCfg.type, rate: L.emitCfg.rate };
 	const cfg = L.cfgFor(structs[0], panel);
@@ -88,4 +88,31 @@ const after = g.L.cfgFor(g.struct, { type: g.panel.type, rate: g.panel.rate });
 check(after.type === DESK.glassSand && after.rate === 7 && !after.unset, "cfgFor reads the baked pick back: golden Sand at 7/s");
 check(!/"brandonMat":\s*\d/.test(g.store["brandon.sandboxloop.instances"] || "") && /"mat":"glassSand"/.test(g.store["brandon.sandboxloop.instances"] || ""), "the per-cell store is written with the element id, never a bare number");
 
-console.log(ok ? "\nALL OK" : "\nFAIL: see above"); process.exit(ok ? 0 : 1);
+// --- 6. 🔍 inspect (0.4.7): the readout names the grain and prints the game's data on it --
+// Mocked grid: (5,5) soil grain #42 resting with dataField1 = 3; (6,5) a flying particle whose
+// linked grain is a Screensaver tracer copy of soil; (7,5) a structure with nothing on it;
+// (8,5) terrain. Everything else empty.
+const TRC = { sand: 1, water: 3, brandonTrc_sand: 95 };
+const TNAM = { 1: "soil", 3: "Water", 95: "soil" };
+const ins = run("inspect readout", TRC, TNAM, null, null);
+const n = 100, ed = {}; for (const f of ["dataField1", "dataField2", "dataField3", "dataField4", "durationLeft", "durationMax", "hasDuration", "variantIndex", "density", "isFreeFalling", "skipPhysics", "velocityX", "velocityY"]) ed[f] = new Float32Array(n);
+ed.dataField1[42] = 3; ed.variantIndex[42] = 2; ed.velocityY[7] = 1.5; ed.isFreeFalling[7] = 1;
+const K = sandkit.api;
+K.elements.getInfoAtCell = (x, y) => x === 5 && y === 5 ? { elementType: 1, isParticle: false, cellId: 9, elementIndex: 42 } : x === 6 && y === 5 ? { elementType: 95, isParticle: true, cellId: 10, elementIndex: 7 } : null;
+K.elements.getResolvedTypeAtCell = (x, y) => { const i = K.elements.getInfoAtCell(x, y); return i ? i.elementType : null; };
+K.structures.getAtCell = (x, y) => x === 7 && y === 5 ? { type: "shaker", x: 7, y: 4 } : null;
+K.world.isTerrainAtCell = (x, y) => x === 8 && y === 5;
+K.terrains = { getTypeAtCell: () => 15, getIdByType: (t) => t === 15 ? "block" : undefined };
+sandkit.state.shared = { sim: { elementData: ed } };
+const soil = ins.L.inspectCell(5, 5), trc = ins.L.inspectCell(6, 5), st = ins.L.inspectCell(7, 5), ter = ins.L.inspectCell(8, 5), emp = ins.L.inspectCell(9, 9);
+check(soil.name === "soil" && soil.id === "sand" && soil.type === 1 && !soil.tracerOf && soil.particle === false, "a soil grain reads as soil, id 'sand', #1, not a tracer, not a particle");
+check(soil.index === 42 && soil.data.dataField1 === 3 && soil.data.variantIndex === 2, "its per-grain data comes from elementData at ITS index (#42: f1=3, variant 2)");
+check(trc.tracerOf === "soil" && trc.particle === true && trc.data.velocityY === 1.5, "a flying tracer copy is named as the Screensaver's copy of soil, flagged PARTICLE, with its own velocity");
+check(st.type == null && st.structure === "shaker @7,4", "a structure cell with no material names the structure");
+check(ter.type == null && ter.terrain === "block", "a terrain cell names the terrain by id");
+check(emp.type == null && !emp.structure && !emp.terrain, "an empty cell is empty");
+const txt = ins.L.inspectLines(soil).map((l) => l[0]).join(" | ");
+check(/soil/.test(txt) && /id sand/.test(txt) && /f1=3/.test(txt) && /cell 5,5/.test(txt), "the box text shows name, id, data fields and the cell (" + txt + ")");
+check(/tracer copy of soil/.test(ins.L.inspectLines(trc).map((l) => l[0]).join(" ")) && /empty/.test(ins.L.inspectLines(emp)[0][0]), "tracer and empty cells say so in the box");
+
+console.log(ok ? "\nALL OK": "\nFAIL: see above"); process.exit(ok ? 0 : 1);
