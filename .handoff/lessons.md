@@ -2,7 +2,7 @@
 
 What went wrong along the way, and the rule each one turned into. `CLAUDE.md` at the repo
 root says the same things in Claude's terms (with the exact code recipes); this file is for
-reading. Updated 2026-09-25.
+reading. Updated 2026-09-28.
 
 ## Ways of working that stuck
 - **The repo is the source of truth; the game's mods folder is just where files get copied.**
@@ -66,6 +66,37 @@ reading. Updated 2026-09-25.
     Mk.3 now uses the game's real menu. *Rule: when the game already does something for a
     sibling, find how it decides who gets it, and join that before building a copy.*
 
+### 2026-09-28 (second PC; transcript in `transcripts/2026-09-28-session.md`)
+15. **Joining the filter lists broke buying the Mk.3.** Lesson 14's trick taught the game's "is
+    this in the list?" question that a Mk.3 counts wherever a Mk.2 does — for *every* list. The
+    list of unlocked buildings holds the Mk.2, so the game thought the Mk.3 was already unlocked
+    and never added it: bought, but missing from the build menu. *Rule: when changing a
+    question the whole game asks, limit it to exactly the lists you mean (here: lists made only
+    of filters), and check the unlock path.*
+16. **The Mk.3 moved on its own schedule.** Per step it moved exactly like the Mk.2 filter, yet
+    grains queued in front of it and went through one or two at a time. The game moves all its
+    belts in one sweep, far end first, so a stream moves as a block; the Mk.3 had its own
+    separate sweep, so the belt feeding it often found its first cell still full. The fix was
+    to have the game treat a Mk.3 tile as a Mk.2 belt tile (`blockGridType`), so the game's own
+    pass moves it — confirmed in game ("That fixed it"). *Rule: a mod belt should ride the
+    game's own belt pass, not a timer of its own.*
+17. **Mod panels vanish when the HUD is hidden.** Everything added with `api.ui.inject` lives in
+    a layer the game doesn't draw while the HUD is off — and the screensaver always hides the
+    HUD, so its label never showed. *Rule: to show something during the screensaver, put a
+    plain element on the page yourself.*
+18. **A look-alike material is still a different material.** The screensaver's copy of copper
+    reacts like copper, but every filter compared material numbers and sent the copy another
+    way. *Rule: anything that checks a material by number (filters, lists, masks) sees a copy
+    as something else — handle it where the check happens.*
+19. **"The tracker" meant something specific.** Three things could have been called that (a debug
+    box, the screensaver's stats panel, the bright copy). Asking with a short choice got the
+    right one first time; guessing had already produced one unwanted feature (the Inspect box,
+    added and removed the same evening). *Rule: when a word could mean several things, ask.*
+20. **The first idea for a fix wasn't the only one.** "Hand the grain back at filters" or
+    "teach every filter" were offered; Brandon's own suggestion — fake the number only where
+    filters look — was better than both. *Rule: lay out the options plainly; the player often
+    sees the simplest one.*
+
 ## Making a menu that fits the game (in words)
 - First ask whether the game's own menu can serve it (see lesson 14). Only build one when it can't.
 - Put it where the game puts its own: in the band above the hotbar, appearing only while
@@ -85,6 +116,7 @@ reading. Updated 2026-09-25.
 - Anything that picks from the map puts the held tool down first and hands it back after.
 
 ## What still needs a look
-See "Open issues" in `handoff.md`. As of 2026-09-25 the big untested items are the Filter
-Mk.3's animation and speed, the tracer sweep message after a world load, and the Sandbox
-Loop's per-row editing.
+See "Open issues" in `handoff.md`. As of 2026-09-28: the Filter Mk.3 now moves right (confirmed);
+not yet seen in game are the screensaver's filter override (a copper copy following real copper's
+path through filters), the tracer sweep message after a world load, and the Sandbox Loop's
+per-row editing.

@@ -6,6 +6,9 @@ Notes and test harnesses for whoever picks this up next — a person or a new ch
   the root `CLAUDE.md`, which Claude Code loads automatically).
 - `handoff.md` — **start here.** What the mods are, what the game's modding API allows,
   how to test without the game, what is still open.
+- `transcripts/` — full conversations of past sessions, by date (`2026-09-28-session.md`, with
+  the screenshots Brandon shared in `2026-09-28-screenshots/`). Messages verbatim, tool steps as
+  one-liners, tool output left out.
 - `mods-checksums.md` — sha256 of every file in `mods/`, for comparing two PCs.
   Regenerated after each commit that changes `mods/`.
 - `sim-*.js` — Node harnesses that run a mod's real code against a mocked game. They find

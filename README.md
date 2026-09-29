@@ -16,7 +16,7 @@ its Mods menu.
 | **lavaboiloff** | 0.1.1 | Lava has a 1-in-N chance to burn itself out each time it boils water into steam. |
 | **quickstart** | 1.0.2 | **F10** quick reload: reboots the game straight back into the current save (prefers the F5 quicksave). |
 
-Versions as of 2026-09-27, on `main` (pushed 2026-09-27).
+Versions as of 2026-09-28, on `main` (pushed 2026-09-28).
 
 ### Sandbox Loop
 
@@ -36,8 +36,9 @@ copy at launch that carries its whole definition, a shade brighter. The copies a
 every contact, machine, kinetic-press and planter rule the real material has, and burn
 like it, so the game itself carries the grain through the chain (soil → wet soil →
 residue → burnt residue → seed …) while it stays identifiable. It never becomes gold. The
-few hard-wired steps hand the grain back and pick up what comes out. A tracker panel shows
-what it is doing, and a flight recorder saves a JSON log of every journey (and every loss,
+few hard-wired steps hand the grain back and pick up what comes out. Filters sort the copy as
+its real material. The top-right corner shows what is being followed ("Following:
+brandonTrc_copper"), and a flight recorder saves a JSON log of every journey (and every loss,
 with the reason) to Downloads.
 
 ### Manufacturing — source of truth
@@ -57,7 +58,7 @@ the `.real` files plus the regenerated stubs). Do **not** regenerate the mod wit
 - `compiler.js`, `compiler-cfg.json`, `tools-bolton.js`, `tech-glass-bolton.js` — the
   studio's mod compiler. **RETIRED — DANGER.** Manufacturing has grown hand-written code
   since the last compile (HeavyStone; the Filter Mk.3 research node, building, filter-list join,
-  belt trigger; the red-block fixes; the cell probe; the Grab Heavy
+  Mk.2-belt grid alias; the red-block fixes; the cell probe; the Grab Heavy
   Stone toggle). A recompile from `graph.json` would drop all of that, **reorder element
   registration (changing element ids and breaking saves)**, and roll the version back to
   the 0.8.1 in `compiler-cfg.json`. It refuses to write into `mods/manufacturing` without
@@ -68,10 +69,11 @@ the `.real` files plus the regenerated stubs). Do **not** regenerate the mod wit
   **`exports-manufacturing-current/` is actually v0.8.1**, not current (the name is kept
   because other notes point at it). The hot-load URLs baked into these builds are
   `C:/Users/Brand/...` paths from the desktop PC.
-- `world-snapshots/` — saves of the **Loamcrest** world (`28lnrdm8fhv`). Copy the `.save`
-  files into `%APPDATA%\sandustry\saves\`.
+- `world-snapshots/` — saves of the **Loamcrest** world (`28lnrdm8fhv`); the newest is
+  `2026-09-28-loamcrest/`. Copy the `.save` files into `%APPDATA%\sandustry\saves\`.
 - `.handoff/` — notes, checksums and test harnesses for picking this work up in a new chat.
-  Start with `.handoff/handoff.md`.
+  Start with `.handoff/handoff.md`. Session transcripts (with screenshots) are in
+  `.handoff/transcripts/`.
 
 The retired Workshop mod lives in `.handoff/workshop/` and in git history (the early root
 `workshop/` copy and its `.custommap` were removed on 2026-09-23; recover with
@@ -91,8 +93,9 @@ non-zero on a failed check. Current set: `sim-clone`, `sim-copies`, `sim-output`
 `main` is the live line of work. `snapshot/loamcrest-2026-09-20` (tag
 `loamcrest-2026-09-20`) is a frozen copy of the map and the mods as they were that day.
 Everything since 2026-09-23 (the audit round, Filter Mk.3, Improved Filter Options, the
-map sweep) was merged into `main` on 2026-09-27 (fast-forward from `audit-fixes`).
+map sweep) was merged into `main` on 2026-09-27 (fast-forward from `audit-fixes`). The
+2026-09-28 session (second PC) was merged the same way from `sandboxloop-inspect`.
 
-The repo is `rockon4211/rockons-sandustry-mods` on GitHub. On the desktop PC the clone is
-`C:\Users\Brand\dev\rockons-sandustry-mods` and git is already authenticated (Git
-Credential Manager), so pushing from it is just `git push`.
+The repo is `rockon4211/rockons-sandustry-mods` on GitHub. On both PCs the clone is
+`C:\Users\Brand\dev\rockons-sandustry-mods`; git authenticates through Git Credential Manager,
+so pushing is just `git push`.

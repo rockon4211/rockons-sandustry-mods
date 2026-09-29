@@ -104,6 +104,24 @@ replaces the block in `.handoff/mods-checksums.md` (header gets `$H` and the dat
     Mk.2 twin is in, and deleted ~300 lines. Rule: when the game already serves a sibling kind,
     find its gate (grep the bundle) and join it before cloning; patch per frame only the spots
     that name an id outright.
+18. **The `includes` patch answered for every array** (Manufacturing 0.16.0): the unlocked
+    list holds `filterRightMk2`, so `buildings.includes("filterRightMk3")` said yes and buying
+    the research never unlocked the Mk.3. 0.16.1 applies the twin rule only to arrays made
+    entirely of filter ids. Rule: a patch on a builtin is scoped to the exact data it is for,
+    and the game's unlock path (`includes(id) || push(id)`) is checked after any such patch.
+19. **A mod belt on its own trigger stalls streams** (Mk.3 0.14–0.16.1): identical per step,
+    but a separate sweep, so the feeding belt found the Mk.3's first cell full — 1–2 grains
+    at a time. Fixed with `blockGridType: "conveyorRightMk2"` (0.16.2, confirmed in game).
+    Rule: a mod belt rides the game's own pass (`blockGridType` alias, or `runWith`), never a
+    timer of its own; see handoff → Belt sweeps.
+20. **`api.ui.inject` UI is not drawn while the HUD is hidden** — the screensaver hides it, so
+    injected labels, captions and even the "press E" tip never show during a run. Rule: UI
+    for the screensaver goes on `document.body` as a plain element (Screensaver 0.18.6+).
+21. **A tracer copy is a different element type to every per-type check** (filters sorted it
+    as "not copper"). Screensaver 0.19.0 wraps the filter mask check in the sim worker (see
+    handoff → Filter masks). Rule: before adding a copy/alias element, list every place the
+    game compares element numbers. Also: "the tracker" had three meanings — the Inspect box
+    was built on a guess and removed the same evening. Ask with a short choice instead.
 
 ## Uniform menu playbook — panels that look and behave like the game's
 First check whether the game's own panel can serve the thing (big mistake 17) — for filters it

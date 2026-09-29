@@ -1,6 +1,7 @@
 # Sandustry mods — handoff
 
-Everything a new chat needs to pick this work up. Last updated 2026-09-27 (pushed to `main`).
+Everything a new chat needs to pick this work up. Last updated 2026-09-28 (pushed to `main`).
+The 2026-09-28 session's full conversation is in `transcripts/2026-09-28-session.md`.
 
 ## Start here
 
@@ -34,14 +35,29 @@ the desktop, or ask him to start a task with the repo attached.
 in ten base64 parts; `repo-history-README.md` has the rebuild commands. It has no binaries
 and its commit hashes differ from GitHub (see that README). The chunks were regenerated
 2026-09-27 from `main` (head commit in `repo-history-README.md`); regenerate them after
-later pushes. The mirror `claude/repo-history/` and the laptop notes
+later pushes. **Not regenerated on 2026-09-28** — they stop before that session (skipped that night to save
+time); regenerate them with the recipe in that README. The mirror `claude/repo-history/` and the laptop notes
 `claude/laptop-install.md` live in the claude.ai project, not in this repo.
 
-**Where the work is right now (2026-09-27):** everything is on GitHub `main` (the
-`audit-fixes` branch was fast-forwarded into it and pushed on 2026-09-27). Work on `main`
-or a new branch. Brandon decides when to push — ask first. Stale branches: local
-`filter-mk3` (the rejected 0.11 upgrade approach) and GitHub `restore-real-pngs` (the
-mistaken PNG "restore", big mistake 1) — both deletable, but only with Brandon's OK.
+**Where the work is right now (2026-09-28):** everything is on GitHub `main` (the
+`sandboxloop-inspect` working branch of the 2026-09-28 session was fast-forwarded into it and
+pushed that night). Work on `main` or a new branch. Brandon decides when to push — ask first.
+Stale branches: local `filter-mk3` on the desktop (the rejected 0.11 upgrade approach) and GitHub
+`restore-real-pngs` (the mistaken PNG "restore", big mistake 1) — both deletable, but only with
+Brandon's OK.
+
+**What happened on 2026-09-28** (second PC, see below; transcript in `transcripts/`):
+- Cloned the repo on this PC and replaced its months-old installed mods (Manufacturing 0.9.5 etc.)
+  with the repo's; the old ones were moved to `%APPDATA%\sandustry\_old_mods_2026-09-28\`.
+- Sandbox Loop 0.4.7–0.4.8 added a 🔍 Inspect readout; 0.4.9 removed it again at Brandon's
+  request (0.4.9 = 0.4.6's code).
+- Screensaver 0.18.5–0.18.8: the tracker panel became one line, "Following: <element id>", drawn
+  on `document.body` (injected UI is hidden with the HUD). 0.19.0: filters see a tracer copy as
+  its real material (worker-side filter-mask override).
+- Manufacturing 0.16.1: bought Filter Mk.3 now reaches the build menu (the `includes` patch was
+  too broad), one-frame icon. 0.16.2: the Mk.3 moves as a Mk.2 belt (`blockGridType`) —
+  **confirmed in game**: the pile-up in front of it is gone.
+- New world snapshot `world-snapshots/2026-09-28-loamcrest/`.
 
 ## Where things live
 
@@ -50,6 +66,12 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 - Git repo: GitHub `rockon4211/rockons-sandustry-mods`. Branch `main` is the live line;
   `snapshot/loamcrest-2026-09-20` (tag `loamcrest-2026-09-20`) is the frozen map + mods.
 - Desktop PC clone: `C:\Users\Brand\dev\rockons-sandustry-mods`. Edit there.
+- **Second PC (used 2026-09-28)** — same user name, so the same paths: clone at
+  `C:\Users\Brand\dev\rockons-sandustry-mods` (made that day), game data in
+  `%APPDATA%\sandustry\`, Steam install at **`C:\SteamLibrary\steamapps\common\Sandustry`**.
+  git is 2.49; the repo has a local `user.name Brandon` / `user.email` set (git had no identity
+  there); the GitHub CLI `gh` is not installed. Node 22 is. The old installed mods are in
+  `%APPDATA%\sandustry\_old_mods_2026-09-28\` (Brandon may delete them).
 - Game data on the desktop: `%APPDATA%\sandustry\` (`C:\Users\Brand\AppData\Roaming\sandustry\`)
   with `mods\`, `saves\`, `_screensaver\`, `_map_backups\`, `_to_delete\`.
 - Steam install: **varies per PC.** On the desktop it is
@@ -59,7 +81,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   `binaries-b64.txt` / `repo-binaries.md` are stale base64 copies of the PNGs (no regenerate
   script) — prefer the PNGs in git.
 
-## Mods and versions (as of 2026-09-27, branch `main`)
+## Mods and versions (as of 2026-09-28, branch `main`)
 
 - **Sandbox Loop** `brandon.sandboxloop` v0.4.9 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
@@ -193,8 +215,8 @@ with `blockGridType: "conveyorRightMk2"` / `"conveyorLeftMk2"` (the engine's ali
 its Prefabulator): the sim grid stores a Mk.3 tile as a Mk.2 belt tile, so the game's own Mk.2
 belt pass moves it; the tile still filters, because the grid's filter bits come from the
 structure's `filter` object, not its type. The trigger `brandonFilterMk3Belts` and the two mod
-conveyor types are gone. Menus, labels, saves and the Copier still see `filterRightMk3`. Not yet
-seen in game.
+conveyor types are gone. Menus, labels, saves and the Copier still see `filterRightMk3`.
+**Confirmed in game 2026-09-28** ("That fixed it"); the 2026-09-28 snapshot has 17 Mk.3s placed.
 
 **0.16.1 (2026-09-28).** Two bugs Brandon hit in game:
 (1) **Bought Filter Mk.3 but it never reached the build menu.** The game unlocks a building with
@@ -714,29 +736,27 @@ There is no device bridge any more; everything happens directly on the desktop.
 
 ## Open issues / next steps
 
-1. **Screensaver 0.18.x in-game confirmation is still partial.** 0.18.x has run on the real
-   map (the 2026-09-24 save shows its tracer types in the discoveries, which is what led to
-   the map sweep), but the full check has not been reported: the tracker's "reactions
-   armed" count above zero, a grain following soil → wet soil → residue → burnt residue →
-   seed without hand-backs, nothing refused (the log says why if so). 0.18.3's sweep
-   changes are covered by `sim-mapsweep.js` only. Also unconfirmed in game: Manufacturing's
-   Mk.3 belt animation and speed, Sandbox Loop 0.4.6/0.4.9, Screensaver 0.18.6–0.18.7 ("Following:" label during the screensaver — 0.18.6 reported not showing; 0.18.7 shows it for the whole run with "…" and the build number to tell the cases apart), Quickstart 1.0.2.
-1b. **Filter Mk.3 on the game's own menu (Manufacturing 0.16.0 + Improved Filters 0.3.0) is
-   untested in game.** Check: a Mk.3 in hand opens the game's panel expanded; picking a
-   material keeps a Mk.3 in hand (not a Mk.2); Mk.3 rows get the game's labels; clicking one
-   edits it, Apply writes it; putting the filter away closes everything; clipboard Copy /
-   Paste / Pick / Onto on Mk.2 and Mk.3 rows. Known: the panel titles a Mk.3 "Filter Mk.2".
-   If the game says "the Filter Mk.3 menu isn't working", the self-check failed (see the
-   Manufacturing section).
+1. **Screensaver in-game confirmation is still partial.** Seen on 2026-09-28: the top-right
+   "Following:" label shows during a run (0.18.7+; it names the tracer copy since 0.18.8). Not
+   yet seen: **0.19.0's filter override** — a copper copy should take real copper's path through
+   a copper filter; the console says `filter override on` (or `off: <why>`) once per simulation
+   thread; a grain following soil → wet soil → residue → burnt residue → seed without
+   hand-backs; the map-sweep log event. Brandon also reported a copper copy "interacting with
+   the shaker"; the shaker's own filter is one of the ones 0.19.0 covers — re-check with it.
+1b. **Filter Mk.3 menus with the game's own panel (Manufacturing 0.16.x + Improved Filters
+   0.3.0)**: the Mk.3 is bought, unlocked, placed (17) and moves right (0.16.2 confirmed). Still
+   to confirm explicitly: picking a material keeps a Mk.3 in hand; Mk.3 rows get the game's
+   labels and edit/Apply; clipboard Copy / Paste / Pick / Onto on Mk.3 rows. Known cosmetic: the
+   panel titles a Mk.3 "Filter Mk.2".
 2. **Hard-wired steps still hand back** (a planter growing a flower, steam → cloud, the
    thermofroster). These are game code, not tables; hand-back is the permanent answer
    unless the game exposes them.
 3. **Laptop** — the mods were installed there on 2026-09-23 (notes in the claude.ai project,
-   `claude/laptop-install.md`). Left to do: update it to the current versions, delete
-   `mods\workshop` by hand, and confirm the builds in game. Old Sources never opened on the
-   desktop may need their material set once (Sandbox Loop 0.4.0 migration).
-4. The desktop's newest saves (2026-09-21) were never committed; the snapshot branch map is
-   from 2026-09-20.
+   `claude/laptop-install.md`). The "second PC" of 2026-09-28 (above) may be that laptop — it had
+   Manufacturing 0.9.5 installed and no clone; it is now current. If the laptop is a third PC,
+   it still needs updating, `mods\workshop` deleted by hand, and the builds confirmed.
+4. The desktop's newest saves (2026-09-21) were never committed. The newest map in the repo is
+   `world-snapshots/2026-09-28-loamcrest/` (from the second PC).
 5. **Branch clean-up (ask first):** delete GitHub `restore-real-pngs` and local `filter-mk3`.
    Pushed 2026-09-27; `.handoff/chunks/` and `mods-checksums.md` regenerated then.
 
