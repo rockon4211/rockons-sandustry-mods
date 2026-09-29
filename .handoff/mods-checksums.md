@@ -1,6 +1,6 @@
-# Mod file checksums — sandboxloop-inspect, 6070816, 2026-09-28
+# Mod file checksums — sandboxloop-inspect, 83d6cc3, 2026-09-28
 
-Versions: sandboxloop 0.4.8, screensaver 0.18.4, manufacturing 0.16.0, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.3.0.
+Versions: sandboxloop 0.4.8, screensaver 0.18.5, manufacturing 0.16.0, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.3.0.
 All 25 installed files; every hash is of the file at the commit named in the title, which is
 the mod content now on `main` (later commits only touch docs). Regenerate after changing a mod.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
@@ -47,8 +47,8 @@ c67969b7ba30cb5a1f8967aebd2571d31cfa2945b7bed51623c4f0b4647f22d8  sandboxloop/ma
 d1784249a4c10d91dc4edec29887143d84a59f7e1925c93b20f08933c80afe81  sandboxloop/modinfo.json
 d03eb83fbe5c5aba303955cdd28dfe08fcdfc9089a18fd5117b57cbf529b703a  sandboxloop/sink.png
 2fcbee7b58f45f11f52db540b59894490f89bfa6096a1abcf0c1e7aea0d54d18  sandboxloop/source.png
-4bda46379bf58dc9248f51fee1b280f2218b5d308d8c14d91cae277fc0f65700  screensaver/main.js
-09afabdf7c950fb963c0adca20253845b553652f4a4192396f3c4690427fb7e3  screensaver/modinfo.json
+6d1f6fab0e21391b48a68f501e0ae9afbb74d9023190ca90249c2899812e68d3  screensaver/main.js
+2fd8f97718135c7818cf81e3d0215f05f857213bdc8e8e7331f124807db687f3  screensaver/modinfo.json
 ```
 
 ## PNGs
