@@ -7,7 +7,7 @@ const api = sandkit.api;
 const React = sandkit.react;
 const h = React.createElement;
 const MOD_ID = "brandon.sandboxloop";
-const BUILD = "0.4.7";
+const BUILD = "0.4.8";
 
 function safe(fn, fb) { try { return fn(); } catch (e) { return fb; } }
 function setting(name, fb) { const v = safe(() => api.settings.get(name)); if (typeof fb === "boolean") return typeof v === "boolean" ? v : fb; return v === undefined ? fb : v; }
@@ -1194,15 +1194,31 @@ function inspectLines(r) {
 	L.push(["cell " + r.x + "," + r.y + (r.index != null ? "  ·  grain #" + r.index : ""), "#6f7b88"]);
 	return L;
 }
+// While the Screensaver runs, the cursor is hidden and input is swallowed, so the box reads the
+// grain the camera is following instead (Screensaver 0.18.4+ hook `tracer()`) and sits in the
+// bottom-left corner. Its first line says which real material the tracer stands for.
+function saverTracer() { return safe(() => window.__brandonScreensaver.tracer()) || null; }
+function inspectSaverLines() {
+	const hook = safe(() => window.__brandonScreensaver);
+	if (!hook || typeof hook.tracer !== "function") return [["🔍 Inspect needs Screensaver 0.18.4 or newer", "#e0b060"]];
+	const t = saverTracer();
+	if (!t || typeof t.x !== "number") return [["🔍 waiting for the screensaver to pick a grain…", "#9aa6b2"]];
+	const head = ["following: " + (t.orig != null ? nameOf(t.orig) : "?") + (t.searching ? "  (lost — searching near its last cell)" : ""), "#e0b060"];
+	return [head].concat(inspectLines(inspectCell(t.x, t.y)));
+}
 function InspectBox() {
 	const [, b] = React.useState(0); inspectRepaint = b;
-	if (!inspectOn || !isEnabled() || !inWorld() || saverActive()) return null;
-	const c = mouseCell();
-	if (!c) return null;
-	const lines = inspectLines(inspectCell(c.x, c.y));
-	// beside the cursor, flipped to the other side near the window's right / bottom edge
-	const W = safe(() => window.innerWidth) || 1920, H = safe(() => window.innerHeight) || 1080;
-	const left = _mouseX + 330 > W ? Math.max(0, _mouseX - 318) : _mouseX + 18, top = _mouseY + 150 > H ? Math.max(0, _mouseY - 140) : _mouseY + 18;
+	if (!inspectOn || !isEnabled() || !inWorld()) return null;
+	let lines, left, top;
+	if (saverActive()) { lines = inspectSaverLines(); left = 16; top = Math.max(0, (safe(() => window.innerHeight) || 1080) - 24 - lines.length * 17); }   // bottom-left, clear of the tracker (top-right) and the caption (bottom centre)
+	else {
+		const c = mouseCell();
+		if (!c) return null;
+		lines = inspectLines(inspectCell(c.x, c.y));
+		// beside the cursor, flipped to the other side near the window's right / bottom edge
+		const W = safe(() => window.innerWidth) || 1920, H = safe(() => window.innerHeight) || 1080;
+		left = _mouseX + 330 > W ? Math.max(0, _mouseX - 318) : _mouseX + 18; top = _mouseY + 150 > H ? Math.max(0, _mouseY - 140) : _mouseY + 18;
+	}
 	return h("div", { style: { position: "fixed", left: left + "px", top: top + "px", zIndex: 99999, pointerEvents: "none", maxWidth: "300px",
 		background: "rgba(10,14,20,0.94)", border: "1px solid #e0b060", borderRadius: "6px", padding: "5px 8px",
 		font: '600 11px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#e8edf3", lineHeight: 1.45, boxShadow: "0 4px 12px rgba(0,0,0,.5)" } },

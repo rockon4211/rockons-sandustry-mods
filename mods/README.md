@@ -1,7 +1,7 @@
 # Mods (source of truth)
 
 These folders are what gets installed in `%APPDATA%\sandustry\mods\`:
-  sandboxloop (v0.4.7), screensaver (v0.18.3), manufacturing (v0.16.0, Mod Tools),
+  sandboxloop (v0.4.8), screensaver (v0.18.4), manufacturing (v0.16.0, Mod Tools),
   lavaboiloff (v0.1.1), quickstart (v1.0.2), improvedfilters (v0.3.0)
 
 Manufacturing: edit `main.real.js` / `worker.real.js` ONLY, then run

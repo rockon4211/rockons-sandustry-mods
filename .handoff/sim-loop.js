@@ -35,7 +35,7 @@ function run(label, ids, names, storedCfg, structData) {
 	global.document = { addEventListener() {}, createElement: () => ({ remove() {}, click() {}, style: {} }), head: { appendChild() {} }, body: { appendChild() {} }, getElementById: () => null };
 	global.setInterval = () => 0; global.setTimeout = (fn) => { try { fn(); } catch (e) {} return 0; };
 	const log = console.log; console.log = () => {}; console.error = () => {};
-	eval('"use strict";\n' + src + "\nglobal.L = { defaultType, cfgFor, bake, get emitCfg(){return emitCfg}, buildPalette, inspectCell, inspectLines };");
+	eval('"use strict";\n' + src + "\nglobal.L = { defaultType, cfgFor, bake, get emitCfg(){return emitCfg}, buildPalette, inspectCell, inspectLines, inspectSaverLines };");
 	console.log = log;
 	const panel = { mat: L.emitCfg.mat, type: L.emitCfg.type, rate: L.emitCfg.rate };
 	const cfg = L.cfgFor(structs[0], panel);
@@ -114,5 +114,22 @@ check(emp.type == null && !emp.structure && !emp.terrain, "an empty cell is empt
 const txt = ins.L.inspectLines(soil).map((l) => l[0]).join(" | ");
 check(/soil/.test(txt) && /id sand/.test(txt) && /f1=3/.test(txt) && /cell 5,5/.test(txt), "the box text shows name, id, data fields and the cell (" + txt + ")");
 check(/tracer copy of soil/.test(ins.L.inspectLines(trc).map((l) => l[0]).join(" ")) && /empty/.test(ins.L.inspectLines(emp)[0][0]), "tracer and empty cells say so in the box");
+
+// --- 7. 🔍 inspect during the Screensaver (0.4.8): reads the FOLLOWED grain, not the mouse --
+const ins2 = run("inspect during the screensaver", TRC, TNAM, null, null);
+Object.assign(sandkit.api.elements, { getInfoAtCell: K.elements.getInfoAtCell, getResolvedTypeAtCell: K.elements.getResolvedTypeAtCell });
+sandkit.state.shared = { sim: { elementData: ed } };
+const saverLines = () => ins2.L.inspectSaverLines().map((l) => l[0]).join(" | ");
+window.__brandonScreensaver = { isActive: () => true };
+check(/needs Screensaver 0\.18\.4/.test(saverLines()), "an older Screensaver without tracer() gets a clear message, not a blank box");
+window.__brandonScreensaver.tracer = () => null;
+check(/waiting for the screensaver/.test(saverLines()), "no grain chosen yet: says it is waiting");
+window.__brandonScreensaver.tracer = () => ({ x: 6, y: 5, type: 95, orig: 1, searching: false });
+const sl = saverLines();
+check(/^following: soil/.test(sl) && /tracer copy of soil/.test(sl) && /cell 6,5/.test(sl) && /PARTICLE/.test(sl), "following a tracer: names the real material, reads the tracer's own cell (" + sl + ")");
+window.__brandonScreensaver.tracer = () => ({ x: 6, y: 5, type: 95, orig: 1, searching: true });
+check(/lost — searching/.test(saverLines()), "a lost tracer is flagged as searching");
+const ssSrc = fs.readFileSync(path.join(__dirname, "..", "mods", "screensaver", "main.js"), "utf8");
+check(/tracer:\s*\(\)\s*=>\s*\(active && trc \? \{ x: trc\.x, y: trc\.y, type: trc\.t, orig: trc\.orig, searching: !!trc\.search \} : null\)/.test(ssSrc), "the Screensaver's hook exposes tracer() with the fields Inspect reads");
 
 console.log(ok ? "\nALL OK": "\nFAIL: see above"); process.exit(ok ? 0 : 1);

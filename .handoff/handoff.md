@@ -61,9 +61,9 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
 ## Mods and versions (as of 2026-09-27, branch `main`)
 
-- **Sandbox Loop** `brandon.sandboxloop` v0.4.7 — Sources and Removers, balance tracker,
+- **Sandbox Loop** `brandon.sandboxloop` v0.4.8 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.18.3 — plays the map when idle and follows one
+- **Screensaver** `brandon.screensaver` v0.18.4 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went. 0.18.2: every tracer
   element (the 5 generic tracers and every clone) is registered with the game's own
   `showInFilterPicker: false`, so no picker lists them - they exist only for the Sandbox
@@ -191,7 +191,7 @@ gate is asked of `engine.api.action.getActive`. `sim-mk3.js` covers placement, t
 lists, the two patched spots, the self-check, the belt trigger and the animation buffer. History: 0.10.0–0.12.2 sped up every
 Mk.2 Filter instead; rejected, removed in 0.13.0.
 
-## Sandbox Loop v0.4.7 — what it does
+## Sandbox Loop v0.4.8 — what it does
 
 A **Source** is a structure that emits a chosen material at an adjustable rate (decimals
 allowed, up to 100/s); a **Remover** is a single block that deletes one chosen material at
@@ -235,6 +235,13 @@ there, the cell and the grain index. Added 2026-09-28 to check whether a Source'
 same thing as the world's (Brandon saw emitted soil apparently not going on to residue /
 burnt residue). Not yet seen in game.
 
+**0.4.8.** During the Screensaver the cursor is hidden and input swallowed, so Inspect reads the
+grain the camera follows instead — Screensaver 0.18.4's hook `tracer()` → `{x, y, type, orig,
+searching}` (null when not running / no grain) — and sits in the bottom-left corner, first line
+"following: <real material>" (+ "lost — searching" while the tracer is being re-found). An older
+Screensaver without `tracer()` gets a message instead of a blank box. Turn Inspect on BEFORE
+starting the screensaver (the panel is hidden while it runs).
+
 It exposes a hook other mods use:
 
 ```js
@@ -253,7 +260,7 @@ The panel also carries the Screensaver row: **🌙 START NOW** and a **⤓ log (
 saves the tracer flight recorder. Its companion graph page for history exports is
 `tools/resource-history` in the repo.
 
-## Screensaver v0.18.3 — what it does
+## Screensaver v0.18.4 — what it does
 
 After N minutes without input (or automatically from the main menu, for a Windows "on idle"
 task), it hides the HUD and cursor, goes fullscreen, caps the frame rate, holds a screen wake
@@ -300,7 +307,7 @@ screensaver and a "press E to exit" tip sits in the top-right, with all other ke
 clicks swallowed so they can't disturb the game.
 
 Hook: `window.__brandonScreensaver = { build, isActive(), exportLog(), logSize(), stop(), start(),
-sweepMap(), isSweeping() }` (`start()` returns a short reason string, which the Sandbox Loop
+sweepMap(), isSweeping(), tracer() }` (`start()` returns a short reason string, which the Sandbox Loop
 button displays; `sweepMap()` starts the whole-map tracer sweep from cell 0 and returns
 false when not in a world or a run is active; `isSweeping()` is true while one runs — the
 Sandbox Loop's census pauses on it).
@@ -624,7 +631,7 @@ There is no device bridge any more; everything happens directly on the desktop.
    armed" count above zero, a grain following soil → wet soil → residue → burnt residue →
    seed without hand-backs, nothing refused (the log says why if so). 0.18.3's sweep
    changes are covered by `sim-mapsweep.js` only. Also unconfirmed in game: Manufacturing's
-   Mk.3 belt animation and speed, Sandbox Loop 0.4.6–0.4.7 (🔍 Inspect), Quickstart 1.0.2.
+   Mk.3 belt animation and speed, Sandbox Loop 0.4.6–0.4.8 (🔍 Inspect), Screensaver 0.18.4 (tracer() hook), Quickstart 1.0.2.
 1b. **Filter Mk.3 on the game's own menu (Manufacturing 0.16.0 + Improved Filters 0.3.0) is
    untested in game.** Check: a Mk.3 in hand opens the game's panel expanded; picking a
    material keeps a Mk.3 in hand (not a Mk.2); Mk.3 rows get the game's labels; clicking one

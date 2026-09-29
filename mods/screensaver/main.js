@@ -131,7 +131,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.18.3";
+const BUILD = "0.18.4";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -1299,6 +1299,9 @@ safe(() => { window.__brandonScreensaver = {
 	logSize: () => tlog.length,
 	sweepMap: () => startMapSweep("hook"),   // remove every tracer grain on the map; (re)starts from cell 0 (false = not in a world / a run is active)
 	isSweeping: () => !!mapSweep,   // the Sandbox Loop eases its census off while a sweep runs
+	// the grain being followed right now (the Sandbox Loop's 🔍 Inspect reads it): its cell, the tracer
+	// type, the real material it stands for, and whether it's lost (last known cell, being searched for)
+	tracer: () => (active && trc ? { x: trc.x, y: trc.y, type: trc.t, orig: trc.orig, searching: !!trc.search } : null),
 	stop: () => stop("hook"),
 	// returns a short status string so the Sandbox Loop button can say what happened
 	start: () => {
