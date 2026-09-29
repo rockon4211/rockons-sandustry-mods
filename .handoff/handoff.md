@@ -63,7 +63,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
 - **Sandbox Loop** `brandon.sandboxloop` v0.4.9 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.18.7 — plays the map when idle and follows one
+- **Screensaver** `brandon.screensaver` v0.18.8 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went. 0.18.2: every tracer
   element (the 5 generic tracers and every clone) is registered with the game's own
   `showInFilterPicker: false`, so no picker lists them - they exist only for the Sandbox
@@ -249,7 +249,7 @@ The panel also carries the Screensaver row: **🌙 START NOW** and a **⤓ log (
 saves the tracer flight recorder. Its companion graph page for history exports is
 `tools/resource-history` in the repo.
 
-## Screensaver v0.18.7 — what it does
+## Screensaver v0.18.8 — what it does
 
 After N minutes without input (or automatically from the main menu, for a Windows "on idle"
 task), it hides the HUD and cursor, goes fullscreen, caps the frame rate, holds a screen wake
@@ -287,7 +287,11 @@ last known one while it is being re-found; the belt route's material with the tr
 changing as the grain does. 0.18.6: drawn as a plain element on `document.body` (not
 `api.ui.inject`) — injected UI is not rendered at all while the HUD is hidden, so the 0.18.5
 label never showed during a run (see UI below). 0.18.7: the label stays up for the whole
-run — "Following: …" until a grain is picked — and carries the build number. Replaced at Brandon's request (2026-09-28) the old stats panel
+run — "Following: …" until a grain is picked — and carries the build number. 0.18.8 (asked 2026-09-28): it prints the ELEMENT ID of the
+grain on screen — the copy the Source emitted, e.g. `brandonTrc_copper` (`trc.t`, which
+follows the copy through its changes); a copy's display name is the real material's
+("Copper") because it carries the whole definition, which is why 0.18.5–0.18.7 read like the
+real material. Handed back / being re-found, it is the real material's id ("copper"). Replaced at Brandon's request (2026-09-28) the old stats panel
 (journeys, marks, losses, re-finds, jumps, stray tracers, copies, armed reactions, "why it was
 lost", last nine events); those are still counted and saved by the **flight recorder**, which
 keeps up to 500 events and saves `tracer-log-<date>.json` to Downloads — on demand from the
@@ -566,7 +570,8 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   burning, machines, gold rule, main-product rule), and four scenes (launcher, fire,
   planter, shaker).
 - `sim-clone.js` — copies are built and armed, and a soil copy touching water becomes the
-  wet-soil copy and is still followed. Fails if no copies are built. The tracker prints "soil", then "Wet Soil" after the change, and (0.18.6) is a label on
+  wet-soil copy and is still followed. Fails if no copies are built. The tracker prints `brandonTrc_sand`, then `brandonTrc_wetSand` after the change (the real id
+  `wetSand` while being re-found), and (0.18.6) is a label on
   `document.body` that is reused while running and removed on stop — not an injected component.
 - `sim-output.js` — a machine output is picked up and the chain hops (wet soil → residue,
   not gold).

@@ -58,7 +58,8 @@ check(!!rule && rule.outputA === C("wetSand"), "contact rule: soil copy + water 
 cells.set(K(100, 100), C("sand"));
 M.trc = { t: C("sand"), orig: T("sand"), x: 100, y: 100, lastMove: NOW, since: NOW - 10000, pending: false, tries: 0, hops: ["soil"], hopTypes: [T("sand")], search: null, moved: 10 };
 const NM = (id) => sandkit.api.elements.getNameByType(T(id));
-check(M.followedName() === NM("sand"), "tracker (0.18.5) prints just the followed material: " + M.followedName());
+const CID = (id) => "brandonTrc_" + id;
+check(M.followedName() === CID("sand"), "tracker (0.18.8) prints the element id of the grain on screen — the copy the Source emitted: " + M.followedName());
 for (let i = 0; i < 300; i++) {
 	NOW += 33;
 	if (i === 60) cells.set(K(101, 100), T("water"));
@@ -69,7 +70,10 @@ for (let i = 0; i < 300; i++) {
 }
 check(cells.get(K(100, 100)) === C("wetSand"), "cell 100,100 is now the wet soil copy");
 check(!!M.trc && !M.trc.search && M.trc.orig === T("wetSand"), "still following it, now as wet soil: " + (M.trc ? M.trc.hops.join(" -> ") : "(no tracer)") + " | phase: " + M.dbg.phase);
-check(M.followedName() === NM("wetSand") && NM("wetSand") !== NM("sand"), "…and it changes with the grain: " + M.followedName());
+check(M.followedName() === CID("wetSand"), "…and it changes with the grain: " + M.followedName());
+const held = M.trc.search; M.trc.search = { orig: T("wetSand") };
+check(M.followedName() === "wetSand", "handed back / being re-found: the grain is the real material again, so its real id: " + M.followedName());
+M.trc.search = held;
 // the tracker label (0.18.6) is a plain element on document.body, NOT api.ui.inject: the game
 // does not render injected UI at all while the HUD is hidden, which the screensaver always does
 const body = [];
@@ -82,14 +86,14 @@ global.document.body = { appendChild(el) { body.push(el); el.isConnected = true;
 const labelText = () => (body.length ? body[0].children.map((c) => c.textContent).join("") : null);
 M.active = true; M.updateTracker();
 const BUILD_NOW = (/const BUILD = "([^"]+)"/.exec(src) || [])[1];
-check(body.length === 1 && labelText() === "Following: " + NM("wetSand") + BUILD_NOW && /z-index:100010/.test(body[0].style.cssText || ""), "while running, a label sits on document.body: " + labelText());
+check(body.length === 1 && labelText() === "Following: " + CID("wetSand") + BUILD_NOW && /z-index:100010/.test(body[0].style.cssText || ""), "while running, a label sits on document.body: " + labelText());
 M.updateTracker();
 check(body.length === 1, "updating again reuses the same label (no duplicates)");
 // 0.18.7: nothing to name yet (between journeys) still shows the label, with "…"
 const keep = M.trc; M.trc = null; M.updateTracker();
 check(body.length === 1 && labelText() === "Following: …" + BUILD_NOW, "no grain yet: the label still shows, as 'Following: …' + build: " + labelText());
 M.trc = keep; M.updateTracker();
-check(labelText() === "Following: " + NM("wetSand") + BUILD_NOW, "…and picks the name back up: " + labelText());
+check(labelText() === "Following: " + CID("wetSand") + BUILD_NOW, "…and picks the name back up: " + labelText());
 M.active = false; M.updateTracker();
 check(body.length === 0, "stopped: the label is removed");
 check(!src.includes('api.ui.inject("brandon-screensaver-tracker"'), "the tracker is no longer an injected component (the HUD hide would swallow it)");

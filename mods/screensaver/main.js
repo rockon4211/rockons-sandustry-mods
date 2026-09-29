@@ -131,7 +131,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.18.7";
+const BUILD = "0.18.8";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -1360,9 +1360,14 @@ if (h) { safe(() => api.ui.inject("brandon-screensaver-debug", Debug)); setInter
 // so an injected label vanished exactly when the screensaver hid the HUD.
 const TRK_CSS = "position:fixed;right:12px;top:46px;z-index:100010;pointer-events:none;font:700 15px -apple-system,'Segoe UI',Roboto,sans-serif;color:#dfe6ee;background:rgba(10,14,20,0.7);border:1px solid rgba(255,255,255,0.14);border-radius:6px;padding:5px 12px;letter-spacing:.02em;white-space:nowrap";
 let trkEl = null, trkNameEl = null, trkName = null;
+// 0.18.8: the ELEMENT ID of the grain actually on screen, e.g. "brandonTrc_copper" — the copy the
+// Source emitted (its display name is the real material's, "Copper", since the copy carries the
+// whole definition). Handed back / being re-found, the grain is the real material again, so its
+// real id ("copper"); with the tracer off the belt route carries real material too.
+function idOrName(t) { const id = safe(() => api.elements.getIdByType(t)); return typeof id === "string" && id ? id : matName(t); }
 function followedName() {
-	if (trc) return matName(trc.search ? trc.search.orig : trc.orig);
-	if (pathSrc) return matName(pathSrc.type);   // tracer off: following the belt route from a Source
+	if (trc) return trc.search ? idOrName(trc.search.orig) : idOrName(trc.t);
+	if (pathSrc) return idOrName(pathSrc.type);   // tracer off: following the belt route from a Source
 	if (fol && fol.names && fol.names.length) return fol.names[fol.names.length - 1];
 	return null;
 }
