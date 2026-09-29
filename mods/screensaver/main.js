@@ -131,7 +131,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.18.5";
+const BUILD = "0.18.6";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -1299,9 +1299,6 @@ safe(() => { window.__brandonScreensaver = {
 	logSize: () => tlog.length,
 	sweepMap: () => startMapSweep("hook"),   // remove every tracer grain on the map; (re)starts from cell 0 (false = not in a world / a run is active)
 	isSweeping: () => !!mapSweep,   // the Sandbox Loop eases its census off while a sweep runs
-	// the grain being followed right now (the Sandbox Loop's 🔍 Inspect reads it): its cell, the tracer
-	// type, the real material it stands for, and whether it's lost (last known cell, being searched for)
-	tracer: () => (active && trc ? { x: trc.x, y: trc.y, type: trc.t, orig: trc.orig, searching: !!trc.search } : null),
 	stop: () => stop("hook"),
 	// returns a short status string so the Sandbox Loop button can say what happened
 	start: () => {
@@ -1357,22 +1354,34 @@ if (h) { safe(() => api.ui.inject("brandon-screensaver-debug", Debug)); setInter
 // --- tracker: just the name of the material being followed (0.18.5; the old stats panel —
 // journeys, losses, recent events — was replaced at Brandon's request; the flight recorder
 // still logs all of it and ⤓ log on the Sandbox Loop panel saves it) --
-let trkRepaint = null;
-const TRK = { position: "fixed", right: "12px", top: "46px", zIndex: 99998, pointerEvents: "none", font: '700 15px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#dfe6ee", background: "rgba(10,14,20,0.7)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "6px", padding: "5px 12px", letterSpacing: ".02em", whiteSpace: "nowrap" };
+// 0.18.6: a PLAIN DOM element on document.body, not api.ui.inject. Injected components live in
+// the game's "global" overlay layer, and the game's root doesn't render that layer at all while
+// session.ui.hudHidden is set (bundle v0.5.6: the Root returns only the cinematic pieces then) —
+// so an injected label vanished exactly when the screensaver hid the HUD.
+const TRK_CSS = "position:fixed;right:12px;top:46px;z-index:100010;pointer-events:none;font:700 15px -apple-system,'Segoe UI',Roboto,sans-serif;color:#dfe6ee;background:rgba(10,14,20,0.7);border:1px solid rgba(255,255,255,0.14);border-radius:6px;padding:5px 12px;letter-spacing:.02em;white-space:nowrap";
+let trkEl = null, trkName = null;
 function followedName() {
 	if (trc) return matName(trc.search ? trc.search.orig : trc.orig);
 	if (pathSrc) return matName(pathSrc.type);   // tracer off: following the belt route from a Source
 	if (fol && fol.names && fol.names.length) return fol.names[fol.names.length - 1];
 	return null;
 }
-function Tracker() {
-	const [, b] = React.useState(0); trkRepaint = b;
+function trackerName() {
 	if (!setting("showTracker", true) || !inWorld() || !(active || setting("debugOverlay", false))) return null;
-	const name = followedName();
-	if (!name) return null;
-	return h("div", { style: TRK }, "Following: ", h("span", { style: { color: "#ffe27a" } }, name));
+	return followedName();
 }
-if (h) { safe(() => api.ui.inject("brandon-screensaver-tracker", Tracker)); setInterval(() => { if (trkRepaint) trkRepaint((v) => v + 1); }, 300); }
+function updateTracker() {
+	const name = trackerName();
+	if (!name) { if (trkEl) { safe(() => trkEl.remove()); trkEl = null; trkName = null; } return; }
+	if (!trkEl || !trkEl.isConnected) {
+		trkEl = document.createElement("div"); trkEl.setAttribute("data-brandon-screensaver", "tracker"); trkEl.style.cssText = TRK_CSS;
+		trkEl.appendChild(document.createTextNode("Following: "));
+		const s = document.createElement("span"); s.style.color = "#ffe27a"; trkEl.appendChild(s);
+		document.body.appendChild(trkEl); trkName = null;
+	}
+	if (name !== trkName) { trkEl.lastChild.textContent = name; trkName = name; }
+}
+setInterval(() => safe(updateTracker), 300);
 // the one way out, spelled out in the corner
 let tipRepaint = null;
 function ExitTip() {

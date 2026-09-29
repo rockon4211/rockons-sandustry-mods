@@ -42,7 +42,7 @@ global.navigator = { wakeLock: { request: () => Promise.resolve({ release() {} }
 global.setInterval = () => 0; const timers = []; global.setTimeout = (fn, ms) => { timers.push({ fn, at: NOW + ms }); return 0; };
 const log = console.log; console.log = () => {};
 eval('"use strict";\n' + src.replace("function tick() {", "function modTick() {").replace("setInterval(tick, 33);", "")
-	+ "\nglobal.M = { get dbg(){return dbg}, get trc(){return trc}, set trc(v){trc=v}, modTick, set active(v){active=v}, get notes(){return recentNotes}, armCloneReactions, cloneOf, get armed(){return reactionsArmed}, followedName };");
+	+ "\nglobal.M = { get dbg(){return dbg}, get trc(){return trc}, set trc(v){trc=v}, modTick, set active(v){active=v}, get notes(){return recentNotes}, armCloneReactions, cloneOf, get armed(){return reactionsArmed}, followedName, updateTracker };");
 console.log = log;
 
 const C = (id) => M.cloneOf.get(T(id));
@@ -70,5 +70,22 @@ for (let i = 0; i < 300; i++) {
 check(cells.get(K(100, 100)) === C("wetSand"), "cell 100,100 is now the wet soil copy");
 check(!!M.trc && !M.trc.search && M.trc.orig === T("wetSand"), "still following it, now as wet soil: " + (M.trc ? M.trc.hops.join(" -> ") : "(no tracer)") + " | phase: " + M.dbg.phase);
 check(M.followedName() === NM("wetSand") && NM("wetSand") !== NM("sand"), "…and it changes with the grain: " + M.followedName());
+// the tracker label (0.18.6) is a plain element on document.body, NOT api.ui.inject: the game
+// does not render injected UI at all while the HUD is hidden, which the screensaver always does
+const body = [];
+const mk = (tag) => ({ tag, style: {}, children: [], attrs: {}, isConnected: false, textContent: "",
+	appendChild(c) { this.children.push(c); return c; }, setAttribute(k, v) { this.attrs[k] = v; },
+	remove() { const i = body.indexOf(this); if (i >= 0) body.splice(i, 1); this.isConnected = false; },
+	get lastChild() { return this.children[this.children.length - 1]; } });
+global.document.createElement = mk; global.document.createTextNode = (t) => ({ textContent: t });
+global.document.body = { appendChild(el) { body.push(el); el.isConnected = true; return el; } };
+const labelText = () => (body.length ? body[0].children.map((c) => c.textContent).join("") : null);
+M.active = true; M.updateTracker();
+check(body.length === 1 && labelText() === "Following: " + NM("wetSand") && /z-index:100010/.test(body[0].style.cssText || ""), "while running, a label sits on document.body: " + labelText());
+M.updateTracker();
+check(body.length === 1, "updating again reuses the same label (no duplicates)");
+M.active = false; M.updateTracker();
+check(body.length === 0, "stopped: the label is removed");
+check(!src.includes('api.ui.inject("brandon-screensaver-tracker"'), "the tracker is no longer an injected component (the HUD hide would swallow it)");
 console.log(ok ? "\nALL OK" : "\nSOME CHECKS FAILED");
 process.exit(ok ? 0 : 1);

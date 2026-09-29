@@ -61,9 +61,9 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
 ## Mods and versions (as of 2026-09-27, branch `main`)
 
-- **Sandbox Loop** `brandon.sandboxloop` v0.4.8 — Sources and Removers, balance tracker,
+- **Sandbox Loop** `brandon.sandboxloop` v0.4.9 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.18.5 — plays the map when idle and follows one
+- **Screensaver** `brandon.screensaver` v0.18.6 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went. 0.18.2: every tracer
   element (the 5 generic tracers and every clone) is registered with the game's own
   `showInFilterPicker: false`, so no picker lists them - they exist only for the Sandbox
@@ -191,7 +191,7 @@ gate is asked of `engine.api.action.getActive`. `sim-mk3.js` covers placement, t
 lists, the two patched spots, the self-check, the belt trigger and the animation buffer. History: 0.10.0–0.12.2 sped up every
 Mk.2 Filter instead; rejected, removed in 0.13.0.
 
-## Sandbox Loop v0.4.8 — what it does
+## Sandbox Loop v0.4.9 — what it does
 
 A **Source** is a structure that emits a chosen material at an adjustable rate (decimals
 allowed, up to 100/s); a **Remover** is a single block that deletes one chosen material at
@@ -226,21 +226,10 @@ dead objects otherwise). `Scene.Deploy` (3, the landing cinematic) counts as "no
 world". The census yields while the Screensaver's map sweep runs
 (`__brandonScreensaver.isSweeping()`).
 
-**0.4.7 — 🔍 Inspect.** An Inspect pill on the panel (persisted, `brandon.sandboxloop.inspect`)
-turns on a read-only box beside the cursor naming the grain under the mouse: display name,
-element id, this PC's number, matter type, PARTICLE when it is in flight, "Screensaver tracer
-copy of X" for `brandonTrc_*` / `brandonTracer*`, the game's per-grain data (data fields
-1–4, duration, velocity, falling/resting, variant, skipPhysics), the structure or terrain
-there, the cell and the grain index. Added 2026-09-28 to check whether a Source's soil is the
-same thing as the world's (Brandon saw emitted soil apparently not going on to residue /
-burnt residue). Not yet seen in game.
-
-**0.4.8.** During the Screensaver the cursor is hidden and input swallowed, so Inspect reads the
-grain the camera follows instead — Screensaver 0.18.4's hook `tracer()` → `{x, y, type, orig,
-searching}` (null when not running / no grain) — and sits in the bottom-left corner, first line
-"following: <real material>" (+ "lost — searching" while the tracer is being re-found). An older
-Screensaver without `tracer()` gets a message instead of a blank box. Turn Inspect on BEFORE
-starting the screensaver (the panel is hidden while it runs).
+**0.4.7–0.4.8 (removed in 0.4.9).** A 🔍 Inspect readout of the grain under the mouse (and of the
+Screensaver's followed grain) was added 2026-09-28 and taken out the same day at Brandon's
+request; 0.4.9's code is 0.4.6's with the version bumped. In git history on the
+`sandboxloop-inspect` branch (commits 1500675, 6070816) if it is ever wanted again.
 
 It exposes a hook other mods use:
 
@@ -260,7 +249,7 @@ The panel also carries the Screensaver row: **🌙 START NOW** and a **⤓ log (
 saves the tracer flight recorder. Its companion graph page for history exports is
 `tools/resource-history` in the repo.
 
-## Screensaver v0.18.5 — what it does
+## Screensaver v0.18.6 — what it does
 
 After N minutes without input (or automatically from the main menu, for a Windows "on idle"
 task), it hides the HUD and cursor, goes fullscreen, caps the frame rate, holds a screen wake
@@ -295,7 +284,9 @@ up. Passive structures (frames, launchers, platforms) never trigger a hand-back.
 **Tracker** (top-right, on by default; setting "Show what is being followed"): since 0.18.5 just
 "Following: <material>" — the real material the followed grain is now (`trc.orig`, or the
 last known one while it is being re-found; the belt route's material with the tracer off),
-changing as the grain does. Replaced at Brandon's request (2026-09-28) the old stats panel
+changing as the grain does. 0.18.6: drawn as a plain element on `document.body` (not
+`api.ui.inject`) — injected UI is not rendered at all while the HUD is hidden, so the 0.18.5
+label never showed during a run (see UI below). Replaced at Brandon's request (2026-09-28) the old stats panel
 (journeys, marks, losses, re-finds, jumps, stray tracers, copies, armed reactions, "why it was
 lost", last nine events); those are still counted and saved by the **flight recorder**, which
 keeps up to 500 events and saves `tracer-log-<date>.json` to Downloads — on demand from the
@@ -310,7 +301,7 @@ screensaver and a "press E to exit" tip sits in the top-right, with all other ke
 clicks swallowed so they can't disturb the game.
 
 Hook: `window.__brandonScreensaver = { build, isActive(), exportLog(), logSize(), stop(), start(),
-sweepMap(), isSweeping(), tracer() }` (`start()` returns a short reason string, which the Sandbox Loop
+sweepMap(), isSweeping() }` (`start()` returns a short reason string, which the Sandbox Loop
 button displays; `sweepMap()` starts the whole-map tracer sweep from cell 0 and returns
 false when not in a world or a run is active; `isSweeping()` is true while one runs — the
 Sandbox Loop's census pauses on it).
@@ -450,6 +441,11 @@ game build — search the bundle by string literals, not by those names.
 
 ### UI
 - `api.ui.inject(id, Component)` mounts globally (position it yourself, `position:fixed`).
+  It goes into the game's "global" overlay layer (`fixed … z-[10005]`), which the Root does
+  NOT render while `session.ui.hudHidden` is true (bundle v0.5.6: with the HUD hidden the Root
+  returns only the cinematic pieces) — so every injected component, the Screensaver's caption
+  and "press E" tip included, is invisible while the HUD is hidden. To show something then,
+  append a plain element to `document.body` yourself (Screensaver 0.18.6's tracker label).
   `api.ui.overlays.register("hotbar", id, render)` mounts in the band above the hotbar —
   `render()` is called as a plain function and must RETURN an element (`() =>
   React.createElement(Comp)`); the band lays overlays out side by side, so keep them
@@ -569,7 +565,8 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   burning, machines, gold rule, main-product rule), and four scenes (launcher, fire,
   planter, shaker).
 - `sim-clone.js` — copies are built and armed, and a soil copy touching water becomes the
-  wet-soil copy and is still followed. Fails if no copies are built. The tracker (0.18.5) prints "soil", then "Wet Soil" after the change.
+  wet-soil copy and is still followed. Fails if no copies are built. The tracker prints "soil", then "Wet Soil" after the change, and (0.18.6) is a label on
+  `document.body` that is reused while running and removed on stop — not an injected component.
 - `sim-output.js` — a machine output is picked up and the chain hops (wet soil → residue,
   not gold).
 - `sim-filter.js` — a tracer riding into the filter section: the loss is logged at the
@@ -581,9 +578,7 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   golden Sand while the panel default stays soil); an unknown id falls back to the panel and
   is flagged unset; `bake()` writes the id through `updateData`. Verified to FAIL against a
   copy whose `cfgFor` always returns the default (the old version only ever checked the
-  default, which a broken `cfgFor` also produces). 0.4.7: the 🔍 Inspect readout on a mocked
-  grid — soil grain, flying tracer copy, structure, terrain, empty — reads the right element
-  index's data and prints it.
+  default, which a broken `cfgFor` also produces). 
 - `sim-mapsweep.js` — Screensaver 0.18.3 map sweep, booted twice (with `api.world.mutate`
   and with the `removeAtCellWhenIdle` fallback): every tracer cell emptied, ordinary grains
   untouched, a grain that moved on between read and delete is left alone and NOT counted,
@@ -634,7 +629,7 @@ There is no device bridge any more; everything happens directly on the desktop.
    armed" count above zero, a grain following soil → wet soil → residue → burnt residue →
    seed without hand-backs, nothing refused (the log says why if so). 0.18.3's sweep
    changes are covered by `sim-mapsweep.js` only. Also unconfirmed in game: Manufacturing's
-   Mk.3 belt animation and speed, Sandbox Loop 0.4.6–0.4.8 (🔍 Inspect), Screensaver 0.18.4–0.18.5 (tracer() hook, name-only tracker), Quickstart 1.0.2.
+   Mk.3 belt animation and speed, Sandbox Loop 0.4.6/0.4.9, Screensaver 0.18.6 ("Following:" label during the screensaver), Quickstart 1.0.2.
 1b. **Filter Mk.3 on the game's own menu (Manufacturing 0.16.0 + Improved Filters 0.3.0) is
    untested in game.** Check: a Mk.3 in hand opens the game's panel expanded; picking a
    material keeps a Mk.3 in hand (not a Mk.2); Mk.3 rows get the game's labels; clicking one
