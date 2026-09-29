@@ -20,7 +20,7 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 // --- the mocked game -----------------------------------------------------------------
 const vanilla = { sand: 1, water: 3, wetSand: 4, copper: 36, sunsand: 40 };
 const byType = {}; for (const k in vanilla) byType[vanilla[k]] = { id: k, name: k, matterType: 7, metaColor: 0x808080 };
-let nextType = 60; const registered = [];
+let nextType = 60; const registered = [], spriteLoads = [];
 const buffers = {}, handlers = {}, intervals = [], timeouts = [], toasts = [], triggers = [], conveyors = [], interactables = {}, structDefs = {}, techNodes = {}, updateManyCalls = [];
 const structs = [];   // on the map; a tile is 4 cells wide
 const getAtCell = (x, y) => structs.find((s) => s.y === y && x >= s.x && x < s.x + 4) || null;
@@ -37,7 +37,7 @@ const api = {
 		updateDefinition(t, p) { if (byType[t]) Object.assign(byType[t], p); }, addInteractionInfo() {}, getInfoAtCell: () => null, getResolvedTypeAtCell: () => null, createAtCellWhenIdle() {}, removeAtCellWhenIdle() {} },
 	terrains: { updateDefinition() {}, getTypeById: () => 15, getDefinitionByType: () => null },
 	shared: { buffers: { create: (key, o) => { const b = o.type === "uint8" ? new Uint8Array(o.length) : new Uint32Array(o.length); buffers[key] = b; return b; } } },
-	sprites: { loadFromMod: async () => {} },
+	sprites: { loadFromMod: async (n, f) => { spriteLoads.push([n, f]); } },
 	i18n: { register() {}, t: (k) => k },
 	tech: { registerNode: (id, def) => { techNodes[id] = def; }, getDefinitionById: (id) => techNodes[id], isLockedById: () => true, isResearchedById: () => false },
 	player: { buildings: { unlockById() {} }, getWorldPosition: () => ({ x: 0, y: 0 }) },
@@ -78,6 +78,14 @@ global.requestAnimationFrame = () => 0; global.cancelAnimationFrame = () => {};
 	check(structDefs[R] && structDefs[L] && structDefs[R].variants.some((v) => v.id === "filterWallMk2"), "filterRightMk3 / filterLeftMk3 registered, vertical variant = the vanilla filterWallMk2");
 	const ss = structDefs[R] && structDefs[R].render.spritesheet, ssL = structDefs[L] && structDefs[L].render.spritesheet;
 	check(ss && ss.frames === 4 && ss.frameBuffer && ss.frameBuffer.key === "mk3anim" && ss.frameBuffer.index === 1 && ssL.frameBuffer.index === 0, "spritesheet: 4 frames from buffer mk3anim, right reads [1], left reads [0]");
+	// 0.16.1: icons (tech tree, build menu, hotbar) use render.ui.imageName when set - a single
+	// frame - instead of the whole strip, which showed four filters side by side
+	const ui = structDefs[R] && structDefs[R].render.ui;
+	check(ui && ui.imageName === "brandon_filter_right_mk3_icon" && ui.size && ui.size.width === 18 && ui.size.height === 18 && structDefs[R].render.imageName === "brandon_filter_right_mk3",
+		"the icon is the one-frame brandon_filter_right_mk3_icon (18x18); the world still draws the animated strip");
+	check(spriteLoads.some((l) => l[0] === "brandon_filter_right_mk3_icon" && l[1] === "filter_right_mk3_icon.png"), "…loaded from filter_right_mk3_icon.png");
+	const icon = fs.readFileSync(path.join(__dirname, "..", "mods", "manufacturing", "filter_right_mk3_icon.png"));
+	check(icon.readUInt32BE(16) === 18 && icon.readUInt32BE(20) === 18, "filter_right_mk3_icon.png is 18x18 (one frame)");
 
 	// --- (a) building:placed copies the default filter --------------------------------------
 	const placed = handlers["building:placed"] || [];
@@ -102,6 +110,21 @@ global.requestAnimationFrame = () => 0; global.cancelAnimationFrame = () => {};
 	const hk = [17, 18, "filterLeftMk2", "filterRightMk2"], mk = ["filterWall", "filterWallMk2"], pk = [...hk, ...mk], gk = [17, "filterLeftMk2"], Uk = ["filterLeftMk2", "filterRightMk2", "filterWallMk2"], hotbarM = [18, 17, "filterRightMk2", "filterLeftMk2"];
 	check(Array.prototype.includes.__brandonMk3 === true, "Array.prototype.includes is the Mk.3-aware one");
 	check(pk.includes(R) && pk.includes(L) && hk.includes(R) && Uk.includes(L) && hotbarM.includes(R) && hotbarM.includes(L), "both Mk.3s are in the filter list, the Mk.2 list and the hotbar list");
+	// 0.16.1: the unlocked-buildings list holds the Mk.2 too, but it is NOT a filter list - in 0.16.0
+	// it "already had" the Mk.3, so buying the research never added it and it never reached the
+	// build menu. The game unlocks with `buildings.includes(id) || buildings.push(id)`.
+	const owned = state.store.player.buildings = ["conveyorRight", "shakerRight", "filterRightMk2", "filterLeftMk2", "filterWallMk2"];
+	check(!owned.includes(R) && !owned.includes(L), "the unlocked-buildings list (Mk.2 + other buildings) does NOT claim to hold a Mk.3");
+	const gameUnlock = (id) => { const b = state.store.player.buildings; b.includes(id) || b.push(id); };   // the game's own add, verbatim
+	gameUnlock(R);
+	check(owned.includes(R) && owned.filter((x) => x === R).length === 1, "buying the research adds filterRightMk3 to the build menu list (once)");
+	// the fallback for saves that researched it but never got the building (every 0.16.0 save)
+	state.store.player.buildings = ["conveyorRight", "filterRightMk2"];
+	api.player.buildings.unlockById = gameUnlock;
+	api.tech.isResearchedById = (id) => id === "brandonFilterMk3";
+	for (const iv of intervals) if (/TECH_FILTER_MK3/.test(String(iv.fn)) && /unlockById/.test(String(iv.fn))) iv.fn();
+	check(state.store.player.buildings.includes("filterRightMk3") && state.store.player.buildings.length === 3, "a save that researched Filter Mk.3 without getting it (0.16.0) gets it from the fallback: " + JSON.stringify(state.store.player.buildings));
+	api.tech.isResearchedById = () => false;
 	check(gk.includes(L) && !gk.includes(R), "the left-facing list takes the left Mk.3 only");
 	check(!mk.includes(R) && !mk.includes(L), "the walls list does not take a Mk.3");
 	check(["filterRightMk2", "filterLeftMk2"].includes(R), "the placement / paste checks (a literal [Mk.2 right, left]) take it too");

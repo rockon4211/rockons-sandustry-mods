@@ -212,7 +212,7 @@ publish(); setInterval(publish, 1000);
 		const inWorld = active !== undefined && active !== null && (menus.length ? !menus.includes(active) : active > 2);
 		if (!inWorld) return;
 		bannered = true;
-		safe(() => api.ui.toast("Manufacturing v0.16.0 running"));
+		safe(() => api.ui.toast("Manufacturing v0.16.1 running"));
 	}, 800);
 }
 console.log(`[${MOD_ID}] loaded`);
@@ -767,6 +767,12 @@ let mk3Ready = false;
 try {
 	await api.sprites.loadFromMod("brandon_filter_right_mk3", "filter_right_mk3.png");
 	await api.sprites.loadFromMod("brandon_filter_left_mk3", "filter_left_mk3.png");
+	// 0.16.1: the icon (tech tree, build menu, hotbar) is ONE frame. Without render.ui.imageName the
+	// game's icons use render.imageName - the whole 4-frame strip - and showed four filters
+	// side by side. filter_right_mk3_icon.png is frame 0 of the strip, pixel for pixel.
+	let mk3Icon = null;
+	try { await api.sprites.loadFromMod("brandon_filter_right_mk3_icon", "filter_right_mk3_icon.png"); mk3Icon = "brandon_filter_right_mk3_icon"; }
+	catch (e) { console.error(`[${MOD_ID}] Filter Mk.3 icon failed to load (the icon shows the whole strip):`, e); }
 	const variants = [{ id: MK3_L, angles: [-180, 180] }, { id: MK3_R, angles: [0] }, { id: "filterWallMk2", angles: [-90, 90] }];
 	const common = { nameKey: "structures|brandonFilterMk3|name", descriptionKey: "structures|brandonFilterMk3|description", name: "Filter Mk.3",
 		categoryKey: "logistics", tooltipHover: { type: "filter" }, variants };
@@ -774,7 +780,7 @@ try {
 	const sheet = (index) => mk3Anim ? { frames: 4, frameSize: { width: 18, height: 18 }, frameBuffer: { key: "mk3anim", index } } : { frames: 4, frameSize: { width: 18, height: 18 }, intervalMs: MK3_BELT_MS };
 	api.structures.register(Object.assign({ id: MK3_R, order: 52,
 		buildModes: [{ type: "line", directions: ["horizontal"] }, { type: "line", directions: ["vertical"] }],
-		render: { imageName: "brandon_filter_right_mk3", size: { width: 18, height: 18 }, offset: { x: -1, y: -1 }, z: .85, spritesheet: sheet(1), ui: { outline: true, width: "18px", height: "18px" } } }, common));
+		render: { imageName: "brandon_filter_right_mk3", size: { width: 18, height: 18 }, offset: { x: -1, y: -1 }, z: .85, spritesheet: sheet(1), ui: Object.assign({ outline: true, width: "18px", height: "18px" }, mk3Icon ? { imageName: mk3Icon, size: { width: 18, height: 18 } } : null) } }, common));
 	api.structures.register(Object.assign({ id: MK3_L,
 		render: { imageName: "brandon_filter_left_mk3", size: { width: 18, height: 18 }, offset: { x: -1, y: -1 }, z: .85, spritesheet: sheet(0) } }, common));
 	mk3Ready = true;
@@ -815,19 +821,31 @@ safe(() => api.events.on("building:placed", (p) => {
 // filterLeftMk3 wherever filterLeftMk2 is). Any other question goes straight through (two
 // string compares, then the original). The Copier's left/right pair list is read through
 // a Map, not includes, so a Mk.3 is never flipped into a Mk.2.
+// 0.16.1: ONLY for a list that holds nothing but filter ids - the game's filter lists do (Mk.1 =
+// StructureType FilterLeft/Right, the Mk.2s, the walls). 0.16.0 answered for ANY array, so
+// store.player.buildings - which holds filterRightMk2 - "already had" filterRightMk3: buying the
+// research (the game unlocks with `buildings.includes(id) || buildings.push(id)`) and the
+// unlock fallback below both skipped it, and the Mk.3 never reached the build menu.
 const MK3_TWIN = { [MK3_R]: "filterRightMk2", [MK3_L]: "filterLeftMk2" };
+const ST = safe(() => sandkit.enums.StructureType) || {};
+const FILTER_IDS = new Set(["filterLeftMk2", "filterRightMk2", "filterWall", "filterWallMk2", MK3_R, MK3_L, "filterLeft", "filterRight"]
+	.concat([ST.FilterLeft, ST.FilterRight].filter((v) => v !== undefined && v !== null)));
 let filterListsOk = false;
 try {
-	if (!Array.prototype.includes.__brandonMk3) {   // once per page, even if the mod is reloaded
-		const orig = Array.prototype.includes;
+	if (!Array.prototype.includes.__brandonMk3v2) {   // once per page, even if the mod is reloaded
+		const orig = Array.prototype.includes.__brandonOrig || Array.prototype.includes;   // a 0.16.0 patch from this page is replaced, not stacked
+		const onlyFilters = (a) => { if (a.length === 0 || a.length > 16) return false; for (let i = 0; i < a.length; i++) if (!FILTER_IDS.has(a[i])) return false; return true; };
 		const includes = function includes(v, from) {
-			if ((v === MK3_R || v === MK3_L) && orig.call(this, MK3_TWIN[v])) return true;
+			if ((v === MK3_R || v === MK3_L) && Array.isArray(this) && onlyFilters(this) && orig.call(this, MK3_TWIN[v])) return true;
 			return orig.call(this, v, from);
 		};
 		Object.defineProperty(includes, "__brandonMk3", { value: true });
+		Object.defineProperty(includes, "__brandonMk3v2", { value: true });
+		Object.defineProperty(includes, "__brandonOrig", { value: orig });
 		Object.defineProperty(Array.prototype, "includes", { value: includes, writable: true, configurable: true, enumerable: false });
 	}
-	filterListsOk = ["filterRightMk2"].includes(MK3_R) && !["filterRightMk2"].includes(MK3_L) && [1, 2].includes(2) && [NaN].includes(NaN);
+	filterListsOk = ["filterRightMk2"].includes(MK3_R) && !["filterRightMk2"].includes(MK3_L) && [1, 2].includes(2) && [NaN].includes(NaN)
+		&& !["filterRightMk2", "conveyorRight"].includes(MK3_R);   // a list of other things (the unlocked buildings) gets the plain answer
 } catch (e) { console.error(`[${MOD_ID}] Filter Mk.3: could not join the game's filter lists:`, e); }
 // Checked against the game itself once a world is up: its row editor must accept a Mk.3 row.
 // If a game update stops using those lists the Mk.3 still sorts and moves (the sim reads the

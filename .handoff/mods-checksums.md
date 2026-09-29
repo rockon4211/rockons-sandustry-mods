@@ -1,7 +1,7 @@
 # Mod file checksums — sandboxloop-inspect, f6fcc06, 2026-09-28
 
 Versions: sandboxloop 0.4.9, screensaver 0.18.8, manufacturing 0.16.0, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.3.0.
-All 25 installed files; every hash is of the file at the commit named in the title, which is
+All 26 installed files; every hash is of the file at the commit named in the title, which is
 the mod content now on `main` (later commits only touch docs). Regenerate after changing a mod.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
 text files out with CRLF, so hash those after converting, or compare with `git hash-object`.

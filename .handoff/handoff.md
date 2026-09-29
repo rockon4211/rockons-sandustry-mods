@@ -77,7 +77,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
   is left alone and only real deletes are counted in the `map-sweep` log event; ~100
   consecutive failed slices abort the sweep instead of looping; `isSweeping()` is exposed
   so the Sandbox Loop's census can yield to it.
-- **Manufacturing** `brandon.manufacturing` v0.16.0 — soil/Sand rename + Glass, Mod Tools,
+- **Manufacturing** `brandon.manufacturing` v0.16.1 — soil/Sand rename + Glass, Mod Tools,
   and **Filter Mk.3** research (0.10.0 was an Upgrades-pane item "Belt-Speed Filtering";
   0.12.0 made it a tech-tree node). Source of truth: `main.real.js` / `worker.real.js` (see below).
 - **Lava Boiloff** v0.1.1, **Quickstart** v1.0.2 (F10 quick reload).
@@ -181,6 +181,21 @@ How it got here: 0.15.0 cloned the panel (the lists looked unreachable); 0.15.3 
 labels overlay; 0.15.6 let it edit Mk.2 rows; 0.15.7–0.15.8 chased behaviour differences
 (rows that never closed, starting minimized, placing while editing). Each clone was a place
 to differ — joining the lists removed all of them.
+
+**0.16.1 (2026-09-28).** Two bugs Brandon hit in game:
+(1) **Bought Filter Mk.3 but it never reached the build menu.** The game unlocks a building with
+`player.buildings.includes(id) || player.buildings.push(id)` (and `api.player.buildings.unlockById`
+does the same), and 0.16.0's `includes` answered for ANY array — the unlocked list holds
+`filterRightMk2`, so it "already had" `filterRightMk3` and nothing was pushed; the 2 s fallback
+failed the same way. Seen in the save: `tech.brandonFilterMk3: true`, no `filterRightMk3` in
+`player.buildings`. Now the twin rule applies only to an array of ≤16 entries that are ALL filter
+ids (Mk.1 StructureType FilterLeft/Right, the Mk.2s, the walls, the Mk.3s) — every game list the
+Mk.3 needs is like that (the bundle has no mixed array literal holding a Mk.2 filter id); anything
+else gets the original answer. Saves bought under 0.16.0 get the building from the fallback.
+(2) **The Mk.3 icon showed four filters.** Icons (tech tree, build menu, hotbar) use
+`render.ui.imageName` when set, else `render.imageName` — the whole 72×18 strip. The Mk.3 now
+sets `ui.imageName` to `filter_right_mk3_icon.png`, frame 0 of the strip, pixel for pixel.
+`sim-mk3.js` covers both.
 
 0.15.x in game: the panel and the labels overlay were confirmed on 2026-09-25 (with Improved
 Filters 0.2.6); the belt animation and the Mk.3's actual belt speed are still unconfirmed.
@@ -434,6 +449,15 @@ game build — search the bundle by string literals, not by those names.
   "filterRightMk2"` → filterForceExpand), the panel's material pick (sets
   activeStructureType = "filterRightMk2" / FilterRight), placement angles and hotbar
   icons. The Copier's left/right flip pairs are read through a Map, not includes.
+- Unlocking: researching a node runs, per `unlocks.structures` id,
+  `store.player.buildings.includes(id) || store.player.buildings.push(id)`; the build menu lists
+  exactly `store.player.buildings` (minus `hideFromBuildMenu`), grouped by `categoryKey`
+  (`misc logic blocks construction debug drones energy excavation logistics production tools
+  transportation utility weapons economy fluids thermal lighting special`). So anything that
+  changes `Array.prototype.includes` must not answer for that list (Manufacturing 0.16.0 did).
+- Icons: the tech tree, build menu and hotbar draw `render.ui.imageName` (size `ui.size`) when a
+  structure sets it, else `render.imageName` whole — a spritesheet shows every frame. Give an
+  animated structure a one-frame icon image.
 - Terrain ids by name: `api.terrains.getTypeById("block")` (Block is built-in id 15); mod
   terrains are numbered by registration order — never hard-code them.
 - Tech: `api.tech.registerNode(id, {nameKey, descriptionKey, cost, currencyType:"gold",
@@ -592,7 +616,8 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   `active`, abort after 100 consecutive read errors (30 do not), `sweepMap()` and the
   `game:ready` schedule; every `api.elements.register` call has `showInFilterPicker: false`.
 - `sim-mk3.js` — Manufacturing's Filter Mk.3 from `main.real.js` (run inside the game's
-  async wrapper): `building:placed` copies `defaultFilter` with affects* true and its own
+  async wrapper): (0.16.1) the one-frame icon; the unlocked-buildings list does not claim a Mk.3,
+  the game's unlock adds it, and the fallback unlocks it for a save researched under 0.16.0; `building:placed` copies `defaultFilter` with affects* true and its own
   array (vanilla filters and copy-pasted Mk.3s left alone); the interactable selects the
   contiguous same-setting row and Apply writes it via `structures.updateMany` with a filter
   object per member, flags kept; trigger `brandonFilterMk3Belts` at 166 ms with a
