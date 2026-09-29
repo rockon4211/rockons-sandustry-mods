@@ -1,6 +1,6 @@
-# Mod file checksums — sandboxloop-inspect, 83d6cc3, 2026-09-28
+# Mod file checksums — sandboxloop-inspect, 3275c64, 2026-09-28
 
-Versions: sandboxloop 0.4.8, screensaver 0.18.5, manufacturing 0.16.0, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.3.0.
+Versions: sandboxloop 0.4.9, screensaver 0.18.6, manufacturing 0.16.0, lavaboiloff 0.1.1, quickstart 1.0.2, improvedfilters 0.3.0.
 All 25 installed files; every hash is of the file at the commit named in the title, which is
 the mod content now on `main` (later commits only touch docs). Regenerate after changing a mod.
 Hashes are of the files as stored in git (LF line endings). A clone with core.autocrlf=true checks
@@ -42,13 +42,13 @@ b5d6484016e77e14a2650302ea7da93e24213a94e7b87e0fef8facc00965310a  manufacturing/
 f4aba9709ca13335204debbc2a30cdf48158b7120f74e7ed0fe8dca740ae2287  quickstart/main.js
 01c53d5949444b4b00ab65e90c51db5b1c596067467d73b04e9459089ff0b916  quickstart/modinfo.json
 93da1be7de59ea4f5db0384e5d83098567fbdf5e9f75ca92f20ee2c0a05708b2  quickstart/preview.png
-639bd7e8b878c411c247fbb920b3cad549be1ce75f96b2cea0a7d74c3b79ad80  sandboxloop/main.js
+0e3fcfdffb958f70d423f791eb613069b818c9266350537fc9c2ba6068e7e852  sandboxloop/main.js
 c67969b7ba30cb5a1f8967aebd2571d31cfa2945b7bed51623c4f0b4647f22d8  sandboxloop/make-sprites.js
-d1784249a4c10d91dc4edec29887143d84a59f7e1925c93b20f08933c80afe81  sandboxloop/modinfo.json
+e680f69e4c72419fa7192081b8e7a38b288cd06bf1a80e9ce4651fee18399015  sandboxloop/modinfo.json
 d03eb83fbe5c5aba303955cdd28dfe08fcdfc9089a18fd5117b57cbf529b703a  sandboxloop/sink.png
 2fcbee7b58f45f11f52db540b59894490f89bfa6096a1abcf0c1e7aea0d54d18  sandboxloop/source.png
-6d1f6fab0e21391b48a68f501e0ae9afbb74d9023190ca90249c2899812e68d3  screensaver/main.js
-2fd8f97718135c7818cf81e3d0215f05f857213bdc8e8e7331f124807db687f3  screensaver/modinfo.json
+1e4d6bb30640fdabbd0792caf4bdd81f5ce675fdeddd55d88850384477272802  screensaver/main.js
+4bea07c53d10cfecf91418c0363af9ceca908e64b6d4f6494edce96c95542cdf  screensaver/modinfo.json
 ```
 
 ## PNGs
