@@ -63,7 +63,7 @@ Game: Sandustry v0.5.6 (Steam). Player: Brandon.
 
 - **Sandbox Loop** `brandon.sandboxloop` v0.4.8 — Sources and Removers, balance tracker,
   whole-map census, history log/export, and the panel that hosts the Screensaver button.
-- **Screensaver** `brandon.screensaver` v0.18.4 — plays the map when idle and follows one
+- **Screensaver** `brandon.screensaver` v0.18.5 — plays the map when idle and follows one
   grain through the factory. This is where most of the work went. 0.18.2: every tracer
   element (the 5 generic tracers and every clone) is registered with the game's own
   `showInFilterPicker: false`, so no picker lists them - they exist only for the Sandbox
@@ -260,7 +260,7 @@ The panel also carries the Screensaver row: **🌙 START NOW** and a **⤓ log (
 saves the tracer flight recorder. Its companion graph page for history exports is
 `tools/resource-history` in the repo.
 
-## Screensaver v0.18.4 — what it does
+## Screensaver v0.18.5 — what it does
 
 After N minutes without input (or automatically from the main menu, for a Windows "on idle"
 task), it hides the HUD and cursor, goes fullscreen, caps the frame rate, holds a screen wake
@@ -292,11 +292,14 @@ makes several things it follows the main one.
 real material, the spot is watched, and a material the chain says should appear is picked
 up. Passive structures (frames, launchers, platforms) never trigger a hand-back.
 
-**Tracker panel** (top-right, on by default): what the tracer is doing now, counts of
-journeys, marks, losses, re-finds, jumps, stray tracers, copies and armed reactions, a
-"why it was lost" breakdown, and the last nine events in plain language. A **flight
-recorder** keeps up to 500 events and saves `tracer-log-<date>.json` to Downloads — on
-demand from the panel button, and automatically when the screensaver stops if anything went
+**Tracker** (top-right, on by default; setting "Show what is being followed"): since 0.18.5 just
+"Following: <material>" — the real material the followed grain is now (`trc.orig`, or the
+last known one while it is being re-found; the belt route's material with the tracer off),
+changing as the grain does. Replaced at Brandon's request (2026-09-28) the old stats panel
+(journeys, marks, losses, re-finds, jumps, stray tracers, copies, armed reactions, "why it was
+lost", last nine events); those are still counted and saved by the **flight recorder**, which
+keeps up to 500 events and saves `tracer-log-<date>.json` to Downloads — on demand from the
+Sandbox Loop's ⤓ log button, and automatically when the screensaver stops if anything went
 wrong.
 
 **Other behaviour worth knowing:** if the grain is lost three times within 16 cells in 90
@@ -566,7 +569,7 @@ on any failure**. Run each with `node .handoff/sim-<name>.js`:
   burning, machines, gold rule, main-product rule), and four scenes (launcher, fire,
   planter, shaker).
 - `sim-clone.js` — copies are built and armed, and a soil copy touching water becomes the
-  wet-soil copy and is still followed. Fails if no copies are built.
+  wet-soil copy and is still followed. Fails if no copies are built. The tracker (0.18.5) prints "soil", then "Wet Soil" after the change.
 - `sim-output.js` — a machine output is picked up and the chain hops (wet soil → residue,
   not gold).
 - `sim-filter.js` — a tracer riding into the filter section: the loss is logged at the
@@ -631,7 +634,7 @@ There is no device bridge any more; everything happens directly on the desktop.
    armed" count above zero, a grain following soil → wet soil → residue → burnt residue →
    seed without hand-backs, nothing refused (the log says why if so). 0.18.3's sweep
    changes are covered by `sim-mapsweep.js` only. Also unconfirmed in game: Manufacturing's
-   Mk.3 belt animation and speed, Sandbox Loop 0.4.6–0.4.8 (🔍 Inspect), Screensaver 0.18.4 (tracer() hook), Quickstart 1.0.2.
+   Mk.3 belt animation and speed, Sandbox Loop 0.4.6–0.4.8 (🔍 Inspect), Screensaver 0.18.4–0.18.5 (tracer() hook, name-only tracker), Quickstart 1.0.2.
 1b. **Filter Mk.3 on the game's own menu (Manufacturing 0.16.0 + Improved Filters 0.3.0) is
    untested in game.** Check: a Mk.3 in hand opens the game's panel expanded; picking a
    material keeps a Mk.3 in hand (not a Mk.2); Mk.3 rows get the game's labels; clicking one

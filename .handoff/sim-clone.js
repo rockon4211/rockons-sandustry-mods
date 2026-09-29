@@ -42,7 +42,7 @@ global.navigator = { wakeLock: { request: () => Promise.resolve({ release() {} }
 global.setInterval = () => 0; const timers = []; global.setTimeout = (fn, ms) => { timers.push({ fn, at: NOW + ms }); return 0; };
 const log = console.log; console.log = () => {};
 eval('"use strict";\n' + src.replace("function tick() {", "function modTick() {").replace("setInterval(tick, 33);", "")
-	+ "\nglobal.M = { get dbg(){return dbg}, get trc(){return trc}, set trc(v){trc=v}, modTick, set active(v){active=v}, get notes(){return recentNotes}, armCloneReactions, cloneOf, get armed(){return reactionsArmed} };");
+	+ "\nglobal.M = { get dbg(){return dbg}, get trc(){return trc}, set trc(v){trc=v}, modTick, set active(v){active=v}, get notes(){return recentNotes}, armCloneReactions, cloneOf, get armed(){return reactionsArmed}, followedName };");
 console.log = log;
 
 const C = (id) => M.cloneOf.get(T(id));
@@ -57,6 +57,8 @@ check(!!rule && rule.outputA === C("wetSand"), "contact rule: soil copy + water 
 // drive it: the soil copy sits at 100,100, water arrives next to it, the game applies the rule
 cells.set(K(100, 100), C("sand"));
 M.trc = { t: C("sand"), orig: T("sand"), x: 100, y: 100, lastMove: NOW, since: NOW - 10000, pending: false, tries: 0, hops: ["soil"], hopTypes: [T("sand")], search: null, moved: 10 };
+const NM = (id) => sandkit.api.elements.getNameByType(T(id));
+check(M.followedName() === NM("sand"), "tracker (0.18.5) prints just the followed material: " + M.followedName());
 for (let i = 0; i < 300; i++) {
 	NOW += 33;
 	if (i === 60) cells.set(K(101, 100), T("water"));
@@ -67,5 +69,6 @@ for (let i = 0; i < 300; i++) {
 }
 check(cells.get(K(100, 100)) === C("wetSand"), "cell 100,100 is now the wet soil copy");
 check(!!M.trc && !M.trc.search && M.trc.orig === T("wetSand"), "still following it, now as wet soil: " + (M.trc ? M.trc.hops.join(" -> ") : "(no tracer)") + " | phase: " + M.dbg.phase);
+check(M.followedName() === NM("wetSand") && NM("wetSand") !== NM("sand"), "…and it changes with the grain: " + M.followedName());
 console.log(ok ? "\nALL OK" : "\nSOME CHECKS FAILED");
 process.exit(ok ? 0 : 1);

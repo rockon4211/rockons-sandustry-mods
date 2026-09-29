@@ -131,7 +131,7 @@ function nextLeg() {
 // visibly flowing under the camera the whole way, which is what "following a
 // grain" looks like — and it can't lose track. If no belts are found the
 // material tracer below takes over.
-const BUILD = "0.18.4";
+const BUILD = "0.18.5";
 const EMPTY = safe(() => sandkit.enums.ElementType.Empty);
 const typeAt = (x, y) => safe(() => api.elements.getResolvedTypeAtCell(x, y));
 const isMat = (t) => t !== undefined && t !== null && t !== EMPTY;
@@ -1354,39 +1354,23 @@ function Debug() {
 	return h("div", { style: { position: "fixed", left: "12px", top: "12px", zIndex: 99999, pointerEvents: "none", font: '600 11px ui-monospace,Consolas,monospace', color: "#e8edf3", background: "rgba(10,14,20,0.82)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: "6px", padding: "6px 9px", whiteSpace: "pre", lineHeight: 1.5, maxWidth: "620px" } }, lines.join("\n"));
 }
 if (h) { safe(() => api.ui.inject("brandon-screensaver-debug", Debug)); setInterval(() => { if (dbgRepaint) dbgRepaint((v) => v + 1); }, 250); }
-// --- tracker panel: what the tracer is doing, and every time it loses the grain, why --
+// --- tracker: just the name of the material being followed (0.18.5; the old stats panel —
+// journeys, losses, recent events — was replaced at Brandon's request; the flight recorder
+// still logs all of it and ⤓ log on the Sandbox Loop panel saves it) --
 let trkRepaint = null;
-const TRK = { position: "fixed", right: "12px", top: "46px", zIndex: 99998, pointerEvents: "none", width: "400px", font: '500 11px ui-monospace,Consolas,monospace', color: "#dfe6ee", background: "rgba(10,14,20,0.8)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "6px", padding: "7px 10px", lineHeight: 1.45 };
+const TRK = { position: "fixed", right: "12px", top: "46px", zIndex: 99998, pointerEvents: "none", font: '700 15px -apple-system,"Segoe UI",Roboto,sans-serif', color: "#dfe6ee", background: "rgba(10,14,20,0.7)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "6px", padding: "5px 12px", letterSpacing: ".02em", whiteSpace: "nowrap" };
+function followedName() {
+	if (trc) return matName(trc.search ? trc.search.orig : trc.orig);
+	if (pathSrc) return matName(pathSrc.type);   // tracer off: following the belt route from a Source
+	if (fol && fol.names && fol.names.length) return fol.names[fol.names.length - 1];
+	return null;
+}
 function Tracker() {
 	const [, b] = React.useState(0); trkRepaint = b;
 	if (!setting("showTracker", true) || !inWorld() || !(active || setting("debugOverlay", false))) return null;
-	const now = Date.now(), secs = (ms) => (ms / 1000).toFixed(1) + "s";
-	let state;
-	if (tour) state = "TOUR STOP — gliding in a straight line, not following a grain";
-	else if (!trc) state = waitEmit ? "waiting for a Source to emit the tracer" : "between journeys";
-	else if (trc.search) state = (trc.search.lostWhy ? "LOST — searching" : "handed back — watching the machine") + " at " + trc.search.x + "," + trc.search.y + " (" + secs(now - trc.search.t0) + ")";
-	else if (trc.pending) state = "marking a " + matName(trc.orig) + " grain… (try " + (trc.tries + 1) + ")";
-	else if (trc.miss) state = "can't see it — looking (" + trc.miss + "/8) near " + trc.x + "," + trc.y;
-	else state = "riding " + matName(trc.orig) + " " + secs(now - trc.since) + " · " + (trc.moved || 0) + " cells" + (trc.onBelt ? " · on a belt" : "");
-	const lost = Object.values(stats.losses).reduce((a, n) => a + n, 0);
-	const row = (txt, color, weight) => h("div", { style: { color: color || undefined, fontWeight: weight || undefined } }, txt);
-	const kids = [
-		row("TRACKER  ·  build " + BUILD, "#8fb3d9", 700),
-		row("now: " + state, trc && !trc.search && !trc.miss && !trc.pending ? "#9fe0a8" : "#f2c46b"),
-		row("journeys " + stats.journeys + " · grains marked " + stats.marksLanded + "/" + stats.marksAsked + " · lost " + lost + " · re-found " + stats.refound),
-		row("copies " + cloneOf.size + (cloneSkipped ? " (" + cloneSkipped + " skipped)" : "") + " · recipes taught " + reactionsArmed + (armErrors ? " (" + armErrors + " refused)" : "") + " · changes followed " + (stats.transforms || 0) + " · burns " + (stats.burns || 0)),
-		row("jumps " + stats.jumps + " · extra tracers " + stats.ghosts + " · hand-backs " + stats.handbacks + " · longest ride " + secs(stats.longestMs)),
-	];
-	const reasons = Object.entries(stats.losses).sort((a, b2) => b2[1] - a[1]);
-	if (reasons.length) {
-		kids.push(row("why it was lost:", "#8fb3d9", 700));
-		for (const [k, n] of reasons) kids.push(row("  " + n + "×  " + k, "#f2c46b"));
-	}
-	if (recentNotes.length) {
-		kids.push(row("recent:", "#8fb3d9", 700));
-		for (const e of recentNotes.slice().reverse()) kids.push(h("div", { style: { color: e.bad ? "#f2a36b" : "#c9d2dc", whiteSpace: "normal", paddingLeft: "6px", textIndent: "-6px" } }, e.time + "  " + e.txt));
-	}
-	return h("div", { style: TRK }, kids);
+	const name = followedName();
+	if (!name) return null;
+	return h("div", { style: TRK }, "Following: ", h("span", { style: { color: "#ffe27a" } }, name));
 }
 if (h) { safe(() => api.ui.inject("brandon-screensaver-tracker", Tracker)); setInterval(() => { if (trkRepaint) trkRepaint((v) => v + 1); }, 300); }
 // the one way out, spelled out in the corner

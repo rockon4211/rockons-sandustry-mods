@@ -2,7 +2,7 @@
 	"manifestVersion": 1,
 	"id": "brandon.screensaver",
 	"name": "Screensaver",
-	"version": "0.18.4",
+	"version": "0.18.5",
 	"apiVersion": 1,
 	"entry": "main.js",
 	"author": "Brandon",
@@ -85,8 +85,8 @@
 		"showTracker": {
 			"type": "boolean",
 			"default": true,
-			"labelKey": "Show the tracker panel",
-			"descriptionKey": "While the screensaver runs, a panel in the top-right shows what the tracer is doing, counts journeys, marks, losses, jumps and stray tracers, and lists every time it lost the grain and why. Also shown whenever the debug overlay is on. Turn off for a clean screen."
+			"labelKey": "Show what is being followed",
+			"descriptionKey": "While the screensaver runs, the top-right corner shows the name of the material being followed (e.g. Following: Wet Soil), updated as it changes. Also shown whenever the debug overlay is on. Turn off for a clean screen."
 		},
 		"saveLogOnStop": {
 			"type": "boolean",
